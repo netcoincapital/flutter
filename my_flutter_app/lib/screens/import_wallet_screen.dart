@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'passcode_screen.dart';
 
 class ImportWalletScreen extends StatefulWidget {
   const ImportWalletScreen({super.key});
@@ -31,7 +32,15 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
     });
     // Navigation to backup screen after import (simulate success)
     // Replace 'ImportedWallet' with actual wallet name if available
-    Navigator.pushReplacementNamed(context, '/backup?walletName=ImportedWallet');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PasscodeScreen(
+          title: 'Choose Passcode',
+          walletName: 'ImportedWallet',
+        ),
+      ),
+    );
   }
 
   void _launchTerms() async {

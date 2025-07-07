@@ -96,22 +96,25 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                       ),
                       const SizedBox(height: 8),
                       // Network filter
-                      GestureDetector(
-                        onTap: _showNetworkModal,
-                        child: Container(
-                          width: 200,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: const Color(0x25757575),
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(
-                            children: [
-                              Text(selectedNetwork, style: const TextStyle(fontSize: 16, color: Color(0xFF2c2c2c))),
-                              const Spacer(),
-                              const Icon(Icons.arrow_drop_down, size: 20),
-                            ],
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: GestureDetector(
+                          onTap: _showNetworkModal,
+                          child: Container(
+                            width: 200,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: const Color(0x25757575),
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Row(
+                              children: [
+                                Text(selectedNetwork, style: const TextStyle(fontSize: 16, color: Color(0xFF2c2c2c))),
+                                const Spacer(),
+                                const Icon(Icons.arrow_drop_down, size: 20),
+                              ],
+                            ),
                           ),
                         ),
                       ),

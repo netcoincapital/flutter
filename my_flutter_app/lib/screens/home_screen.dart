@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../layout/main_layout.dart';
+import 'crypto_details_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -39,6 +40,11 @@ class _HomeScreenState extends State<HomeScreen> {
       'change': '+0.0%',
     },
   ];
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   void _showWalletModal() {
     showModalBottomSheet(
@@ -86,167 +92,188 @@ class _HomeScreenState extends State<HomeScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Left icons
-                    Row(
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        // Left icons
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.pushNamed(context, '/add-token');
+                              },
+                              child: Image.asset('assets/images/music.png', width: 18, height: 18),
+                            ),
+                            const SizedBox(width: 12),
+                            // اگر آیکون دیگری نیاز بود اضافه کن
+                          ],
+                        ),
+                        // Center wallet name and visibility
+                        GestureDetector(
+                          onTap: _showWalletModal,
+                          child: Row(
+                            children: [
+                              Text(
+                                walletName,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                              ),
+                              const SizedBox(width: 6),
+                              GestureDetector(
+                                onTap: () => setState(() => isHidden = !isHidden),
+                                child: Icon(
+                                  isHidden ? Icons.visibility_off : Icons.visibility,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Right icon
                         GestureDetector(
                           onTap: () {
                             Navigator.pushNamed(context, '/add-token');
                           },
-                          child: Image.asset('assets/images/music.png', width: 18, height: 18),
+                          child: Image.asset('assets/images/search.png', width: 18, height: 18),
                         ),
-                        const SizedBox(width: 12),
-                        // اگر آیکون دیگری نیاز بود اضافه کن
                       ],
                     ),
-                    // Center wallet name and visibility
-                    GestureDetector(
-                      onTap: _showWalletModal,
-                      child: Row(
-                        children: [
-                          Text(
-                            walletName,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-                          ),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () => setState(() => isHidden = !isHidden),
-                            child: Icon(
-                              isHidden ? Icons.visibility_off : Icons.visibility,
-                              size: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Right icon
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pushNamed(context, '/add-token');
-                      },
-                      child: Image.asset('assets/images/search.png', width: 18, height: 18),
-                    ),
-                  ],
-                ),
-              ),
-              // User profile section
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
-                    Text(
-                      isHidden ? '****' : '21,000.00',
-                      style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                  ),
+                  // User profile section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                    child: Column(
                       children: [
-                        Icon(
-                          Icons.arrow_upward,
-                          size: 12,
-                          color: Colors.green,
-                        ),
-                        const SizedBox(width: 4),
+                        const SizedBox(height: 16),
                         Text(
-                          isHidden ? '**** +2.5%' : '+2.5%',
-                          style: const TextStyle(fontSize: 16, color: Colors.green),
+                          isHidden ? '****' : '21,000.00',
+                          style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Action buttons
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _ActionButton(
-                      icon: 'assets/images/send.png',
-                      label: 'Send',
-                      onTap: () {},
-                      bgColor: const Color(0x80D7FBE7),
-                    ),
-                    _ActionButton(
-                      icon: 'assets/images/receive.png',
-                      label: 'Receive',
-                      onTap: () {},
-                      bgColor: const Color(0x80D7F0F1),
-                    ),
-                    _ActionButton(
-                      icon: 'assets/images/history.png',
-                      label: 'History',
-                      onTap: () {},
-                      bgColor: const Color(0x80D6E8FF),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Tabs
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    _TabButton(
-                      label: 'Cryptos',
-                      selected: selectedTab == 0,
-                      onTap: () => setState(() => selectedTab = 0),
-                    ),
-                    _TabButton(
-                      label: "NFT's",
-                      selected: selectedTab == 1,
-                      onTap: () => setState(() => selectedTab = 1),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              // Token list or NFT
-              Expanded(
-                child: selectedTab == 0
-                    ? ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 90),
-                        itemCount: tokens.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final token = tokens[index];
-                          return _TokenRow(
-                            name: token['name'],
-                            symbol: token['symbol'],
-                            icon: token['icon'],
-                            amount: token['amount'],
-                            price: token['price'],
-                            change: token['change'],
-                            isHidden: isHidden,
-                          );
-                        },
-                      )
-                    : Center(
-                        child: Column(
+                        const SizedBox(height: 4),
+                        Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Image.asset('assets/images/card.png', width: 90, height: 90, color: Colors.grey.withOpacity(0.2)),
-                            const SizedBox(height: 8),
-                            const Text('No NFT Found', style: TextStyle(color: Color(0x7E666666), fontWeight: FontWeight.bold)),
+                            Icon(
+                              Icons.arrow_upward,
+                              size: 12,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isHidden ? '**** +2.5%' : '+2.5%',
+                              style: const TextStyle(fontSize: 16, color: Colors.green),
+                            ),
                           ],
                         ),
-                      ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Action buttons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _ActionButton(
+                          icon: 'assets/images/send.png',
+                          label: 'Send',
+                          onTap: () {},
+                          bgColor: const Color(0x80D7FBE7),
+                        ),
+                        _ActionButton(
+                          icon: 'assets/images/receive.png',
+                          label: 'Receive',
+                          onTap: () {
+                            Navigator.pushNamed(context, '/receive');
+                          },
+                          bgColor: const Color(0x80D7F0F1),
+                        ),
+                        _ActionButton(
+                          icon: 'assets/images/history.png',
+                          label: 'History',
+                          onTap: () {
+                            Navigator.pushNamed(context, '/history');
+                          },
+                          bgColor: const Color(0x80D6E8FF),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Tabs
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        _TabButton(
+                          label: 'Cryptos',
+                          selected: selectedTab == 0,
+                          onTap: () => setState(() => selectedTab = 0),
+                        ),
+                        _TabButton(
+                          label: "NFT's",
+                          selected: selectedTab == 1,
+                          onTap: () => setState(() => selectedTab = 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Token list or NFT
+                  Expanded(
+                    child: selectedTab == 0
+                        ? ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 90),
+                            itemCount: tokens.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final token = tokens[index];
+                              return GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CryptoDetailsScreen(
+                                        tokenName: token['name'],
+                                        tokenSymbol: token['symbol'],
+                                        iconUrl: token['icon'],
+                                        isToken: true, // فرض بر این که همه توکن هستند، در صورت نیاز مقداردهی دقیق‌تر
+                                        blockchainName: '', // اگر بلاک‌چین داری اضافه کن
+                                        gasFee: 0.0, // اگر کارمزد داری اضافه کن
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: _TokenRow(
+                                  name: token['name'],
+                                  symbol: token['symbol'],
+                                  icon: token['icon'],
+                                  amount: token['amount'],
+                                  price: token['price'],
+                                  change: token['change'],
+                                  isHidden: isHidden,
+                                ),
+                              );
+                            },
+                          )
+                        : Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset('assets/images/card.png', width: 90, height: 90, color: Colors.grey.withOpacity(0.2)),
+                                const SizedBox(height: 8),
+                                const Text('No NFT Found', style: TextStyle(color: Color(0x7E666666), fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
         ),
       ),
     );

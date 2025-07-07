@@ -52,9 +52,9 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This app needs permission to save photos to your library.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>This app uses Face ID for biometric authentication.</string>
+	<string>We use Face ID to protect your data in the app.</string>
 	<key>NSBiometricsUsageDescription</key>
-	<string>This app uses biometrics for authentication.</string>
+	<string>We use biometrics to protect your data in the app.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to your microphone for audio recording.</string>
 	<key>NSLocalNetworkUsageDescription</key>

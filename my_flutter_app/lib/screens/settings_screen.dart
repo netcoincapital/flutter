@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../layout/main_layout.dart';
+import 'address_book_screen.dart';
+import 'wallets_screen.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -43,142 +47,153 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    return MainLayout(
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Settings', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-        iconTheme: const IconThemeData(color: Colors.black),
-      ),
-      body: Stack(
-        children: [
-          ListView(
-            children: [
-              const SizedBox(height: 8),
-              _Section(
-                title: 'General Settings',
-                children: [
-                  _SettingItem(
-                    icon: 'assets/images/wallet.png',
-                    title: 'Wallets',
-                    subtitle: walletName,
-                    onTap: () {
-                      Navigator.pushNamed(context, '/wallets');
-                    },
-                  ),
-                ],
-              ),
-              _Section(
-                title: 'Utilities',
-                children: [
-                  _SettingItem(
-                    icon: 'assets/images/alert.png',
-                    title: 'Price Alerts',
-                    onTap: () {},
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/address_book.png',
-                    title: 'Address Book',
-                    onTap: () {
-                      Navigator.pushNamed(context, '/address-book');
-                    },
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/scan.png',
-                    title: 'Scan QR Code',
-                    onTap: () async {
-                      final result = await Navigator.pushNamed(context, '/qr-scanner');
-                      if (result != null && result is String && result.isNotEmpty) {
-                        _showQRDialog(result);
-                      }
-                    },
-                  ),
-                ],
-              ),
-              _Section(
-                title: 'Security',
-                children: [
-                  _SettingItem(
-                    icon: 'assets/images/setting.png',
-                    title: 'Preferences',
-                    onTap: () {
-                      Navigator.pushNamed(context, '/preferences');
-                    },
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/shield.png',
-                    title: 'Security',
-                    onTap: () {
-                      Navigator.pushNamed(context, '/security-passcode');
-                    },
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/bell.png',
-                    title: 'Notifications',
-                    onTap: () {
-                      Navigator.pushNamed(context, '/notificationmanagement');
-                    },
-                  ),
-                ],
-              ),
-              _Section(
-                title: 'Support',
-                children: [
-                  _SettingItem(
-                    icon: 'assets/images/question.png',
-                    title: 'Help Center',
-                    onTap: () {},
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/support.png',
-                    title: 'Support',
-                    onTap: () {},
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/logo.png',
-                    title: 'About',
-                    onTap: () {},
-                  ),
-                ],
-              ),
-              _Section(
-                title: 'Social media',
-                children: [
-                  _SettingItem(
-                    icon: 'assets/images/x.png',
-                    title: 'X platform',
-                    onTap: () {
-                      // باز کردن لینک X (توییتر)
-                      // TODO: استفاده از url_launcher
-                    },
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/instagram.png',
-                    title: 'Instagram',
-                    onTap: () {
-                      // باز کردن لینک اینستاگرام
-                    },
-                  ),
-                  _SettingItem(
-                    icon: 'assets/images/telegram.png',
-                    title: 'Telegram',
-                    onTap: () {
-                      // باز کردن لینک تلگرام
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-          if (showQRDialog)
-            _QRDialog(
-              content: qrContent,
-              onCopy: () => _copyToClipboard(qrContent),
-              onDismiss: _hideQRDialog,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: Text('settings'.tr(), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          iconTheme: const IconThemeData(color: Colors.black),
+        ),
+        body: Stack(
+          children: [
+            ListView(
+              children: [
+                const SizedBox(height: 8),
+                _Section(
+                  title: 'General Settings',
+                  children: [
+                    _SettingItem(
+                      icon: 'assets/images/wallet.png',
+                      title: 'Wallets',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const WalletsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                _Section(
+                  title: 'Utilities',
+                  children: [
+                    _SettingItem(
+                      icon: 'assets/images/alert.png',
+                      title: 'Price Alerts',
+                      onTap: () {},
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/address_book.png',
+                      title: 'Address Book',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AddressBookScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/scan.png',
+                      title: 'Scan QR Code',
+                      onTap: () async {
+                        final result = await Navigator.pushNamed(context, '/qr-scanner');
+                        if (result != null && result is String && result.isNotEmpty) {
+                          _showQRDialog(result);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                _Section(
+                  title: 'Security',
+                  children: [
+                    _SettingItem(
+                      icon: 'assets/images/setting.png',
+                      title: 'Preferences',
+                      onTap: () {
+                        Navigator.pushNamed(context, '/preferences');
+                      },
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/shield.png',
+                      title: 'Security',
+                      onTap: () {
+                        Navigator.pushNamed(context, '/security-passcode');
+                      },
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/bell.png',
+                      title: 'Notifications',
+                      onTap: () {
+                        Navigator.pushNamed(context, '/notificationmanagement');
+                      },
+                    ),
+                  ],
+                ),
+                _Section(
+                  title: 'Support',
+                  children: [
+                    _SettingItem(
+                      icon: 'assets/images/question.png',
+                      title: 'Help Center',
+                      onTap: () {},
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/support.png',
+                      title: 'Support',
+                      onTap: () {},
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/logo.png',
+                      title: 'About',
+                      onTap: () {},
+                    ),
+                  ],
+                ),
+                _Section(
+                  title: 'Social media',
+                  children: [
+                    _SettingItem(
+                      icon: 'assets/images/x.png',
+                      title: 'X platform',
+                      onTap: () {
+                        // باز کردن لینک X (توییتر)
+                        // TODO: استفاده از url_launcher
+                      },
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/instagram.png',
+                      title: 'Instagram',
+                      onTap: () {
+                        // باز کردن لینک اینستاگرام
+                      },
+                    ),
+                    _SettingItem(
+                      icon: 'assets/images/telegram.png',
+                      title: 'Telegram',
+                      onTap: () {
+                        // باز کردن لینک تلگرام
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+              ],
             ),
-        ],
+            if (showQRDialog)
+              _QRDialog(
+                content: qrContent,
+                onCopy: () => _copyToClipboard(qrContent),
+                onDismiss: _hideQRDialog,
+              ),
+          ],
+        ),
       ),
     );
   }

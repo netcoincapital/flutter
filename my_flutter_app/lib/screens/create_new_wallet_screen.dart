@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'passcode_screen.dart';
 
 class CreateNewWalletScreen extends StatefulWidget {
   const CreateNewWalletScreen({Key? key}) : super(key: key);
@@ -36,7 +37,15 @@ class _CreateNewWalletScreenState extends State<CreateNewWalletScreen> {
       showErrorModal = true;
     });
     // Navigation to backup screen after generation (simulate success)
-    Navigator.pushReplacementNamed(context, '/backup?walletName=$walletName');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PasscodeScreen(
+          title: 'Choose Passcode',
+          walletName: walletName,
+        ),
+      ),
+    );
   }
 
   @override
