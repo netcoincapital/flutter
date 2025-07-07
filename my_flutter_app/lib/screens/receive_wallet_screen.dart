@@ -29,61 +29,69 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
     final controller = TextEditingController(text: amount);
     final result = await showModalBottomSheet<String>(
       context: context,
-      isScrollControlled: false,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-          child: StatefulBuilder(
-            builder: (context, setModalState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const Text('Enter Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: controller,
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      labelText: 'Amount',
-                    ),
-                    onChanged: (val) => setModalState(() {}),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+          child: SingleChildScrollView(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: StatefulBuilder(
+                builder: (context, setModalState) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: controller.text.trim().isEmpty ? null : () => Navigator.pop(context, controller.text),
-                        child: const Text('OK'),
+                      const Text('Enter Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: controller,
+                        keyboardType: TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Amount',
+                        ),
+                        onChanged: (val) => setModalState(() {}),
+                        autofocus: true,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: controller.text.trim().isEmpty ? null : () => Navigator.pop(context, controller.text),
+                            child: const Text('OK'),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ],
-              );
-            },
+                  );
+                },
+              ),
+            ),
           ),
         );
       },
@@ -188,13 +196,16 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
                 key: _qrKey,
                 child: Container(
                   color: Colors.white,
-                  child: QrImageView(
-                    data: qrData,
-                    version: QrVersions.auto,
-                    size: 220,
-                    gapless: false,
-                    embeddedImage: AssetImage('assets/images/logo.png'),
-                    embeddedImageStyle: QrEmbeddedImageStyle(size: const Size(40, 40)),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(40), // گوشه‌های نرم
+                    child: QrImageView(
+                      data: qrData,
+                      version: QrVersions.auto,
+                      size: 220,
+                      gapless: false,
+                      embeddedImage: AssetImage('assets/images/logo.png'),
+                      embeddedImageStyle: QrEmbeddedImageStyle(size: const Size(40, 40)),
+                    ),
                   ),
                 ),
               ),
