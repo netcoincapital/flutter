@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
+
 
 class LoadingOverlay extends StatelessWidget {
   final bool isLoading;
@@ -11,11 +11,8 @@ class LoadingOverlay extends StatelessWidget {
     return Container(
       color: Colors.white.withOpacity(1.0),
       child: Center(
-        child: Lottie.asset(
-          'assets/animations/loading.json',
-          width: 180,
-          height: 180,
-          fit: BoxFit.contain,
+        child: const CircularProgressIndicator(
+          color: Colors.white,
         ),
       ),
     );

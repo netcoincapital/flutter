@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:easy_localization/easy_localization.dart';
+import '../services/qr_navigation_manager.dart';
 
 class QrScannerScreen extends StatefulWidget {
-  const QrScannerScreen({Key? key}) : super(key: key);
+  final String returnScreen;
+  
+  const QrScannerScreen({
+    Key? key,
+    this.returnScreen = 'home',
+  }) : super(key: key);
 
   @override
   State<QrScannerScreen> createState() => _QrScannerScreenState();
@@ -12,18 +19,39 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   bool scanned = false;
   MobileScannerController controller = MobileScannerController();
 
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   @override
   void dispose() {
     controller.dispose();
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) {
+  void _onQRCodeDetected(String code) async {
     if (scanned) return;
-    final barcode = capture.barcodes.firstOrNull;
-    if (barcode != null && barcode.rawValue != null) {
-      scanned = true;
-      Navigator.of(context).pop(barcode.rawValue);
+    scanned = true;
+    
+    try {
+      // Process QR scan result using QRNavigationManager
+      await QRNavigationManager.handleQRScannerResult(
+        context,
+        code,
+        widget.returnScreen,
+      );
+      
+      // Close the scanner screen
+      Navigator.of(context).pop();
+    } catch (e) {
+      print('❌ Error handling QR scan result: $e');
+      // Fallback: return the code as before
+      Navigator.of(context).pop(code);
     }
   }
 
@@ -33,21 +61,51 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Scan QR Code', style: TextStyle(color: Colors.white)),
+        title: Text(_safeTranslate('scan_qr_code', 'Scan QR Code'), style: const TextStyle(color: Colors.white)),
         elevation: 0,
       ),
       body: Stack(
         children: [
           MobileScanner(
             controller: controller,
-            onDetect: _onDetect,
+            onDetect: (capture) {
+              final List<Barcode> barcodes = capture.barcodes;
+              for (final barcode in barcodes) {
+                if (barcode.rawValue != null) {
+                  _onQRCodeDetected(barcode.rawValue!);
+                  break;
+                }
+              }
+            },
             fit: BoxFit.contain,
-            overlay: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.green, width: 4),
-                borderRadius: BorderRadius.circular(16),
+          ),
+          // Custom overlay
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.5),
+            ),
+            child: Center(
+              child: Container(
+                width: 250,
+                height: 250,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Colors.white,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Container(
+                  margin: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.blue,
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ),
-              margin: const EdgeInsets.symmetric(horizontal: 40, vertical: 120),
             ),
           ),
           Positioned(
@@ -65,7 +123,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                   elevation: 0,
                 ),
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+                child: Text(_safeTranslate('cancel', 'Cancel')),
               ),
             ),
           ),
