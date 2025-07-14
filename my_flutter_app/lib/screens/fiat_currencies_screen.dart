@@ -1,13 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import 'package:easy_localization/easy_localization.dart';
+import '../utils/shared_preferences_utils.dart';
+import '../providers/price_provider.dart';
+import '../providers/token_provider.dart';
 import '../layout/bottom_menu_with_siri.dart';
 
 class FiatCurrenciesScreen extends StatelessWidget {
   const FiatCurrenciesScreen({Key? key}) : super(key: key);
 
+  // Safe translate method with fallback
+  String _safeTranslate(BuildContext context, String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   Future<void> _saveSelectedCurrency(BuildContext context, String currency) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('selected_currency', currency);
+    await SharedPreferencesUtils.saveSelectedCurrency(currency);
+    
+    // Update PriceProvider with new selected currency
+    final priceProvider = Provider.of<PriceProvider>(context, listen: false);
+    await priceProvider.setSelectedCurrency(currency);
+    
+    // Refresh prices for the new currency
+    final tokenProvider = Provider.of<TokenProvider>(context, listen: false);
+    if (tokenProvider.enabledTokens.isNotEmpty) {
+      final symbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toList();
+      await priceProvider.fetchPrices(symbols, currencies: [currency]);
+    }
   }
 
   @override
@@ -17,113 +40,113 @@ class FiatCurrenciesScreen extends StatelessWidget {
         'code': 'USD',
         'symbol': '\$',
         'flag': 'assets/images/us.png',
-        'country': 'United States',
-        'fullName': 'US Dollar',
+        'country': _safeTranslate(context, 'united_states', 'United States'),
+        'fullName': _safeTranslate(context, 'us_dollar', 'US Dollar'),
       },
       {
         'code': 'CAD',
-        'symbol': 'CA',
+        'symbol': 'CA\$',
         'flag': 'assets/images/ca.png',
-        'country': 'Canada',
-        'fullName': 'Canadian Dollar',
+        'country': _safeTranslate(context, 'canada', 'Canada'),
+        'fullName': _safeTranslate(context, 'canadian_dollar', 'Canadian Dollar'),
       },
       {
         'code': 'AUD',
-        'symbol': 'AU',
+        'symbol': 'AU\$',
         'flag': 'assets/images/au.png',
-        'country': 'Australia',
-        'fullName': 'Australian Dollar',
+        'country': _safeTranslate(context, 'australia', 'Australia'),
+        'fullName': _safeTranslate(context, 'australian_dollar', 'Australian Dollar'),
       },
       {
         'code': 'GBP',
         'symbol': '£',
         'flag': 'assets/images/gb.png',
-        'country': 'United Kingdom',
-        'fullName': 'Pound Sterling',
+        'country': _safeTranslate(context, 'united_kingdom', 'United Kingdom'),
+        'fullName': _safeTranslate(context, 'pound_sterling', 'Pound Sterling'),
       },
       {
         'code': 'EUR',
         'symbol': '€',
         'flag': 'assets/images/eu.png',
-        'country': 'European Union',
-        'fullName': 'Euro',
+        'country': _safeTranslate(context, 'european_union', 'European Union'),
+        'fullName': _safeTranslate(context, 'euro', 'Euro'),
       },
       {
         'code': 'KWD',
         'symbol': 'KD',
         'flag': 'assets/images/kw.png',
-        'country': 'Kuwait',
-        'fullName': 'Kuwaiti Dinar',
+        'country': _safeTranslate(context, 'kuwait', 'Kuwait'),
+        'fullName': _safeTranslate(context, 'kuwaiti_dinar', 'Kuwaiti Dinar'),
       },
       {
         'code': 'TRY',
         'symbol': '₺',
         'flag': 'assets/images/tr.png',
-        'country': 'Turkey',
-        'fullName': 'Turkish Lira',
+        'country': _safeTranslate(context, 'turkey', 'Turkey'),
+        'fullName': _safeTranslate(context, 'turkish_lira', 'Turkish Lira'),
       },
       {
         'code': 'SAR',
         'symbol': '﷼',
         'flag': 'assets/images/sa.png',
-        'country': 'Saudi Arabia',
-        'fullName': 'Saudi Riyal',
+        'country': _safeTranslate(context, 'saudi_arabia', 'Saudi Arabia'),
+        'fullName': _safeTranslate(context, 'saudi_riyal', 'Saudi Riyal'),
       },
       {
         'code': 'CNY',
         'symbol': '¥',
         'flag': 'assets/images/cn.png',
-        'country': 'China',
-        'fullName': 'Chinese Yuan',
+        'country': _safeTranslate(context, 'china', 'China'),
+        'fullName': _safeTranslate(context, 'chinese_yuan', 'Chinese Yuan'),
       },
       {
         'code': 'KRW',
         'symbol': '₩',
         'flag': 'assets/images/kr.png',
-        'country': 'South Korea',
-        'fullName': 'South Korean Won',
+        'country': _safeTranslate(context, 'south_korea', 'South Korea'),
+        'fullName': _safeTranslate(context, 'south_korean_won', 'South Korean Won'),
       },
       {
         'code': 'JPY',
         'symbol': '¥',
         'flag': 'assets/images/jp.png',
-        'country': 'Japan',
-        'fullName': 'Japanese Yen',
+        'country': _safeTranslate(context, 'japan', 'Japan'),
+        'fullName': _safeTranslate(context, 'japanese_yen', 'Japanese Yen'),
       },
       {
         'code': 'INR',
         'symbol': '₹',
         'flag': 'assets/images/in.png',
-        'country': 'India',
-        'fullName': 'Indian Rupee',
+        'country': _safeTranslate(context, 'india', 'India'),
+        'fullName': _safeTranslate(context, 'indian_rupee', 'Indian Rupee'),
       },
       {
         'code': 'RUB',
         'symbol': '₽',
         'flag': 'assets/images/ru.png',
-        'country': 'Russia',
-        'fullName': 'Russian Ruble',
+        'country': _safeTranslate(context, 'russia', 'Russia'),
+        'fullName': _safeTranslate(context, 'russian_ruble', 'Russian Ruble'),
       },
       {
         'code': 'IQD',
         'symbol': 'ع.د',
         'flag': 'assets/images/iq.png',
-        'country': 'Iraq',
-        'fullName': 'Iraqi Dinar',
+        'country': _safeTranslate(context, 'iraq', 'Iraq'),
+        'fullName': _safeTranslate(context, 'iraqi_dinar', 'Iraqi Dinar'),
       },
       {
         'code': 'TND',
         'symbol': 'د.ت',
         'flag': 'assets/images/tn.png',
-        'country': 'Tunisia',
-        'fullName': 'Tunisian Dinar',
+        'country': _safeTranslate(context, 'tunisia', 'Tunisia'),
+        'fullName': _safeTranslate(context, 'tunisian_dinar', 'Tunisian Dinar'),
       },
       {
         'code': 'BHD',
         'symbol': 'ب.د',
         'flag': 'assets/images/bh.png',
-        'country': 'Bahrain',
-        'fullName': 'Bahraini Dinar',
+        'country': _safeTranslate(context, 'bahrain', 'Bahrain'),
+        'fullName': _safeTranslate(context, 'bahraini_dinar', 'Bahraini Dinar'),
       },
     ];
 
@@ -132,9 +155,9 @@ class FiatCurrenciesScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'Fiat Currencies',
-          style: TextStyle(
+        title: Text(
+          _safeTranslate(context, 'fiat_currencies', 'Fiat Currencies'),
+          style: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
             fontSize: 24,
@@ -148,9 +171,9 @@ class FiatCurrenciesScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 24),
-            const Text(
-              'All currency:',
-              style: TextStyle(
+            Text(
+              _safeTranslate(context, 'all_currency', 'All currency:'),
+              style: const TextStyle(
                 fontSize: 16,
                 color: Color(0xCB838383),
                 fontWeight: FontWeight.w600,

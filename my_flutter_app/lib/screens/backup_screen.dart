@@ -1,8 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'phrasekey_screen.dart';
 
 class BackupScreen extends StatelessWidget {
   final String walletName;
-  const BackupScreen({Key? key, required this.walletName}) : super(key: key);
+  final String? userID;
+  final String? walletID;
+  final String? mnemonic;
+  
+  const BackupScreen({
+    Key? key, 
+    required this.walletName,
+    this.userID,
+    this.walletID,
+    this.mnemonic,
+  }) : super(key: key);
+
+  // Safe translate method with fallback
+  String _safeTranslate(BuildContext context, String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,9 +38,9 @@ class BackupScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const Text(
-                  'Backup',
-                  style: TextStyle(
+                Text(
+                  _safeTranslate(context, 'backup', 'Backup'),
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.black,
@@ -35,9 +56,9 @@ class BackupScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    child: const Text(
-                      'Skip',
-                      style: TextStyle(
+                    child: Text(
+                      _safeTranslate(context, 'skip', 'Skip'),
+                      style: const TextStyle(
                         fontSize: 14,
                         color: Color(0xFF16B369),
                         fontWeight: FontWeight.normal,
@@ -68,9 +89,9 @@ class BackupScreen extends StatelessWidget {
             ),
             const SizedBox(height: 32),
             // متن‌های توضیحی
-            const Text(
-              'Back up secret phrase',
-              style: TextStyle(
+            Text(
+              _safeTranslate(context, 'back_up_secret_phrase', 'Back up secret phrase'),
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.black,
@@ -78,9 +99,9 @@ class BackupScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Protect your assets by backing up your seed phrase now.',
-              style: TextStyle(
+            Text(
+              _safeTranslate(context, 'protect_assets_backup', 'Protect your assets by backing up your seed phrase now.'),
+              style: const TextStyle(
                 fontSize: 14,
                 color: Colors.grey,
               ),
@@ -93,11 +114,17 @@ class BackupScreen extends StatelessWidget {
               height: 48,
               child: ElevatedButton(
                 onPressed: () {
-                  final encodedWalletName = Uri.encodeComponent(walletName);
-                  Navigator.pushNamedAndRemoveUntil(
+                  // Navigate directly to PhraseKeyScreen with copy button enabled
+                  Navigator.pushReplacement(
                     context,
-                    '/phrasekeypasscode?walletName=$encodedWalletName&showCopy=true',
-                    (route) => false,
+                    MaterialPageRoute(
+                      builder: (context) => PhraseKeyScreen(
+                        walletName: walletName,
+                        mnemonic: mnemonic ?? '',
+                        showCopy: true,
+                        isFromWalletCreation: true, // این از مسیر ایجاد کیف پول است
+                      ),
+                    ),
                   );
                 },
                 style: ElevatedButton.styleFrom(
@@ -108,9 +135,9 @@ class BackupScreen extends StatelessWidget {
                   ),
                   elevation: 0,
                 ),
-                child: const Text(
-                  'Back up manually',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                child: Text(
+                  _safeTranslate(context, 'back_up_manually', 'Back up manually'),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
             ),

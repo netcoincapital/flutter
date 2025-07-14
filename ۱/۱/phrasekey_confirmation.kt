@@ -30,7 +30,7 @@ import com.laxce.adl.utility.getMnemonicFromKeystore
 import com.laxce.adl.utility.getUserIdFromKeystore
 
 @Composable
-fun SecretPhraseScreen(navController: NavController, walletName: String) {
+fun SecretPhraseConfirmationScreen(navController: NavController, walletName: String) {
     val context = LocalContext.current
     var checkbox1 by remember { mutableStateOf(false) }
     var checkbox2 by remember { mutableStateOf(false) }
@@ -38,12 +38,6 @@ fun SecretPhraseScreen(navController: NavController, walletName: String) {
     val allChecked = checkbox1 && checkbox2 && checkbox3
 
     val userId = getUserIdFromKeystore(context, walletName)
-    
-    LaunchedEffect(Unit) {
-        val sharedPrefs = context.getSharedPreferences("WalletPrefs", Context.MODE_PRIVATE)
-        val allEntries = sharedPrefs.all
-    }
-    
     val mnemonic = if (userId.isNotEmpty()) {
         getMnemonicFromKeystore(context, userId, walletName)
     } else {
@@ -88,7 +82,7 @@ fun SecretPhraseScreen(navController: NavController, walletName: String) {
 
                 CheckBoxWithText(
                     isChecked = checkbox1,
-                    text = "Coinceeper does not keep a copy of your secret phrase.",
+                    text = "Laxce Wallet does not keep a copy of your secret phrase.",
                     onCheckedChange = { checkbox1 = it }
                 )
                 CheckBoxWithText(

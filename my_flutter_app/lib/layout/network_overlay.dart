@@ -1,110 +1,80 @@
 import 'package:flutter/material.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'dart:io';
+import 'package:provider/provider.dart';
+import '../providers/network_provider.dart';
 import '../screens/network_error_dialog.dart';
-import 'dart:async';
+import '../services/network_monitor.dart';
+import 'package:flutter/services.dart';
 
 class NetworkOverlay extends StatefulWidget {
   final Widget child;
-  const NetworkOverlay({Key? key, required this.child}) : super(key: key);
+  const NetworkOverlay({required this.child, Key? key}) : super(key: key);
 
   @override
   State<NetworkOverlay> createState() => _NetworkOverlayState();
 }
 
 class _NetworkOverlayState extends State<NetworkOverlay> {
-  bool showNetworkError = false;
-  late final Connectivity _connectivity;
-  late final Stream<ConnectivityResult> _connectivityStream;
-  Timer? _retryTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _connectivity = Connectivity();
-    _connectivityStream = _connectivity.onConnectivityChanged;
-    _connectivityStream.listen((result) async {
-      final hasInternet = await _hasRealInternet();
-      if (!hasInternet) {
-        setState(() {
-          showNetworkError = true;
-        });
-        _startRetryTimer();
-      } else {
-        setState(() {
-          showNetworkError = false;
-        });
-        _stopRetryTimer();
-      }
-    });
-    _checkInitialConnection();
-  }
-
-  @override
-  void dispose() {
-    _stopRetryTimer();
-    super.dispose();
-  }
-
-  void _startRetryTimer() {
-    _retryTimer?.cancel();
-    _retryTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      final hasInternet = await _hasRealInternet();
-      if (hasInternet) {
-        setState(() {
-          showNetworkError = false;
-        });
-        _stopRetryTimer();
-      }
-    });
-  }
-
-  void _stopRetryTimer() {
-    _retryTimer?.cancel();
-    _retryTimer = null;
-  }
-
-  Future<void> _checkInitialConnection() async {
-    final hasInternet = await _hasRealInternet();
-    setState(() {
-      showNetworkError = !hasInternet;
-    });
-    if (!hasInternet) {
-      _startRetryTimer();
-    }
-  }
-
-  Future<bool> _hasRealInternet() async {
-    final List<String> testSites = [
-      'google.com',
-      'example.com',
-      'cloudflare.com',
-    ];
-    for (final site in testSites) {
-      try {
-        final result = await InternetAddress.lookup(site);
-        if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-          return true;
-        }
-      } catch (_) {
-        // ignore
-      }
-    }
-    return false;
-  }
+  bool _showDialog = false;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         widget.child,
-        if (showNetworkError)
-          AbsorbPointer(
-            absorbing: true,
-            child: NetworkErrorDialog(
-              onDismiss: () {}, // دیگر dismiss نمی‌شود
-            ),
-          ),
+        Consumer2<NetworkProvider, NetworkMonitor>(
+          builder: (context, networkProvider, networkMonitor, _) {
+            final isOnlineFromProvider = networkProvider.isOnline;
+            final isOnlineFromMonitor = networkMonitor.isOnline;
+            final isOnline = isOnlineFromProvider && isOnlineFromMonitor;
+
+            // فقط رنگ نوار بالای صفحه را قرمز کن
+            if (!isOnline) {
+              // تغییر رنگ status bar
+              SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+                statusBarColor: Colors.red,
+                statusBarIconBrightness: Brightness.light,
+              ));
+            } else {
+              // بازگرداندن رنگ status bar به حالت پیش‌فرض
+              SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: Brightness.dark,
+              ));
+            }
+
+            Widget errorDialog = _showDialog 
+                ? NetworkErrorDialog(
+                    onDismiss: () {
+                      if (isOnline) {
+                        setState(() {
+                          _showDialog = false;
+                        });
+                      }
+                    },
+                  )
+                : const SizedBox.shrink();
+
+            if (!isOnline && !_showDialog) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                setState(() {
+                  _showDialog = true;
+                });
+              });
+            } else if (isOnline && _showDialog) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                setState(() {
+                  _showDialog = false;
+                });
+              });
+            }
+
+            return Stack(
+              children: [
+                if (_showDialog) errorDialog,
+              ],
+            );
+          },
+        ),
       ],
     );
   }

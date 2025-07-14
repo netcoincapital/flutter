@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
+
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/rendering.dart';
 import 'dart:ui' as ui;
 import 'package:path_provider/path_provider.dart';
+import '../providers/price_provider.dart';
+import '../utils/shared_preferences_utils.dart';
 
 class ReceiveWalletScreen extends StatefulWidget {
   final String cryptoName;
@@ -24,6 +28,72 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
   bool showAmountDialog = false;
   bool copied = false;
   final GlobalKey _qrKey = GlobalKey();
+  String selectedCurrency = 'USD';
+  double tokenPrice = 0.0;
+  bool isPriceLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSelectedCurrency();
+    _fetchTokenPrice();
+  }
+
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  /// بارگذاری ارز انتخابی (مطابق با Kotlin recieve_wallet.kt)
+  Future<void> _loadSelectedCurrency() async {
+    try {
+      selectedCurrency = await SharedPreferencesUtils.getSelectedCurrency();
+      setState(() {});
+      print('💰 ReceiveWallet Screen - Loaded selected currency: $selectedCurrency');
+    } catch (e) {
+      print('❌ Error loading selected currency: $e');
+      selectedCurrency = 'USD'; // fallback
+    }
+  }
+
+  /// دریافت قیمت توکن خاص (مطابق با Kotlin recieve_wallet.kt)
+  Future<void> _fetchTokenPrice() async {
+    setState(() {
+      isPriceLoading = true;
+    });
+
+    try {
+      print('🔄 ReceiveWallet Screen: Fetching price for token: ${widget.symbol} (matching Kotlin recieve_wallet.kt)');
+      
+      final priceProvider = Provider.of<PriceProvider>(context, listen: false);
+      
+      // دریافت قیمت فقط برای این توکن مطابق با Kotlin recieve_wallet.kt
+      await priceProvider.fetchPrices([widget.symbol], currencies: [selectedCurrency]);
+      
+      final price = priceProvider.getPriceForCurrency(widget.symbol, selectedCurrency);
+      
+      setState(() {
+        tokenPrice = price ?? 0.0;
+        isPriceLoading = false;
+      });
+      
+      if (price != null && price > 0.0) {
+        print('✅ ReceiveWallet Screen: Price for ${widget.symbol}: $price $selectedCurrency');
+      } else {
+        print('⚠️ ReceiveWallet Screen: No price found for ${widget.symbol}');
+      }
+    } catch (e) {
+      print('❌ ReceiveWallet Screen: Error fetching price: $e');
+      setState(() {
+        tokenPrice = 0.0;
+        isPriceLoading = false;
+      });
+    }
+  }
 
   void _showAmountModal() async {
     final controller = TextEditingController(text: amount);
@@ -38,7 +108,7 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
           ),
           child: SingleChildScrollView(
             child: Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
               ),
@@ -60,14 +130,14 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
                           ),
                         ),
                       ),
-                      const Text('Enter Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(_safeTranslate('enter_amount', 'Enter Amount'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       const SizedBox(height: 10),
                       TextField(
                         controller: controller,
-                        keyboardType: TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'Amount',
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          border: const OutlineInputBorder(),
+                          labelText: _safeTranslate('amount', 'Amount'),
                         ),
                         onChanged: (val) => setModalState(() {}),
                         autofocus: true,
@@ -78,12 +148,12 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
                         children: [
                           TextButton(
                             onPressed: () => Navigator.pop(context),
-                            child: const Text('Cancel'),
+                            child: Text(_safeTranslate('cancel', 'Cancel')),
                           ),
                           const SizedBox(width: 8),
                           ElevatedButton(
                             onPressed: controller.text.trim().isEmpty ? null : () => Navigator.pop(context, controller.text),
-                            child: const Text('OK'),
+                            child: Text(_safeTranslate('ok', 'OK')),
                           ),
                         ],
                       ),
@@ -106,7 +176,7 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
   Future<void> _shareQrAndAddress() async {
     try {
       if (_qrKey.currentContext == null || !mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR code is not ready.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_safeTranslate('qr_code_not_ready', 'QR code is not ready.'))));
         debugPrint('QR context is null or not mounted');
         return;
       }
@@ -129,11 +199,8 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
       await file.writeAsBytes(pngBytes);
       debugPrint('QR file path: \\${file.path} exists: \\${await file.exists()} size: \\${pngBytes.length}');
       final text = 'Public Address: ${widget.address}';
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: text,
-        subject: 'Public Address',
-      );
+      // Share functionality removed for now
+      print('Share functionality removed');
       // هیچ return یا متغیر result اینجا وجود ندارد
     } catch (e, stack) {
       debugPrint('Share error: \\${e.toString()}');
@@ -152,7 +219,7 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Receive', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: Text(_safeTranslate('receive', 'Receive'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Padding(
@@ -173,7 +240,7 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Only send (${widget.blockchainName}) assets to this address.\nOther assets will be lost forever.',
+                      _safeTranslate('only_send_assets_warning', 'Only send ({blockchain}) assets to this address.\nOther assets will be lost forever.').replaceAll('{blockchain}', widget.blockchainName),
                       style: const TextStyle(fontSize: 13, color: Color(0xFFE68A00)),
                     ),
                   ),
@@ -189,7 +256,7 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 2))],
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 2))],
               ),
               padding: const EdgeInsets.all(16),
               child: RepaintBoundary(
@@ -203,8 +270,8 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
                       version: QrVersions.auto,
                       size: 220,
                       gapless: false,
-                      embeddedImage: AssetImage('assets/images/logo.png'),
-                      embeddedImageStyle: QrEmbeddedImageStyle(size: const Size(40, 40)),
+                      embeddedImage: const AssetImage('assets/images/logo.png'),
+                      embeddedImageStyle: const QrEmbeddedImageStyle(size: Size(40, 40)),
                     ),
                   ),
                 ),
@@ -222,7 +289,7 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
               children: [
                 _ActionButton(
                   icon: Icons.copy,
-                  label: copied ? 'Copied!' : 'Copy',
+                  label: copied ? _safeTranslate('copied', 'Copied!') : _safeTranslate('copy', 'Copy'),
                   onTap: () async {
                     await Clipboard.setData(ClipboardData(text: widget.address));
                     setState(() { copied = true; });
@@ -231,12 +298,12 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
                 ),
                 _ActionButton(
                   icon: Icons.edit,
-                  label: 'Set Amount',
+                  label: _safeTranslate('set_amount', 'Set Amount'),
                   onTap: _showAmountModal,
                 ),
                 _ActionButton(
                   icon: Icons.share,
-                  label: 'Share',
+                  label: _safeTranslate('share', 'Share'),
                   onTap: _shareQrAndAddress,
                 ),
               ],
@@ -244,15 +311,36 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
             if (amount.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 12.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Column(
                   children: [
-                    Text('$amount ${widget.cryptoName}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () => setState(() => amount = ''),
-                      child: const Icon(Icons.cancel, size: 20, color: Colors.grey),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('$amount ${widget.cryptoName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => setState(() => amount = ''),
+                          child: const Icon(Icons.cancel, size: 20, color: Colors.grey),
+                        ),
+                      ],
                     ),
+                    // نمایش تقریبی قیمت مقدار وارد شده
+                    if (tokenPrice > 0.0)
+                      Consumer<PriceProvider>(
+                        builder: (context, priceProvider, child) {
+                          final amountValue = double.tryParse(amount) ?? 0.0;
+                          final totalValue = amountValue * tokenPrice;
+                          final currencySymbol = priceProvider.getCurrencySymbolForCurrency(selectedCurrency);
+                          
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              '~ $currencySymbol${totalValue.toStringAsFixed(2)}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -278,8 +366,8 @@ class _ActionButton extends StatelessWidget {
           Container(
             width: 48,
             height: 48,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF7F7F7),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF7F7F7),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 24, color: Colors.black),
@@ -305,6 +393,15 @@ class _AmountDialog extends StatefulWidget {
 class _AmountDialogState extends State<_AmountDialog> {
   late TextEditingController _controller;
 
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -326,25 +423,25 @@ class _AmountDialogState extends State<_AmountDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Enter Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(_safeTranslate('enter_amount', 'Enter Amount'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 16),
             TextField(
               controller: _controller,
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Amount',
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: _safeTranslate('amount', 'Amount'),
               ),
             ),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(onPressed: widget.onCancel, child: const Text('Cancel')),
+                TextButton(onPressed: widget.onCancel, child: Text(_safeTranslate('cancel', 'Cancel'))),
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () => widget.onDone(_controller.text),
-                  child: const Text('OK'),
+                  child: Text(_safeTranslate('ok', 'OK')),
                 ),
               ],
             ),

@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:easy_localization/easy_localization.dart';
+import '../services/passcode_manager.dart';
+import '../services/wallet_state_manager.dart';
 
 class PasscodeScreen extends StatefulWidget {
   final String title;
   final String? walletName;
   final String? firstPasscode; // برای تایید
   final String? savedPasscode; // برای ورود
-  const PasscodeScreen({Key? key, required this.title, this.walletName, this.firstPasscode, this.savedPasscode}) : super(key: key);
+  final VoidCallback? onSuccess; // تابعی که بعد از موفقیت اجرا می‌شود
+  const PasscodeScreen({Key? key, required this.title, this.walletName, this.firstPasscode, this.savedPasscode, this.onSuccess}) : super(key: key);
 
   @override
   State<PasscodeScreen> createState() => _PasscodeScreenState();
@@ -17,7 +21,10 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
   String enteredCode = '';
   String errorMessage = '';
   bool isConfirmed = false;
-  bool isBiometricAvailable = false; // برای نمایش آیکون اثر انگشت
+  bool isBiometricAvailable = false;
+  bool isLocked = false;
+  int remainingAttempts = 5;
+  int lockoutRemainingTime = 0;
   final LocalAuthentication auth = LocalAuthentication();
 
   final borderColors = const [
@@ -25,10 +32,33 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
     Color(0xFF27b6ac), Color(0xFF2db6c7), Color(0xFF39b6fb)
   ];
 
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _checkBiometric();
+    _checkLockStatus();
+    _redirectIfPasscodeExists();
+  }
+
+  Future<void> _redirectIfPasscodeExists() async {
+    // Prevent showing choose/confirm passcode if passcode already exists
+    if (widget.title == _safeTranslate('choose_passcode', 'Choose Passcode') || widget.title == _safeTranslate('confirm_passcode', 'Confirm Passcode')) {
+      final isSet = await PasscodeManager.isPasscodeSet();
+      if (isSet) {
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/enter-passcode');
+        }
+      }
+    }
   }
 
   Future<void> _checkBiometric() async {
@@ -39,7 +69,48 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
     });
   }
 
+  Future<void> _checkLockStatus() async {
+    final locked = await PasscodeManager.isLocked();
+    final attempts = await PasscodeManager.getRemainingAttempts();
+    final lockoutTime = await PasscodeManager.getLockoutRemainingTime();
+    
+    setState(() {
+      isLocked = locked;
+      remainingAttempts = attempts;
+      lockoutRemainingTime = lockoutTime;
+    });
+    
+    if (locked) {
+      _startLockoutTimer();
+    }
+  }
+
+  void _startLockoutTimer() {
+    Future.delayed(const Duration(seconds: 1), () async {
+      if (mounted) {
+        final remaining = await PasscodeManager.getLockoutRemainingTime();
+        setState(() {
+          lockoutRemainingTime = remaining;
+        });
+        
+        if (remaining > 0) {
+          _startLockoutTimer();
+        } else {
+          await _checkLockStatus();
+        }
+      }
+    });
+  }
+
+  String _formatTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
   void _onNumberTap(String number) {
+    if (isLocked) return;
+    
     if (enteredCode.length < 6) {
       setState(() {
         enteredCode += number;
@@ -67,13 +138,13 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
       
       if (!canCheck || !available || availableBiometrics.isEmpty) {
         setState(() {
-          errorMessage = 'Biometric authentication is not available on this device';
+          errorMessage = _safeTranslate('biometric_not_available', 'Biometric authentication is not available on this device');
         });
         return;
       }
       
       final didAuth = await auth.authenticate(
-        localizedReason: 'Authenticate to continue',
+        localizedReason: _safeTranslate('authenticate_to_continue', 'Authenticate to continue'),
         options: const AuthenticationOptions(
           biometricOnly: false, // اجازه PIN/Pattern نیز داده شود
           stickyAuth: true,
@@ -88,7 +159,7 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
               context,
               MaterialPageRoute(
                 builder: (_) => PasscodeScreen(
-                  title: 'Confirm Passcode',
+                  title: _safeTranslate('confirm_passcode', 'Confirm Passcode'),
                   walletName: widget.walletName,
                   firstPasscode: enteredCode,
                 ),
@@ -99,18 +170,19 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
             Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
             break;
           case 'Enter Passcode':
+            // Use a smoother navigation approach to prevent black screen
             Navigator.pushReplacementNamed(context, '/home');
             break;
         }
       } else {
         setState(() {
-          errorMessage = 'Authentication was cancelled or failed';
+          errorMessage = _safeTranslate('authentication_cancelled', 'Authentication was cancelled or failed');
         });
       }
     } catch (e) {
       print('Biometric error: $e'); // برای دیباگ
       setState(() {
-        errorMessage = 'Biometric authentication error: ${e.toString()}';
+        errorMessage = _safeTranslate('biometric_authentication_error', 'Biometric authentication error: {error}').replaceAll('{error}', e.toString());
       });
     }
   }
@@ -130,8 +202,8 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
   @override
   Widget build(BuildContext context) {
     // منطق بررسی پس‌کد
-    if (enteredCode.length == 6 && !isConfirmed) {
-      Future.microtask(() {
+    if (enteredCode.length == 6 && !isConfirmed && !isLocked) {
+      Future.microtask(() async {
         switch (widget.title) {
           case 'Choose Passcode':
             // به صفحه تایید برو و پس‌کد را منتقل کن
@@ -139,30 +211,76 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
               context,
               MaterialPageRoute(
                 builder: (_) => PasscodeScreen(
-                  title: 'Confirm Passcode',
+                  title: _safeTranslate('confirm_passcode', 'Confirm Passcode'),
                   walletName: widget.walletName,
                   firstPasscode: enteredCode,
+                  onSuccess: widget.onSuccess,
                 ),
               ),
             );
             break;
           case 'Confirm Passcode':
             if (enteredCode == widget.firstPasscode) {
-              // موفقیت: ذخیره پس‌کد و رفتن به صفحه بعد
-              Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
+              try {
+                // ذخیره پس‌کد
+                final success = await PasscodeManager.setPasscode(enteredCode);
+                if (success) {
+                  // موفقیت: رفتن به صفحه بعد
+                  if (widget.onSuccess != null) {
+                    widget.onSuccess!();
+                  } else {
+                    // Check if we have wallet data to go to backup, otherwise go to home
+                    final hasWallet = await WalletStateManager.instance.hasWallet();
+                    if (hasWallet && widget.walletName != null) {
+                      Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
+                    } else {
+                      Navigator.pushReplacementNamed(context, '/home');
+                    }
+                  }
+                } else {
+                  setState(() {
+                    errorMessage = _safeTranslate('failed_to_set_passcode', 'Failed to set passcode. Please try again.');
+                    enteredCode = '';
+                  });
+                }
+              } catch (e) {
+                setState(() {
+                  errorMessage = _safeTranslate('error_setting_passcode', 'Error setting passcode: {error}').replaceAll('{error}', e.toString());
+                  enteredCode = '';
+                });
+              }
             } else {
               setState(() {
-                errorMessage = 'The passcode entered is not the same';
+                errorMessage = _safeTranslate('passcode_mismatch', 'The passcode entered is not the same');
                 enteredCode = '';
               });
             }
             break;
           case 'Enter Passcode':
-            if (enteredCode == widget.savedPasscode) {
-              Navigator.pushReplacementNamed(context, '/home');
-            } else {
+            try {
+              final isValid = await PasscodeManager.verifyPasscode(enteredCode);
+              if (isValid) {
+                if (widget.onSuccess != null) {
+                  widget.onSuccess!();
+                } else {
+                  // Use a smoother navigation approach to prevent black screen
+                  // Navigate with proper transition and clear stack
+                  Navigator.pushReplacementNamed(context, '/home');
+                }
+              } else {
+                await _checkLockStatus();
+                final attemptsRemaining = remainingAttempts > 0 
+                  ? _safeTranslate('attempts_remaining', '{count} attempts remaining').replaceAll('{count}', remainingAttempts.toString())
+                  : _safeTranslate('wallet_locked', 'Wallet is locked');
+                setState(() {
+                  errorMessage = _safeTranslate('incorrect_passcode', 'Incorrect passcode. {attemptsRemaining}').replaceAll('{attemptsRemaining}', attemptsRemaining);
+                  enteredCode = '';
+                });
+              }
+            } catch (e) {
+              await _checkLockStatus();
               setState(() {
-                errorMessage = 'The passcode entered is not correct';
+                errorMessage = e.toString();
                 enteredCode = '';
               });
             }
@@ -180,7 +298,7 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
           children: [
             const SizedBox(height: 32),
             Text(
-              widget.title,
+              _getTranslatedTitle(),
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -228,22 +346,53 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
               }),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Passcode adds an extra layer of security\nwhen using the app',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-              textAlign: TextAlign.center,
-            ),
+            if (isLocked)
+              Column(
+                children: [
+                  const Icon(Icons.lock, color: Colors.red, size: 48),
+                  const SizedBox(height: 8),
+                  Text(
+                    _safeTranslate('wallet_is_locked', 'Wallet is locked'),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _safeTranslate('try_again_in', 'Try again in {time}').replaceAll('{time}', _formatTime(lockoutRemainingTime)),
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              )
+            else
+              Text(
+                _safeTranslate('passcode_adds_security', 'Passcode adds an extra layer of security\nwhen using the app'),
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
             const SizedBox(height: 40),
             _NumberPad(
               onNumberTap: _onNumberTap,
               onDelete: _onDelete,
               onBiometric: _onBiometric,
-              showBiometric: isBiometricAvailable,
+              showBiometric: isBiometricAvailable && !isLocked,
+              isLocked: isLocked,
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _getTranslatedTitle() {
+    switch (widget.title) {
+      case 'Choose Passcode':
+        return _safeTranslate('choose_passcode', 'Choose Passcode');
+      case 'Confirm Passcode':
+        return _safeTranslate('confirm_passcode', 'Confirm Passcode');
+      case 'Enter Passcode':
+        return _safeTranslate('enter_passcode', 'Enter Passcode');
+      default:
+        return widget.title;
+    }
   }
 }
 
@@ -252,7 +401,8 @@ class _NumberPad extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onBiometric;
   final bool showBiometric;
-  const _NumberPad({required this.onNumberTap, required this.onDelete, required this.onBiometric, this.showBiometric = true});
+  final bool isLocked;
+  const _NumberPad({required this.onNumberTap, required this.onDelete, required this.onBiometric, this.showBiometric = true, this.isLocked = false});
 
   @override
   Widget build(BuildContext context) {
@@ -261,27 +411,27 @@ class _NumberPad extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _NumButton('1', onNumberTap),
-            _NumButton('2', onNumberTap),
-            _NumButton('3', onNumberTap),
+            _NumButton('1', onNumberTap, isLocked: isLocked),
+            _NumButton('2', onNumberTap, isLocked: isLocked),
+            _NumButton('3', onNumberTap, isLocked: isLocked),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _NumButton('4', onNumberTap),
-            _NumButton('5', onNumberTap),
-            _NumButton('6', onNumberTap),
+            _NumButton('4', onNumberTap, isLocked: isLocked),
+            _NumButton('5', onNumberTap, isLocked: isLocked),
+            _NumButton('6', onNumberTap, isLocked: isLocked),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _NumButton('7', onNumberTap),
-            _NumButton('8', onNumberTap),
-            _NumButton('9', onNumberTap),
+            _NumButton('7', onNumberTap, isLocked: isLocked),
+            _NumButton('8', onNumberTap, isLocked: isLocked),
+            _NumButton('9', onNumberTap, isLocked: isLocked),
           ],
         ),
         const SizedBox(height: 16),
@@ -292,15 +442,18 @@ class _NumberPad extends StatelessWidget {
                 ? _CircleIconButton(
                     icon: Icons.fingerprint,
                     onTap: onBiometric,
+                    isLocked: isLocked,
                   )
                 : _CircleIconButton(
                     icon: null,
                     onTap: () {}, // دکمه غیر فعال
+                    isLocked: isLocked,
                   ),
-            _NumButton('0', onNumberTap),
+            _NumButton('0', onNumberTap, isLocked: isLocked),
             _CircleIconButton(
               icon: Icons.backspace,
-              onTap: onDelete,
+              onTap: isLocked ? () {} : onDelete,
+              isLocked: isLocked,
             ),
           ],
         ),
@@ -312,23 +465,24 @@ class _NumberPad extends StatelessWidget {
 class _CircleIconButton extends StatelessWidget {
   final IconData? icon;
   final VoidCallback onTap;
-  const _CircleIconButton({required this.icon, required this.onTap});
+  final bool isLocked;
+  const _CircleIconButton({required this.icon, required this.onTap, this.isLocked = false});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
       child: GestureDetector(
-        onTap: onTap,
+        onTap: isLocked ? null : onTap,
         child: Container(
           width: 60,
           height: 60,
-          decoration: const BoxDecoration(
-            color: Color(0xFFF2F2F2),
+          decoration: BoxDecoration(
+            color: isLocked ? Colors.grey.withOpacity(0.3) : const Color(0xFFF2F2F2),
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
-          child: icon != null ? Icon(icon, size: 28, color: Colors.grey) : null,
+          child: icon != null ? Icon(icon, size: 28, color: isLocked ? Colors.grey.withOpacity(0.5) : Colors.grey) : null,
         ),
       ),
     );
@@ -338,25 +492,30 @@ class _CircleIconButton extends StatelessWidget {
 class _NumButton extends StatelessWidget {
   final String number;
   final void Function(String) onTap;
-  const _NumButton(this.number, this.onTap);
+  final bool isLocked;
+  const _NumButton(this.number, this.onTap, {this.isLocked = false});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
       child: GestureDetector(
-        onTap: () => onTap(number),
+        onTap: isLocked ? null : () => onTap(number),
         child: Container(
           width: 60,
           height: 60,
-          decoration: const BoxDecoration(
-            color: Color(0xFFF2F2F2),
+          decoration: BoxDecoration(
+            color: isLocked ? Colors.grey.withOpacity(0.3) : const Color(0xFFF2F2F2),
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
           child: Text(
             number,
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black),
+            style: TextStyle(
+              fontSize: 28, 
+              fontWeight: FontWeight.bold, 
+              color: isLocked ? Colors.grey : Colors.black
+            ),
           ),
         ),
       ),

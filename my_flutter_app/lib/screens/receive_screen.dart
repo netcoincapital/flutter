@@ -1,7 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 import 'package:my_flutter_app/screens/receive_wallet_screen.dart'; // Added import for ReceiveWalletScreen
+import 'package:http/http.dart' as http;
+import '../services/secure_storage.dart';
+import '../providers/price_provider.dart';
+import '../utils/shared_preferences_utils.dart';
 
 class ReceiveScreen extends StatefulWidget {
   const ReceiveScreen({Key? key}) : super(key: key);
@@ -16,65 +23,132 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   bool isLoading = true;
   List<Map<String, dynamic>> tokens = [];
   Map<String, String> addressCache = {};
+  String? userId;
+  List<String> blockchains = ['All Blockchains'];
 
-  final List<Map<String, dynamic>> allTokens = [
-    {
-      'name': 'Bitcoin',
-      'symbol': 'BTC',
-      'blockchain': 'Bitcoin',
-      'icon': 'assets/images/btc.png',
-      'address': 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-    },
-    {
-      'name': 'Ethereum',
-      'symbol': 'ETH',
-      'blockchain': 'Ethereum',
-      'icon': 'assets/images/ethereum_logo.png',
-      'address': '0x742d35Cc6Afa4C532c6c5d9e79f4d4C2b9C0b0c7',
-    },
-    {
-      'name': 'Tether',
-      'symbol': 'USDT',
-      'blockchain': 'Binance Smart Chain',
-      'icon': 'assets/images/binance_logo.png',
-      'address': '0x742d35Cc6Afa4C532c6c5d9e79f4d4C2b9C0b0c7',
-    },
-    {
-      'name': 'Tron',
-      'symbol': 'TRX',
-      'blockchain': 'Tron',
-      'icon': 'assets/images/tron.png',
-      'address': 'TRX9aAqoDxtDFhNqDiXU7MH3ULMa2ZfCDC',
-    },
-    {
-      'name': 'Polygon',
-      'symbol': 'MATIC',
-      'blockchain': 'Polygon',
-      'icon': 'assets/images/pol.png',
-      'address': '0x742d35Cc6Afa4C532c6c5d9e79f4d4C2b9C0b0c7',
-    },
-  ];
-
-  final List<String> blockchains = [
-    'All Blockchains',
-    'Bitcoin',
-    'Ethereum',
-    'Binance Smart Chain',
-    'Polygon',
-    'Tron',
-  ];
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadTokens();
+    _initUserAndLoadTokens();
   }
 
-  void _loadTokens() async {
-    // در نسخه واقعی، اینجا باید از API یا کش بخوانی
-    await Future.delayed(const Duration(milliseconds: 500));
+  Future<void> _initUserAndLoadTokens() async {
+    setState(() => isLoading = true);
+    
+    // بارگذاری کیف پول انتخاب شده (مطابق با Kotlin)
+    final selectedWallet = await SecureStorage.instance.getSelectedWallet();
+    final selectedUserId = await SecureStorage.instance.getUserIdForSelectedWallet();
+    
+    if (selectedWallet != null && selectedUserId != null) {
+      userId = selectedUserId;
+      print('💰 Receive Screen - Loaded selected wallet: $selectedWallet with userId: $selectedUserId');
+    } else {
+      // Fallback: try to get from first available wallet
+      final wallets = await SecureStorage.instance.getWalletsList();
+      if (wallets.isNotEmpty) {
+        final firstWallet = wallets.first;
+        userId = firstWallet['userID'];
+        print('⚠️ No selected wallet found, using first available wallet: ${firstWallet['walletName']}');
+      }
+    }
+    
+    print('UserID: ' + (userId ?? 'NULL'));
+    
+    await _fetchTokensAndAddresses();
+  }
+
+  // --- کش لیست توکن‌ها (کریپتوها) ---
+  Future<List<Map<String, dynamic>>> _loadTokensFromCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString('crypto_tokens_cache');
+    if (jsonStr == null) return [];
+    final List<dynamic> list = jsonDecode(jsonStr);
+    return List<Map<String, dynamic>>.from(list);
+  }
+
+  Future<void> _saveTokensToCache(List<Map<String, dynamic>> tokens) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('crypto_tokens_cache', jsonEncode(tokens));
+  }
+
+  // --- کش آدرس‌های هر والت ---
+  Future<Map<String, String>> _loadAddressesFromCache(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString('wallet_addresses_cache_$userId');
+    if (jsonStr == null) return {};
+    final Map<String, dynamic> map = jsonDecode(jsonStr);
+    return Map<String, String>.from(map);
+  }
+
+  Future<void> _saveAddressesToCache(String userId, Map<String, String> addresses) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wallet_addresses_cache_$userId', jsonEncode(addresses));
+  }
+
+  Future<void> _fetchTokensAndAddresses() async {
+    setState(() => isLoading = true);
+    // 1. لیست توکن‌ها را از کش بخوان
+    List<Map<String, dynamic>> tokensList = await _loadTokensFromCache();
+    if (tokensList.isEmpty) {
+      // اگر کش نبود، از سرور بگیر و کش کن
+      final response = await http.get(Uri.parse('https://coinceeper.com/api/all-currencies'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> currencies = data['currencies'] ?? [];
+        tokensList = currencies.map((e) => Map<String, dynamic>.from(e)).toList();
+        await _saveTokensToCache(tokensList);
+      }
+    }
+    // 2. آدرس‌های این والت را از کش بخوان
+    Map<String, String> addresses = await _loadAddressesFromCache(userId ?? '');
+    // اگر کش نبود، از سرور بگیر و کش کن
+    if (addresses.isEmpty && userId != null) {
+      final List<String> blockchainNames = tokensList.map((t) => (t['BlockchainName'] ?? '').toString()).toSet().toList();
+      for (final blockchain in blockchainNames) {
+        final reciveResponse = await http.post(
+          Uri.parse('https://coinceeper.com/api/Recive'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'UserID': userId,
+            'BlockchainName': blockchain,
+          }),
+        );
+        if (reciveResponse.statusCode == 200) {
+          final reciveData = jsonDecode(reciveResponse.body);
+          if (reciveData['success'] == true && reciveData['PublicAddress'] != null) {
+            addresses[blockchain] = reciveData['PublicAddress'];
+          }
+        }
+      }
+      await _saveAddressesToCache(userId!, addresses);
+    }
+    // 3. مپ کردن توکن‌ها و آدرس‌ها برای نمایش
+    List<Map<String, dynamic>> updatedTokens = [];
+    Set<String> blockchainSet = {};
+    for (final token in tokensList) {
+      final blockchain = token['BlockchainName'] ?? '';
+      blockchainSet.add(blockchain);
+      final address = addresses[blockchain] ?? '';
+      updatedTokens.add({
+        'name': token['CurrencyName'] ?? '',
+        'symbol': token['Symbol'] ?? '',
+        'blockchain': blockchain,
+        'icon': token['Icon'] ?? '',
+        'address': address,
+      });
+    }
     setState(() {
-      tokens = allTokens;
+      tokens = updatedTokens;
+      blockchains = ['All Blockchains', ...blockchainSet];
       isLoading = false;
     });
   }
@@ -116,15 +190,28 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                   ),
                 ),
               ),
-              const Text('Select Blockchain', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(_safeTranslate('select_network', 'Select Network'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
               Flexible(
                 child: ListView.separated(
                   shrinkWrap: true,
-                  itemCount: blockchains.length,
+                  itemCount: 11, // Fixed list of 11 networks
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
-                    final bc = blockchains[index];
+                    final networks = [
+                      'All Blockchains',
+                      'Bitcoin',
+                      'Ethereum',
+                      'Binance Smart Chain',
+                      'Polygon',
+                      'Tron',
+                      'Arbitrum',
+                      'XRP',
+                      'Avalanche',
+                      'Polkadot',
+                      'Solana'
+                    ];
+                    final bc = networks[index];
                     final isSelected = selectedNetwork == bc;
                     return InkWell(
                       borderRadius: BorderRadius.circular(12),
@@ -174,6 +261,16 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
         return Image.asset('assets/images/pol.png', width: 24, height: 24);
       case 'Tron':
         return Image.asset('assets/images/tron.png', width: 24, height: 24);
+      case 'Arbitrum':
+        return Image.asset('assets/images/arb.png', width: 24, height: 24);
+      case 'XRP':
+        return Image.asset('assets/images/xrp.png', width: 24, height: 24);
+      case 'Avalanche':
+        return Image.asset('assets/images/avax.png', width: 24, height: 24);
+      case 'Polkadot':
+        return Image.asset('assets/images/dot.png', width: 24, height: 24);
+      case 'Solana':
+        return Image.asset('assets/images/sol.png', width: 24, height: 24);
       default:
         return Image.asset('assets/images/all.png', width: 24, height: 24);
     }
@@ -186,7 +283,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Receive Token', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: Text(_safeTranslate('receive_token', 'Receive Token'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: isLoading
@@ -198,7 +295,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                 children: [
                   TextField(
                     decoration: InputDecoration(
-                      hintText: 'Search',
+                      hintText: _safeTranslate('search', 'Search'),
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: const Color(0x25757575),
@@ -225,7 +322,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              selectedNetwork == 'All Blockchains' ? 'Select Network' : selectedNetwork,
+                              selectedNetwork == 'All Blockchains' ? _safeTranslate('select_network', 'Select Network') : selectedNetwork,
                               style: const TextStyle(fontSize: 16, color: Color(0xFF2c2c2c)),
                             ),
                           ),
@@ -267,23 +364,40 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
                             child: Row(
                               children: [
-                                Image.asset(token['icon'], width: 30, height: 30),
+                                Image.network(
+                                  token['icon'],
+                                  width: 30,
+                                  height: 30,
+                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                                ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text(token['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                          const SizedBox(width: 4),
-                                          Text('(${token['symbol']})', style: const TextStyle(fontSize: 12, color: Color(0xff2b2b2b))),
+                                          Text(
+                                            '${token['name']} (${token['symbol']})',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ],
                                       ),
                                       const SizedBox(height: 1),
-                                      Text(
-                                        address.length > 16 ? '${address.substring(0, 8)}...${address.substring(address.length - 5)}' : address,
-                                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              address.length > 16 ? '${address.substring(0, 8)}...${address.substring(address.length - 5)}' : address,
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                              style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -297,7 +411,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                                   icon: const Icon(Icons.copy, color: Colors.grey),
                                   onPressed: () async {
                                     await Clipboard.setData(ClipboardData(text: address));
-                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Wallet address copied')));
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_safeTranslate('wallet_address_copied', 'Wallet address copied'))));
                                   },
                                 ),
                               ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../layout/bottom_menu_with_siri.dart';
+import '../services/language_manager.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 class LanguagesScreen extends StatefulWidget {
   const LanguagesScreen({Key? key}) : super(key: key);
@@ -10,25 +11,26 @@ class LanguagesScreen extends StatefulWidget {
 }
 
 class _LanguagesScreenState extends State<LanguagesScreen> {
-  String selectedLanguage = 'default';
-
-  final List<Map<String, String>> suggestedLanguages = [
-    {'code': 'en', 'name': 'English'},
-    {'code': 'fa', 'name': 'Persian'},
-    {'code': 'tr', 'name': 'Türkçe'},
-  ];
+  String selectedLanguage = 'en';
 
   final List<Map<String, String>> allLanguages = [
-    {'code': 'en', 'name': 'English'},
-    {'code': 'fa', 'name': 'Persian'},
-    {'code': 'tr', 'name': 'Türkçe'},
-    {'code': 'de', 'name': 'Deutsch'},
-    {'code': 'fr', 'name': 'Français'},
-    {'code': 'es', 'name': 'Español'},
-    {'code': 'cs', 'name': 'Čeština'},
-    {'code': 'da', 'name': 'Dansk'},
-    {'code': 'br', 'name': 'Brezhoneg'},
+    {'code': 'en', 'name': 'English', 'nativeName': 'English'},
+    {'code': 'fa', 'name': 'Persian', 'nativeName': 'فارسی'},
+    {'code': 'ar', 'name': 'Arabic', 'nativeName': 'العربية'},
+    {'code': 'tr', 'name': 'Turkish', 'nativeName': 'Türkçe'},
+    {'code': 'zh', 'name': 'Chinese', 'nativeName': '中文'},
+    {'code': 'es', 'name': 'Spanish', 'nativeName': 'Español'},
   ];
+
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      print('⚠️ Localization failed for key "$key": $e');
+      return fallback;
+    }
+  }
 
   @override
   void initState() {
@@ -37,19 +39,31 @@ class _LanguagesScreenState extends State<LanguagesScreen> {
   }
 
   Future<void> _loadLanguage() async {
-    final prefs = await SharedPreferences.getInstance();
+    final savedLanguage = await LanguageManager.getSavedLanguage();
     setState(() {
-      selectedLanguage = prefs.getString('language_code') ?? 'default';
+      selectedLanguage = savedLanguage ?? 'en';
     });
   }
 
   Future<void> _saveLanguage(String code) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('language_code', code);
-    setState(() {
-      selectedLanguage = code;
-    });
-    Navigator.pop(context);
+    try {
+      // Change language using LanguageManager (this marks it as user-selected)
+      await LanguageManager.changeLanguage(context, code);
+      
+      setState(() {
+        selectedLanguage = code;
+      });
+      
+      Navigator.pop(context);
+    } catch (e) {
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${_safeTranslate('error_changing_language', 'Error changing language')}: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -59,69 +73,50 @@ class _LanguagesScreenState extends State<LanguagesScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('App languages', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 24)),
+        title: Text(
+          _safeTranslate('app_languages', 'App Languages'), 
+          style: const TextStyle(
+            color: Colors.black, 
+            fontWeight: FontWeight.bold, 
+            fontSize: 24
+          )
+        ),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(40),
-                  ),
-                  child: Center(
-                    child: Image.asset('assets/images/logo.png', width: 50, height: 50),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Text('Coinceeper', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black)),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const Text('Suggested', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: suggestedLanguages.map((lang) => _LanguageRow(
-                  name: lang['name']!,
-                  isChecked: selectedLanguage == lang['code'],
-                  onTap: () => _saveLanguage(lang['code']!),
-                )).toList(),
+            const SizedBox(height: 16),
+            Text(
+              _safeTranslate('select_language', 'Select Language'),
+              style: const TextStyle(
+                fontSize: 16, 
+                color: Colors.grey, 
+                fontWeight: FontWeight.bold
               ),
             ),
-            const SizedBox(height: 24),
-            const Text('All Languages', style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+              child: ListView.separated(
+                itemCount: allLanguages.length,
+                separatorBuilder: (context, index) => const Divider(
+                  color: Color(0x32626262), 
+                  thickness: 1, 
+                  height: 1
                 ),
-                child: ListView.separated(
-                  itemCount: allLanguages.length,
-                  separatorBuilder: (context, index) => const Divider(color: Colors.grey, height: 0.5),
-                  itemBuilder: (context, index) {
-                    final lang = allLanguages[index];
-                    return _LanguageRow(
-                      name: lang['name']!,
-                      isChecked: selectedLanguage == lang['code'],
-                      onTap: () => _saveLanguage(lang['code']!),
-                    );
-                  },
-                ),
+                itemBuilder: (context, index) {
+                  final language = allLanguages[index];
+                  final isSelected = selectedLanguage == language['code'];
+                  
+                  return _LanguageItem(
+                    name: language['name']!,
+                    nativeName: language['nativeName']!,
+                    isSelected: isSelected,
+                    onTap: () => _saveLanguage(language['code']!),
+                  );
+                },
               ),
             ),
           ],
@@ -132,25 +127,82 @@ class _LanguagesScreenState extends State<LanguagesScreen> {
   }
 }
 
-class _LanguageRow extends StatelessWidget {
+class _LanguageItem extends StatelessWidget {
   final String name;
-  final bool isChecked;
+  final String nativeName;
+  final bool isSelected;
   final VoidCallback onTap;
-  const _LanguageRow({required this.name, required this.isChecked, required this.onTap});
+
+  const _LanguageItem({
+    required this.name,
+    required this.nativeName,
+    required this.isSelected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
+        padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 0.0),
         child: Row(
           children: [
-            Expanded(
-              child: Text(name, style: const TextStyle(fontSize: 16, color: Colors.black)),
+            // Language icon
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF16B369) : Colors.grey.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                Icons.language,
+                color: isSelected ? Colors.white : Colors.grey,
+                size: 20,
+              ),
             ),
-            if (isChecked)
-              const Text('✔', style: TextStyle(fontSize: 16, color: Color(0xFF16B369))),
+            const SizedBox(width: 16),
+            // Language names
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: isSelected ? const Color(0xFF16B369) : Colors.black,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                  if (name != nativeName)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        nativeName,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // Selection indicator
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF16B369),
+                size: 24,
+              )
+            else
+              const Icon(
+                Icons.chevron_right,
+                color: Colors.grey,
+                size: 20,
+              ),
           ],
         ),
       ),

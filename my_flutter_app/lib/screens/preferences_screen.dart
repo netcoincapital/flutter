@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../layout/bottom_menu_with_siri.dart';
+import '../services/language_manager.dart';
 
 class PreferencesScreen extends StatefulWidget {
   const PreferencesScreen({Key? key}) : super(key: key);
@@ -11,7 +13,36 @@ class PreferencesScreen extends StatefulWidget {
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
   String currentCurrency = 'USD';
-  String currentLanguage = 'System default';
+  String currentLanguage = 'English';
+
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  // Convert language code to display name
+  String _getLanguageDisplayName(String code) {
+    switch (code) {
+      case 'en':
+        return 'English';
+      case 'fa':
+        return 'فارسی';
+      case 'ar':
+        return 'العربية';
+      case 'tr':
+        return 'Türkçe';
+      case 'zh':
+        return '中文';
+      case 'es':
+        return 'Español';
+      default:
+        return 'English';
+    }
+  }
 
   @override
   void initState() {
@@ -21,10 +52,17 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   Future<void> _loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // Load currency
+    final currency = prefs.getString('selected_currency') ?? 'USD';
+    
+    // Load current language from LanguageManager
+    final languageCode = await LanguageManager.getSavedLanguage();
+    final displayName = _getLanguageDisplayName(languageCode ?? 'en');
+    
     setState(() {
-      currentCurrency = prefs.getString('selected_currency') ?? 'USD';
-      // TODO: Load language preference when language screen is implemented
-      currentLanguage = 'System default';
+      currentCurrency = currency;
+      currentLanguage = displayName;
     });
   }
 
@@ -35,7 +73,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Preferences', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 24)),
+        title: Text(_safeTranslate('preferences', 'Preferences'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 24)),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Padding(
@@ -45,7 +83,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           children: [
             const SizedBox(height: 16),
             _PreferenceItem(
-              title: 'Currency',
+              title: _safeTranslate('currency', 'Currency'),
               subtitle: currentCurrency,
               onTap: () async {
                 final result = await Navigator.pushNamed(context, '/fiat-currencies');
@@ -55,12 +93,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               },
             ),
             _PreferenceItem(
-              title: 'App Language',
+              title: _safeTranslate('app_language', 'App Language'),
               subtitle: currentLanguage,
               onTap: () async {
                 final result = await Navigator.pushNamed(context, '/languages');
                 if (result != null) {
-                  _loadPreferences();
+                  _loadPreferences(); // Reload preferences after returning
                 }
               },
             ),

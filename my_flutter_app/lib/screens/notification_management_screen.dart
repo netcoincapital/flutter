@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../layout/bottom_menu_with_siri.dart';
 
 class NotificationManagementScreen extends StatefulWidget {
@@ -13,6 +14,15 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
   bool pushNotifications = true;
   bool sendAndReceive = false;
   bool isLoading = true;
+
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
 
   @override
   void initState() {
@@ -62,7 +72,7 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Notifications', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20)),
+        title: Text(_safeTranslate('notifications', 'Notifications'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20)),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Padding(
@@ -72,16 +82,16 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
           children: [
             const SizedBox(height: 8),
             _NotificationItem(
-              title: 'Allow push notifications',
-              description: 'Activate or deactivate push notifications',
+              title: _safeTranslate('allow_push_notifications', 'Allow push notifications'),
+              description: _safeTranslate('activate_deactivate_push_notifications', 'Activate or deactivate push notifications'),
               state: pushNotifications,
               onToggle: (val) => _setPushNotifications(val),
               switchColor: const Color(0xFF27B6AC),
             ),
             const SizedBox(height: 32),
             _NotificationItem(
-              title: 'Send and receive',
-              description: 'Get notified when sending or receiving',
+              title: _safeTranslate('send_and_receive', 'Send and receive'),
+              description: _safeTranslate('get_notified_sending_receiving', 'Get notified when sending or receiving'),
               state: sendAndReceive,
               onToggle: (val) => _setSendAndReceive(val),
               enabled: pushNotifications,

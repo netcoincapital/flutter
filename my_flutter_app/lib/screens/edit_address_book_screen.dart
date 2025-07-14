@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
+import '../models/address_book_entry.dart';
+import '../services/address_book_service.dart';
 
 class EditAddressBookScreen extends StatefulWidget {
   final String walletName;
@@ -14,6 +17,15 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
   late TextEditingController _addressController;
   bool showDeleteDialog = false;
 
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -28,16 +40,21 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
     super.dispose();
   }
 
-  void _save() {
-    // TODO: ذخیره تغییرات در دیتابیس/SharedPreferences
-    Navigator.pop(context, {
-      'name': _nameController.text.trim(),
-      'address': _addressController.text.trim(),
-      'deleted': false,
-    });
+  void _save() async {
+    final name = _nameController.text.trim();
+    final address = _addressController.text.trim();
+    if (name.isNotEmpty && address.isNotEmpty) {
+      // Editing address in AddressBookService should be handled by parent (in AddressBookScreen)
+      Navigator.pop(context, {
+        'name': name,
+        'address': address,
+        'deleted': false,
+      });
+    }
   }
 
-  void _delete() {
+  void _delete() async {
+    // Deleting address in AddressBookService should be handled by parent (in AddressBookScreen)
     Navigator.pop(context, {
       'name': widget.walletName,
       'address': widget.walletAddress,
@@ -60,9 +77,9 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 8),
-              const Text('Delete Wallet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(_safeTranslate('delete_wallet', 'Delete Wallet'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              const Text('Are you sure you want to delete this wallet?', style: TextStyle(fontSize: 16)),
+              Text(_safeTranslate('delete_wallet_confirmation', 'Are you sure you want to delete this wallet?'), style: const TextStyle(fontSize: 16)),
               const SizedBox(height: 32),
               Row(
                 children: [
@@ -74,7 +91,7 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
                         side: const BorderSide(color: Color(0xFF16B369)),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text('Cancel'),
+                      child: Text(_safeTranslate('cancel', 'Cancel')),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -87,7 +104,7 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         elevation: 0,
                       ),
-                      child: const Text('Delete'),
+                      child: Text(_safeTranslate('delete', 'Delete')),
                     ),
                   ),
                 ],
@@ -121,20 +138,20 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                       const SizedBox(width: 4),
-                      const Text(
-                        'Edit Wallet',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black),
+                      Text(
+                        _safeTranslate('edit_wallet', 'Edit Wallet'),
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black),
                       ),
                     ],
                   ),
                   TextButton(
                     onPressed: _save,
-                    child: const Text('Save', style: TextStyle(fontSize: 16, color: Color(0xFF16B369))),
+                    child: Text(_safeTranslate('save', 'Save'), style: const TextStyle(fontSize: 16, color: Color(0xFF16B369))),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
-              const Text('Wallet Name', style: TextStyle(fontSize: 14, color: Colors.grey)),
+              Text(_safeTranslate('wallet_name', 'Wallet Name'), style: const TextStyle(fontSize: 14, color: Colors.grey)),
               const SizedBox(height: 8),
               TextField(
                 controller: _nameController,
@@ -152,7 +169,7 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
                 style: const TextStyle(fontSize: 16),
               ),
               const SizedBox(height: 24),
-              const Text('Wallet Address', style: TextStyle(fontSize: 14, color: Colors.grey)),
+              Text(_safeTranslate('wallet_address', 'Wallet Address'), style: const TextStyle(fontSize: 14, color: Colors.grey)),
               const SizedBox(height: 8),
               TextField(
                 controller: _addressController,
@@ -183,7 +200,7 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
                     ),
                     elevation: 0,
                   ),
-                  child: const Text('Delete', style: TextStyle(fontSize: 16)),
+                  child: Text(_safeTranslate('delete', 'Delete'), style: const TextStyle(fontSize: 16)),
                 ),
               ),
             ],

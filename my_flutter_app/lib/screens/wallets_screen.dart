@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:provider/provider.dart';
 import '../layout/main_layout.dart';
 import 'wallet_screen.dart';
 import 'inside_import_wallet_screen.dart';
 import 'inside_new_wallet_screen.dart';
+import '../services/secure_storage.dart';
+import '../providers/app_provider.dart';
 
 class Wallet {
   final String walletName;
@@ -27,31 +31,59 @@ class _WalletsScreenState extends State<WalletsScreen> {
   List<Wallet> wallets = [];
   String selectedWalletName = '';
 
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _loadWallets();
   }
 
-  void _loadWallets() {
-    // TODO: Load wallets from SharedPreferences
-    setState(() {
-      wallets = [
-        Wallet(walletName: 'My Wallet', userId: 'user1'),
-        Wallet(walletName: 'Test Wallet', userId: 'user2'),
-        Wallet(walletName: 'Demo Wallet', userId: 'user3'),
-      ];
-      if (wallets.isNotEmpty) {
-        selectedWalletName = wallets.first.walletName;
-      }
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh wallets list when screen comes into focus
+    _loadWallets();
   }
 
-  void _saveSelectedWallet(String walletName, String userId) {
-    // TODO: Save selected wallet to SharedPreferences
+  void _loadWallets() async {
+    // Load wallets from SecureStorage
+    final storedWallets = await SecureStorage.instance.getWalletsList();
+    print('Wallets loaded: ' + storedWallets.toString());
+    final selected = await SecureStorage.instance.getSelectedWallet();
+    setState(() {
+      wallets = storedWallets.map((w) => Wallet(
+        walletName: w['walletName'] ?? '',
+        userId: w['userID'] ?? '',
+        isBackedUp: false, // You can update this if you track backup status
+      )).toList();
+      selectedWalletName = selected ?? (wallets.isNotEmpty ? wallets.first.walletName : '');
+    });
+    
+    // Also refresh AppProvider wallets list
+    final appProvider = Provider.of<AppProvider>(context, listen: false);
+    await appProvider.refreshWallets();
+  }
+
+  void _saveSelectedWallet(String walletName, String userId) async {
+    // Save selected wallet to SecureStorage (مطابق با Kotlin)
+    await SecureStorage.instance.saveSelectedWallet(walletName, userId);
+    
+    // Update AppProvider
+    final appProvider = Provider.of<AppProvider>(context, listen: false);
+    await appProvider.selectWallet(walletName);
+    
     setState(() {
       selectedWalletName = walletName;
     });
+    
+    print('💰 Selected wallet: $walletName with userId: $userId');
   }
 
   void _showAddWalletModal() {
@@ -66,20 +98,28 @@ class _WalletsScreenState extends State<WalletsScreen> {
     );
   }
 
-  void _onCreateNewWallet() {
+  void _onCreateNewWallet() async {
     Navigator.of(context).pop();
-    Navigator.push(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const InsideNewWalletScreen()),
     );
+    // Refresh wallets list when returning from wallet creation
+    if (result != null) {
+      _loadWallets();
+    }
   }
 
-  void _onAddExistingWallet() {
+  void _onAddExistingWallet() async {
     Navigator.of(context).pop();
-    Navigator.push(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const InsideImportWalletScreen()),
     );
+    // Refresh wallets list when returning from wallet import
+    if (result != null) {
+      _loadWallets();
+    }
   }
 
   @override
@@ -94,30 +134,27 @@ class _WalletsScreenState extends State<WalletsScreen> {
               children: [
                 const SizedBox(height: 8),
                 // Header
-                Stack(
-                  alignment: Alignment.center,
+                Row(
                   children: [
-                    const Center(
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.black),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    Expanded(
                       child: Text(
-                        'Wallets',
-                        style: TextStyle(
+                        _safeTranslate('wallets', 'Wallets'),
+                        style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: Colors.black,
                         ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                    Positioned(
-                      left: 0,
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.black),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                    Positioned(
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: _showAddWalletModal,
+                    GestureDetector(
+                      onTap: _showAddWalletModal,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
                         child: Image.asset(
                           'assets/images/plus.png',
                           width: 16,
@@ -182,6 +219,14 @@ class _WalletItem extends StatelessWidget {
     required this.onBackupClick,
   });
 
+  String _safeTranslate(BuildContext context, String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -240,9 +285,9 @@ class _WalletItem extends StatelessWidget {
                 const SizedBox(height: 8),
                 GestureDetector(
                   onTap: onBackupClick,
-                  child: const Text(
-                    'Back up now',
-                    style: TextStyle(
+                  child: Text(
+                    _safeTranslate(context, 'back_up_now', 'Back up now'),
+                    style: const TextStyle(
                       fontSize: 14,
                       color: Color(0xFF007AFF),
                       fontWeight: FontWeight.bold,
@@ -267,6 +312,14 @@ class _AddWalletModalContent extends StatelessWidget {
     required this.onAddExistingWallet,
   });
 
+  String _safeTranslate(BuildContext context, String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -286,15 +339,15 @@ class _AddWalletModalContent extends StatelessWidget {
           const SizedBox(height: 16),
           _WalletOptionTile(
             icon: Icons.auto_awesome,
-            title: 'Create new wallet',
-            subtitle: 'Secret phrase or FaceID / fingerprint',
+            title: _safeTranslate(context, 'create_new_wallet', 'Create new wallet'),
+            subtitle: _safeTranslate(context, 'secret_phrase_or_biometric', 'Secret phrase or FaceID / fingerprint'),
             onTap: onCreateNewWallet,
           ),
           const SizedBox(height: 12),
           _WalletOptionTile(
             icon: Icons.add_circle_outline,
-            title: 'Add existing wallet',
-            subtitle: 'Secret phrase, Google Drive or view-only',
+            title: _safeTranslate(context, 'add_existing_wallet', 'Add existing wallet'),
+            subtitle: _safeTranslate(context, 'secret_phrase_google_drive', 'Secret phrase, Google Drive or view-only'),
             onTap: onAddExistingWallet,
           ),
         ],

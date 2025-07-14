@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'dart:convert';
 
 class ImportCreateScreen extends StatefulWidget {
@@ -14,6 +15,15 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
   late AnimationController _animationController;
   late Animation<double> _animation;
   int _logoTapCount = 0;
+
+  // Safe translate method with fallback
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
 
   void _onLogoTap() {
     setState(() {
@@ -103,9 +113,9 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                               end: Alignment((_animation.value + 500) / bounds.width, 0),
                             ).createShader(bounds);
                           },
-                          child: const Text(
-                            'LAXCE WALLET',
-                            style: TextStyle(
+                          child: Text(
+                            _safeTranslate('laxce_wallet', 'LAXCE WALLET'),
+                            style: const TextStyle(
                               fontSize: 48,
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
@@ -124,9 +134,9 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                 // Description Text
                 Container(
                   width: MediaQuery.of(context).size.width * 0.8,
-                  child: const Text(
-                    'Import your existing wallet or create a new one to get started',
-                    style: TextStyle(
+                  child: Text(
+                    _safeTranslate('import_existing_wallet_description', 'Import your existing wallet or create a new one to get started'),
+                    style: const TextStyle(
                       fontSize: 16,
                       color: Colors.grey,
                     ),
@@ -157,9 +167,9 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'Import Wallet',
-                      style: TextStyle(
+                    child: Text(
+                      _safeTranslate('import_wallet', 'Import Wallet'),
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.normal,
                       ),
@@ -186,15 +196,19 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'Create New Wallet',
-                      style: TextStyle(
+                    child: Text(
+                      _safeTranslate('create_new_wallet', 'Create New Wallet'),
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
                 ),
+                
+                const SizedBox(height: 16),
+                
+
               ],
             ),
           ),
