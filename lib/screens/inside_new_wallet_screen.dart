@@ -10,6 +10,7 @@ import '../services/secure_storage.dart';
 import '../providers/token_provider.dart';
 import '../providers/app_provider.dart';
 import '../services/device_registration_manager.dart';
+import '../services/security_settings_manager.dart';
 import 'passcode_screen.dart';
 import 'dart:async'; // اضافه کردن برای Completer
 import '../services/update_balance_helper.dart'; // اضافه کردن helper مطابق Kotlin
@@ -27,6 +28,7 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
   bool showErrorModal = false;
   String walletName = 'New 1';
   late ApiService _apiService;
+  final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
 
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
@@ -194,26 +196,43 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         print('   Overall Success: $allApisSuccessful');
 
         if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PasscodeScreen(
-                title: _safeTranslate('choose_passcode', 'Choose Passcode'),
-                walletName: newWalletName,
-                onSuccess: () {
-                  Navigator.pushReplacementNamed(
-                    context,
-                    '/backup',
-                    arguments: {
-                      'walletName': newWalletName,
-                      'userID': response.userID!,
-                      'mnemonic': response.mnemonic ?? '',
-                    },
-                  );
-                },
+          // بررسی فعال بودن passcode
+          final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+          
+          if (isPasscodeEnabled) {
+            // اگر passcode فعال است، به passcode screen برو
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PasscodeScreen(
+                  title: _safeTranslate('choose_passcode', 'Choose Passcode'),
+                  walletName: newWalletName,
+                  onSuccess: () {
+                    Navigator.pushReplacementNamed(
+                      context,
+                      '/backup',
+                      arguments: {
+                        'walletName': newWalletName,
+                        'userID': response.userID!,
+                        'mnemonic': response.mnemonic ?? '',
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          );
+            );
+          } else {
+            // اگر passcode غیرفعال است، مستقیم به backup screen برو
+            Navigator.pushReplacementNamed(
+              context,
+              '/backup',
+              arguments: {
+                'walletName': newWalletName,
+                'userID': response.userID!,
+                'mnemonic': response.mnemonic ?? '',
+              },
+            );
+          }
         }
       } else {
         setState(() {

@@ -4,6 +4,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../services/passcode_manager.dart';
 import '../services/wallet_state_manager.dart';
+import '../services/security_settings_manager.dart';
 
 class PasscodeScreen extends StatefulWidget {
   final String title;
@@ -11,13 +12,23 @@ class PasscodeScreen extends StatefulWidget {
   final String? firstPasscode; // برای تایید
   final String? savedPasscode; // برای ورود
   final VoidCallback? onSuccess; // تابعی که بعد از موفقیت اجرا می‌شود
-  const PasscodeScreen({Key? key, required this.title, this.walletName, this.firstPasscode, this.savedPasscode, this.onSuccess}) : super(key: key);
+  final bool isFromBackground; // آیا از بازگشت از پس‌زمینه است
+  
+  const PasscodeScreen({
+    Key? key,
+    required this.title,
+    this.walletName,
+    this.firstPasscode,
+    this.savedPasscode,
+    this.onSuccess,
+    this.isFromBackground = false,
+  }) : super(key: key);
 
   @override
   State<PasscodeScreen> createState() => _PasscodeScreenState();
 }
 
-class _PasscodeScreenState extends State<PasscodeScreen> {
+class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObserver {
   String enteredCode = '';
   String errorMessage = '';
   bool isConfirmed = false;
@@ -25,7 +36,13 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
   bool isLocked = false;
   int remainingAttempts = 5;
   int lockoutRemainingTime = 0;
+  
   final LocalAuthentication auth = LocalAuthentication();
+  final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
+  
+  LockMethod _lockMethod = LockMethod.passcodeAndBiometric;
+  bool _canUseBiometric = false;
+  bool _canUsePasscode = true;
 
   final borderColors = const [
     Color(0xFF0ab62c), Color(0xFF15b65c), Color(0xFF1bb679),
@@ -44,14 +61,38 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
   @override
   void initState() {
     super.initState();
-    _checkBiometric();
-    _checkLockStatus();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeScreen();
+  }
+
+  Future<void> _initializeScreen() async {
+    await _securityManager.initialize(); // مقداردهی SecuritySettingsManager
+    await _checkBiometric();
+    await _checkLockStatus();
+    await _loadSecuritySettings();
     _redirectIfPasscodeExists();
+  }
+
+  Future<void> _loadSecuritySettings() async {
+    try {
+      final lockMethod = await _securityManager.getLockMethod();
+      final canUseBiometric = await _securityManager.canUseBiometricInCurrentLockMethod();
+      final canUsePasscode = await _securityManager.canUsePasscodeInCurrentLockMethod();
+      
+      setState(() {
+        _lockMethod = lockMethod;
+        _canUseBiometric = canUseBiometric && isBiometricAvailable;
+        _canUsePasscode = canUsePasscode;
+      });
+    } catch (e) {
+      print('❌ Error loading security settings: $e');
+    }
   }
 
   Future<void> _redirectIfPasscodeExists() async {
     // Prevent showing choose/confirm passcode if passcode already exists
-    if (widget.title == _safeTranslate('choose_passcode', 'Choose Passcode') || widget.title == _safeTranslate('confirm_passcode', 'Confirm Passcode')) {
+    if (widget.title == _safeTranslate('choose_passcode', 'Choose Passcode') || 
+        widget.title == _safeTranslate('confirm_passcode', 'Confirm Passcode')) {
       final isSet = await PasscodeManager.isPasscodeSet();
       if (isSet) {
         if (mounted) {
@@ -131,6 +172,14 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
   void _onBiometric() async {
     HapticFeedback.lightImpact();
     try {
+      // بررسی در دسترس بودن biometric
+      if (!_canUseBiometric) {
+        setState(() {
+          errorMessage = _safeTranslate('biometric_not_available', 'Biometric authentication is not available');
+        });
+        return;
+      }
+      
       // بررسی دقیق‌تر وضعیت بیومتریک
       final canCheck = await auth.canCheckBiometrics;
       final available = await auth.isDeviceSupported();
@@ -151,40 +200,54 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
           useErrorDialogs: true,
         ),
       );
+      
       if (didAuth) {
-        // موفقیت: رفتن به صفحه بعد (مثل وارد کردن پس‌کد صحیح)
-        switch (widget.title) {
-          case 'Choose Passcode':
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PasscodeScreen(
-                  title: _safeTranslate('confirm_passcode', 'Confirm Passcode'),
-                  walletName: widget.walletName,
-                  firstPasscode: enteredCode,
-                ),
-              ),
-            );
-            break;
-          case 'Confirm Passcode':
-            Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
-            break;
-          case 'Enter Passcode':
-            // Use a smoother navigation approach to prevent black screen
-            Navigator.pushReplacementNamed(context, '/home');
-            break;
-        }
+        _handleSuccessfulAuthentication();
       } else {
         setState(() {
           errorMessage = _safeTranslate('authentication_cancelled', 'Authentication was cancelled or failed');
         });
       }
     } catch (e) {
-      print('Biometric error: $e'); // برای دیباگ
+      print('Biometric error: $e');
       setState(() {
         errorMessage = _safeTranslate('biometric_authentication_error', 'Biometric authentication error: {error}').replaceAll('{error}', e.toString());
       });
     }
+  }
+
+  void _handleSuccessfulAuthentication() {
+    switch (widget.title) {
+      case 'Choose Passcode':
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PasscodeScreen(
+              title: _safeTranslate('confirm_passcode', 'Confirm Passcode'),
+              walletName: widget.walletName,
+              firstPasscode: enteredCode,
+              onSuccess: widget.onSuccess,
+            ),
+          ),
+        );
+        break;
+      case 'Confirm Passcode':
+        Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
+        break;
+      case 'Enter Passcode':
+        if (widget.onSuccess != null) {
+          widget.onSuccess!();
+        } else {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+        break;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override
@@ -220,7 +283,7 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
             );
             break;
           case 'Confirm Passcode':
-            if (enteredCode == widget.firstPasscode) {
+            if (widget.firstPasscode == enteredCode) {
               try {
                 // ذخیره پس‌کد
                 final success = await PasscodeManager.setPasscode(enteredCode);
@@ -363,17 +426,37 @@ class _PasscodeScreenState extends State<PasscodeScreen> {
                 ],
               )
             else
-              Text(
-                _safeTranslate('passcode_adds_security', 'Passcode adds an extra layer of security\nwhen using the app'),
-                style: const TextStyle(fontSize: 14, color: Colors.grey),
-                textAlign: TextAlign.center,
+              Column(
+                children: [
+                  Text(
+                    _safeTranslate('passcode_adds_security', 'Passcode adds an extra layer of security\nwhen using the app'),
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                  // نمایش روش‌های احراز هویت در دسترس
+                  if (_lockMethod != LockMethod.passcodeOnly && _canUseBiometric)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.fingerprint, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            _safeTranslate('biometric_available', 'Biometric authentication available'),
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             const SizedBox(height: 40),
             _NumberPad(
               onNumberTap: _onNumberTap,
               onDelete: _onDelete,
               onBiometric: _onBiometric,
-              showBiometric: isBiometricAvailable && !isLocked,
+              showBiometric: _canUseBiometric && !isLocked,
               isLocked: isLocked,
             ),
           ],

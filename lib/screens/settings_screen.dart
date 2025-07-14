@@ -14,6 +14,10 @@ import '../services/notification_helper.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:external_app_launcher/external_app_launcher.dart';
+import '../services/passcode_manager.dart';
+import 'passcode_screen.dart';
+import 'security_screen.dart';
+import '../services/security_settings_manager.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -26,6 +30,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String walletName = 'No Wallet Selected'; // مقدار اولیه، بعداً از SharedPreferences یا Provider بخوانید
   bool showQRDialog = false;
   String qrContent = '';
+
+  final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
 
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
@@ -691,25 +697,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: 'assets/images/shield.png',
                       title: _safeTranslate('security', 'Security'),
                       onTap: () async {
-                        // مقدار تستی برای passcode ذخیره‌شده (در حالت واقعی از SharedPreferences بخوان)
-                        const savedPasscode = '123456';
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PasscodeScreen(
-                              title: _safeTranslate('enter_passcode', 'Enter Passcode'),
-                              savedPasscode: savedPasscode,
-                              onSuccess: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const SecurityScreen(),
-                                  ),
-                                );
-                              },
+                        // بررسی فعال بودن passcode
+                        final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+                        
+                        if (isPasscodeEnabled) {
+                          // اگر passcode فعال است، بررسی وجود passcode
+                          final hasPasscode = await PasscodeManager.isPasscodeSet();
+                          
+                          if (hasPasscode) {
+                            // نمایش passcode screen برای احراز هویت
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PasscodeScreen(
+                                  title: _safeTranslate('enter_passcode', 'Enter Passcode'),
+                                  onSuccess: () {
+                                    // بعد از احراز هویت موفق، برو به security screen
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const SecurityScreen(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            );
+                          } else {
+                            // اگر passcode تنظیم نشده، مستقیم به security screen برو
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const SecurityScreen(),
+                              ),
+                            );
+                          }
+                        } else {
+                          // اگر passcode غیرفعال است، مستقیم به security screen برو
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SecurityScreen(),
                             ),
-                          ),
-                        );
+                          );
+                        }
                       },
                     ),
                     _SettingItem(

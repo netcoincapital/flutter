@@ -1,5 +1,6 @@
 import 'secure_storage.dart';
 import 'passcode_manager.dart';
+import 'security_settings_manager.dart';
 
 /// Manages wallet state and navigation logic
 class WalletStateManager {
@@ -90,7 +91,7 @@ class WalletStateManager {
     }
   }
 
-  /// Get the appropriate initial screen based on wallet state
+  /// Determine initial screen based on wallet and passcode state
   Future<String> getInitialScreen() async {
     try {
       print('🔍 Determining initial screen...');
@@ -116,9 +117,20 @@ class WalletStateManager {
         return '/passcode-setup';
       }
       
-      // Everything is valid - go to enter passcode
-      print('✅ Valid wallet and passcode found - going to enter-passcode');
-      return '/enter-passcode';
+      // بررسی فعال بودن passcode
+      final securityManager = SecuritySettingsManager.instance;
+      await securityManager.initialize(); // اطمینان از مقداردهی
+      final isPasscodeEnabled = await securityManager.isPasscodeEnabled();
+      
+      if (isPasscodeEnabled) {
+        // Everything is valid and passcode is enabled - go to enter passcode
+        print('✅ Valid wallet and passcode found, passcode enabled - going to enter-passcode');
+        return '/enter-passcode';
+      } else {
+        // Passcode is disabled - go directly to home
+        print('🔓 Valid wallet and passcode found, but passcode disabled - going to home');
+        return '/home';
+      }
       
     } catch (e) {
       print('❌ Error determining initial screen: $e');
@@ -126,8 +138,25 @@ class WalletStateManager {
       try {
         final keys = await SecureStorage.instance.getAllKeys();
         if (keys.isNotEmpty) {
-          print('⚠️ Error occurred but found ${keys.length} keys - going to enter-passcode as fallback');
-          return '/enter-passcode';
+          print('⚠️ Error occurred but found ${keys.length} keys - checking passcode state...');
+          
+          // حتی در fallback نیز passcode enabled را چک کنیم
+          try {
+            final securityManager = SecuritySettingsManager.instance;
+            await securityManager.initialize();
+            final isPasscodeEnabled = await securityManager.isPasscodeEnabled();
+            
+            if (isPasscodeEnabled) {
+              print('⚠️ Fallback: passcode enabled - going to enter-passcode');
+              return '/enter-passcode';
+            } else {
+              print('⚠️ Fallback: passcode disabled - going to home');
+              return '/home';
+            }
+          } catch (e2) {
+            print('❌ Error checking passcode state in fallback: $e2');
+            return '/enter-passcode'; // fallback امن
+          }
         }
       } catch (e2) {
         print('❌ Error checking keys: $e2');
