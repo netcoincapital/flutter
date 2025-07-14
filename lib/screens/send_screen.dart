@@ -10,6 +10,7 @@ import '../models/crypto_token.dart';
 import '../models/balance_item.dart' as models;
 import '../services/secure_storage.dart';
 import '../services/api_service.dart';
+import '../services/api_models.dart';
 import '../utils/shared_preferences_utils.dart';
 import '../layout/main_layout.dart';
 import '../layout/loading_overlay.dart';
@@ -89,36 +90,71 @@ class _SendScreenState extends State<SendScreen> {
       print('   Selected userId: $selectedUserId');
       
       if (selectedWallet != null && selectedUserId != null) {
-        setState(() {
-          walletName = selectedWallet;
-          userId = selectedUserId;
-        });
-        print('✅ Send Screen - Loaded selected wallet: $selectedWallet with userId: $selectedUserId');
-      } else {
-        print('⚠️ No selected wallet found, trying first available wallet...');
-        // Fallback: use first available wallet
-        final wallets = await SecureStorage.instance.getWalletsList();
-        print('📋 Available wallets count: ${wallets.length}');
-        
-        if (wallets.isNotEmpty) {
-          final firstWallet = wallets.first;
-          print('📋 First wallet data: $firstWallet');
+        // تأیید اینکه wallet واقعا موجود است
+        try {
+          final mnemonic = await SecureStorage.instance.getMnemonic(selectedWallet, selectedUserId);
+          if (mnemonic != null && mnemonic.isNotEmpty) {
+            setState(() {
+              walletName = selectedWallet;
+              userId = selectedUserId;
+            });
+            print('✅ Send Screen - Loaded selected wallet: $selectedWallet with userId: $selectedUserId');
+            return;
+          } else {
+            print('⚠️ Selected wallet has no mnemonic, trying alternative...');
+          }
+        } catch (e) {
+          print('⚠️ Error validating selected wallet: $e');
+        }
+      }
+      
+      print('⚠️ No valid selected wallet found, trying first available wallet...');
+      // Fallback: use first available wallet
+      final wallets = await SecureStorage.instance.getWalletsList();
+      print('📋 Available wallets count: ${wallets.length}');
+      
+      if (wallets.isNotEmpty) {
+        // تلاش برای پیدا کردن اولین wallet معتبر
+        for (int i = 0; i < wallets.length; i++) {
+          final wallet = wallets[i];
+          print('📋 Checking wallet $i: $wallet');
           
-          final walletName = firstWallet['walletName'] ?? firstWallet['name'];
-          final walletUserId = firstWallet['userID'] ?? firstWallet['userId'];
+          final walletName = wallet['walletName'] ?? wallet['name'];
+          final walletUserId = wallet['userID'] ?? wallet['userId'];
           
-          print('📋 Extracted from first wallet:');
+          print('📋 Extracted from wallet $i:');
           print('   Wallet name: $walletName');
           print('   User ID: $walletUserId');
           
-          setState(() {
-            this.walletName = walletName;
-            userId = walletUserId;
-          });
-          print('✅ Using first available wallet: $walletName with userId: $walletUserId');
-        } else {
-          print('❌ No wallets found at all!');
+          if (walletName != null && walletUserId != null) {
+            try {
+              final mnemonic = await SecureStorage.instance.getMnemonic(walletName, walletUserId);
+              if (mnemonic != null && mnemonic.isNotEmpty) {
+                setState(() {
+                  this.walletName = walletName;
+                  userId = walletUserId;
+                });
+                
+                // Set this as the selected wallet for future use
+                await SecureStorage.instance.saveSelectedWallet(walletName, walletUserId);
+                
+                print('✅ Using valid wallet: $walletName with userId: $walletUserId');
+                return;
+              } else {
+                print('⚠️ Wallet $i has no mnemonic');
+              }
+            } catch (e) {
+              print('⚠️ Error checking wallet $i: $e');
+              continue;
+            }
+          } else {
+            print('⚠️ Wallet $i has invalid name or userId');
+          }
         }
+        
+        print('❌ No valid wallets found in list!');
+      } else {
+        print('❌ No wallets found at all!');
       }
     } catch (e, stackTrace) {
       print('❌ Error loading selected wallet: $e');
@@ -157,9 +193,9 @@ class _SendScreenState extends State<SendScreen> {
   Future<void> _refreshPricesOnly() async {
     try {
       final priceProvider = Provider.of<PriceProvider>(context, listen: false);
-      final symbols = tokens.map((t) => t.symbol == null ? '' : t.symbol!).where((s) => s.isNotEmpty).toList();
+      final symbols = tokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toList();
       
-      if (symbols.isNotEmpty) {
+      if (symbols.isNotEmpty && priceProvider != null) {
         final currencies = [selectedCurrency];
         await priceProvider.fetchPrices(symbols, currencies: currencies);
         print('🔄 Auto-refreshed prices for symbols: $symbols');
@@ -193,71 +229,115 @@ class _SendScreenState extends State<SendScreen> {
     print('🔍 Starting _fetchBalanceDirectly...');
     print('🔍 Current userId: $userId');
     print('🔍 Current walletName: $walletName');
-    print('🔍 userId?.isEmpty: ${userId?.isEmpty}');
-    print('🔍 userId == null: ${userId == null}');
     
     try {
+      // بررسی اولیه userId
       if (userId == null || userId!.isEmpty) {
-        print('❌ UserId is null or empty, cannot fetch balance');
-        print('❌ Available walletName: $walletName');
+        print('⚠️ UserId is null or empty, attempting to recover...');
         
-        // Try to reload wallet info
-        print('🔄 Attempting to reload wallet info...');
+        // تلاش برای دریافت مجدد userId از SecureStorage
         await _loadSelectedWallet();
         
+        // اگر هنوز userId نداریم، تلاش برای دریافت اولین wallet موجود
         if (userId == null || userId!.isEmpty) {
-          print('❌ Still no userId after reload, showing error');
-          setState(() {
-            isLoading = false;
-            isRefreshing = false;
-          });
+          print('⚠️ Still no userId, trying to get first available wallet...');
+          final wallets = await SecureStorage.instance.getWalletsList();
           
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(_safeTranslate('no_wallet_selected', 'No wallet selected. Please select a wallet first.')),
-                backgroundColor: Colors.red,
-              ),
-            );
+          if (wallets.isNotEmpty) {
+            final firstWallet = wallets.first;
+            final walletName = firstWallet['walletName'] ?? firstWallet['name'];
+            final walletUserId = firstWallet['userID'] ?? firstWallet['userId'];
+            
+            if (walletName != null && walletUserId != null) {
+              setState(() {
+                this.walletName = walletName;
+                userId = walletUserId;
+              });
+              print('🔄 Using first available wallet: $walletName with userId: $walletUserId');
+            } else {
+              print('❌ No valid wallet found in list');
+              throw Exception('No valid wallet found. Please select a wallet first.');
+            }
+          } else {
+            print('❌ No wallets available at all');
+            throw Exception('No wallets available. Please create or import a wallet first.');
           }
-          return;
         }
       }
 
-      print('✅ UserId validation passed, proceeding with API call');
+      print('✅ UserId validation passed: $userId');
+      print('✅ WalletName: $walletName');
       
       setState(() {
         isLoading = true;
       });
 
-      print('🔄 Fetching balance for userId: $userId');
-      print('🔄 Wallet name: $walletName');
-      
       final apiService = ApiService();
-      final tokenProvider = Provider.of<TokenProvider>(context, listen: false);
-      final priceProvider = Provider.of<PriceProvider>(context, listen: false);
+      
+      // بررسی در دسترس بودن providers
+      TokenProvider? tokenProvider;
+      PriceProvider? priceProvider;
+      
+      try {
+        tokenProvider = Provider.of<TokenProvider>(context, listen: false);
+        priceProvider = Provider.of<PriceProvider>(context, listen: false);
+      } catch (e) {
+        print('⚠️ Error accessing providers: $e');
+        tokenProvider = null;
+        priceProvider = null;
+      }
       
       // دریافت لیست توکن‌های موجود
-      final availableTokens = tokenProvider.currencies;
+      final availableTokens = tokenProvider?.currencies ?? [];
       print('📋 Available tokens count: ${availableTokens.length}');
       
-      // استفاده از getBalance API مطابق با Kotlin send_screen.kt (همه موجودی‌ها)
-      print('💰 Calling getBalance API (matching Kotlin send_screen.kt)...');
+      // فراخوانی API با error handling بهبود یافته
+      print('💰 Calling getBalance API...');
       print('📤 Request - UserID: $userId');
-      print('📤 Request - CurrencyNames: [] (empty list to get all balances)');
+      print('📤 Request - CurrencyNames: [] (empty for all balances)');
       print('📤 Request - Blockchain: {} (empty map)');
       
-      final response = await apiService.getBalance(
-        userId!,
-        currencyNames: [], // خالی برای دریافت همه موجودی‌ها مانند Kotlin
-        blockchain: {},
-      );
+      BalanceResponse response;
+      try {
+        response = await apiService.getBalance(
+          userId!,
+          currencyNames: [], // خالی برای دریافت همه موجودی‌ها
+          blockchain: {},
+        );
+        
+        print('📥 API Response received:');
+        print('   Success: ${response.success}');
+        print('   UserID: ${response.userID}');
+        print('   Balances count: ${response.balances?.length ?? 0}');
+        print('   Message: ${response.message}');
+        
+      } catch (apiError) {
+        print('❌ API Error occurred: $apiError');
+        
+        // تلاش برای to retry with updateBalance first
+        print('🔄 Attempting to update balance first...');
+        try {
+          await apiService.updateBalance(userId!);
+          print('✅ Balance updated, retrying getBalance...');
+          
+          response = await apiService.getBalance(
+            userId!,
+            currencyNames: [],
+            blockchain: {},
+          );
+          
+          print('📥 Retry API Response received:');
+          print('   Success: ${response.success}');
+          print('   UserID: ${response.userID}');
+          print('   Balances count: ${response.balances?.length ?? 0}');
+          
+        } catch (retryError) {
+          print('❌ Retry also failed: $retryError');
+          throw Exception('Failed to fetch balance after retry: $retryError');
+        }
+      }
       
-      print('📥 API Response received:');
-      print('   Success: ${response.success}');
-      print('   UserID: ${response.userID}');
-      print('   Balances count: ${response.balances?.length ?? 0}');
-      
+      // بررسی پاسخ API
       if (response.success && response.balances != null && response.balances!.isNotEmpty) {
         print('✅ getBalance API response successful');
         print('📊 Processing ${response.balances!.length} balance items...');
@@ -267,54 +347,59 @@ class _SendScreenState extends State<SendScreen> {
         int processedBalances = 0;
         int tokensWithBalance = 0;
         
-        // فیلتر کردن موجودی‌های مثبت مطابق با Kotlin
+        // پردازش موجودی‌ها
         for (final balanceItem in response.balances!) {
           processedBalances++;
-          final balance = double.tryParse(balanceItem.balance ?? '0') ?? 0.0;
           
-          print('🔍 Processing balance $processedBalances: ${balanceItem.symbol ?? 'Unknown'} = ${balanceItem.balance ?? '0'} (parsed: $balance)');
-          
-          // فقط موجودی‌های مثبت مانند Kotlin send_screen.kt
-          if (balance > 0.0 && balanceItem.symbol != null) {
-            tokensWithBalance++;
-            print('   ✅ Token has positive balance: ${balanceItem.symbol} = $balance');
+          try {
+            final balance = double.tryParse(balanceItem.balance ?? '0') ?? 0.0;
             
-            // پیدا کردن توکن مطابق در لیست موجود
-            final matchingToken = availableTokens.firstWhere(
-              (token) => token.symbol == balanceItem.symbol,
-              orElse: () {
-                print('   📝 Creating new token for: ${balanceItem.symbol}');
-                return CryptoToken(
-                  name: balanceItem.currencyName ?? balanceItem.symbol ?? 'Unknown',
-                  symbol: balanceItem.symbol ?? 'Unknown',
-                  blockchainName: balanceItem.blockchain ?? 'Unknown',
-                  iconUrl: 'https://coinceeper.com/defualtIcons/coin.png',
-                  isEnabled: true,
-                  amount: 0.0,
-                  isToken: balanceItem.isToken ?? true,
-                );
-              },
-            );
+            print('🔍 Processing balance $processedBalances: ${balanceItem.symbol ?? 'Unknown'} = ${balanceItem.balance ?? '0'} (parsed: $balance)');
+            
+            // فقط موجودی‌های مثبت
+            if (balance > 0.0 && balanceItem.symbol != null && balanceItem.symbol!.isNotEmpty) {
+              tokensWithBalance++;
+              print('   ✅ Token has positive balance: ${balanceItem.symbol} = $balance');
+              
+              // پیدا کردن توکن مطابق یا ایجاد جدید
+              final matchingToken = availableTokens.firstWhere(
+                (token) => token.symbol == balanceItem.symbol,
+                orElse: () {
+                  print('   📝 Creating new token for: ${balanceItem.symbol}');
+                  return CryptoToken(
+                    name: balanceItem.currencyName ?? balanceItem.symbol ?? 'Unknown',
+                    symbol: balanceItem.symbol ?? 'Unknown',
+                    blockchainName: balanceItem.blockchain ?? 'Unknown',
+                    iconUrl: 'https://coinceeper.com/defualtIcons/coin.png',
+                    isEnabled: true,
+                    amount: 0.0,
+                    isToken: balanceItem.isToken ?? true,
+                  );
+                },
+              );
 
-            print('   🔗 Token blockchain: ${balanceItem.blockchain ?? 'Unknown'}');
-
-            final cryptoToken = matchingToken.copyWith(
-              amount: balance,
-              blockchainName: balanceItem.blockchain ?? 'Unknown',
-              isToken: balanceItem.isToken ?? true,
-            );
+              final cryptoToken = matchingToken.copyWith(
+                amount: balance,
+                blockchainName: balanceItem.blockchain ?? 'Unknown',
+                isToken: balanceItem.isToken ?? true,
+              );
+              
+              newTokens.add(cryptoToken);
+              print('   ➕ Added token to list: ${cryptoToken.symbol} = ${cryptoToken.amount}');
+              
+              // ایجاد BalanceItem برای سازگاری
+              newBalanceItems.add(models.BalanceItem(
+                symbol: balanceItem.symbol ?? 'Unknown',
+                balance: balanceItem.balance ?? '0',
+                blockchain: balanceItem.blockchain ?? 'Unknown',
+              ));
+            } else {
+              print('   ⏭️ Token has zero balance or invalid symbol: ${balanceItem.symbol ?? 'Unknown'} = $balance');
+            }
             
-            newTokens.add(cryptoToken);
-            print('   ➕ Added token to list: ${cryptoToken.symbol} = ${cryptoToken.amount}');
-            
-            // ایجاد BalanceItem برای سازگاری
-            newBalanceItems.add(models.BalanceItem(
-              symbol: balanceItem.symbol ?? 'Unknown',
-              balance: balanceItem.balance ?? '0',
-              blockchain: balanceItem.blockchain ?? 'Unknown',
-            ));
-          } else {
-            print('   ⏭️ Token has zero balance: ${balanceItem.symbol ?? 'Unknown'} = $balance');
+          } catch (itemError) {
+            print('❌ Error processing balance item: $itemError');
+            continue; // ادامه پردازش سایر items
           }
         }
 
@@ -322,7 +407,6 @@ class _SendScreenState extends State<SendScreen> {
         print('   Total balance items processed: $processedBalances');
         print('   Tokens with positive balance: $tokensWithBalance');
         print('   Final newTokens count: ${newTokens.length}');
-        print('   Final newBalanceItems count: ${newBalanceItems.length}');
 
         setState(() {
           balanceItems = newBalanceItems;
@@ -331,23 +415,40 @@ class _SendScreenState extends State<SendScreen> {
 
         print('✅ State updated with ${newTokens.length} tokens');
 
-        // دریافت قیمت‌ها برای توکن‌هایی که موجودی دارند
-        if (newTokens.isNotEmpty) {
-          final symbols = newTokens.map((t) => t.symbol == null ? '' : t.symbol!).where((s) => s.isNotEmpty).toList();
-          final currencies = [selectedCurrency];
-          
-          print('🔄 Fetching prices for symbols: $symbols');
-          await priceProvider.fetchPrices(symbols, currencies: currencies);
+        // دریافت قیمت‌ها
+        if (newTokens.isNotEmpty && priceProvider != null) {
+          try {
+            final symbols = newTokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toList();
+            final currencies = [selectedCurrency];
+            
+            print('🔄 Fetching prices for symbols: $symbols');
+            await priceProvider.fetchPrices(symbols, currencies: currencies);
+            print('✅ Prices fetched successfully');
+          } catch (priceError) {
+            print('⚠️ Error fetching prices: $priceError');
+            // عدم دریافت قیمت‌ها مانع نمایش توکن‌ها نمی‌شود
+          }
         } else {
-          print('⚠️ No tokens with balance found, skipping price fetch');
+          print('⚠️ Skipping price fetch - no tokens or price provider unavailable');
         }
         
         print('✅ Successfully loaded ${newTokens.length} tokens with positive balance');
+        
       } else {
         print('❌ getBalance API failed or returned no data');
         print('   Success: ${response.success}');
         print('   Balances empty: ${response.balances?.isEmpty ?? true}');
-        print('   Response: $response');
+        print('   Message: ${response.message}');
+        
+        // اگر API موفق نبود ولی هیچ خطایی نداشت، پیام متفاوتی نمایش دهیم
+        String errorMessage;
+        if (!response.success) {
+          errorMessage = response.message ?? 'Server returned failure status';
+        } else if (response.balances == null || response.balances!.isEmpty) {
+          errorMessage = 'No balance data available. This might be a new wallet or all balances are zero.';
+        } else {
+          errorMessage = 'Unknown error occurred while fetching balance';
+        }
         
         setState(() {
           tokens = [];
@@ -357,12 +458,14 @@ class _SendScreenState extends State<SendScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(_safeTranslate('no_balance_data', 'No balance data received from server')),
+              content: Text(_safeTranslate('no_balance_data', errorMessage)),
               backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
             ),
           );
         }
       }
+      
     } catch (e, stackTrace) {
       print('❌ Error fetching balance: $e');
       print('❌ Stack trace: $stackTrace');
@@ -372,11 +475,33 @@ class _SendScreenState extends State<SendScreen> {
         balanceItems = [];
       });
       
+      // تشخیص نوع خطا برای نمایش پیام مناسب
+      String errorMessage;
+      if (e.toString().contains('No valid wallet found')) {
+        errorMessage = 'No valid wallet found. Please select a wallet first.';
+      } else if (e.toString().contains('No wallets available')) {
+        errorMessage = 'No wallets available. Please create or import a wallet first.';
+      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else if (e.toString().contains('timeout')) {
+        errorMessage = 'Request timeout. Please try again.';
+      } else if (e.toString().contains('Server communication error')) {
+        errorMessage = 'Server error. Please try again later.';
+      } else {
+        errorMessage = 'Error loading balances: ${e.toString()}';
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_safeTranslate('error_loading_balances', 'Error loading balances: $e')),
+            content: Text(_safeTranslate('error_loading_balances', errorMessage)),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 7),
+            action: SnackBarAction(
+              label: _safeTranslate('retry', 'Retry'),
+              textColor: Colors.white,
+              onPressed: () => _fetchBalanceDirectly(),
+            ),
           ),
         );
       }
@@ -406,30 +531,35 @@ class _SendScreenState extends State<SendScreen> {
 
   /// دریافت قیمت امن برای توکن (مطابق با Kotlin getSafeTokenPrice)
   double getSafeTokenPrice(String tokenSymbol) {
-    final priceProvider = Provider.of<PriceProvider>(context, listen: false);
-    
-    // تلاش برای دریافت قیمت استاندارد
-    final standardPrice = priceProvider.getPriceForCurrency(tokenSymbol, selectedCurrency);
-    
-    if (standardPrice != null && standardPrice > 0.0) {
-      return standardPrice;
-    }
-    
-    // تلاش با تغییرات نام توکن
-    final variations = [
-      tokenSymbol.toLowerCase(),
-      tokenSymbol.toUpperCase(),
-      _getTokenAlternativeName(tokenSymbol),
-    ].where((name) => name != null).cast<String>().toList();
-    
-    for (final symbol in variations) {
-      final price = priceProvider.getPriceForCurrency(symbol, selectedCurrency);
-      if (price != null && price > 0.0) {
-        return price;
+    try {
+      final priceProvider = Provider.of<PriceProvider>(context, listen: false);
+      
+      // تلاش برای دریافت قیمت استاندارد
+      final standardPrice = priceProvider.getPriceForCurrency(tokenSymbol, selectedCurrency);
+      
+      if (standardPrice != null && standardPrice > 0.0) {
+        return standardPrice;
       }
+      
+      // تلاش با تغییرات نام توکن
+      final variations = [
+        tokenSymbol.toLowerCase(),
+        tokenSymbol.toUpperCase(),
+        _getTokenAlternativeName(tokenSymbol),
+      ].where((name) => name != null).cast<String>().toList();
+      
+      for (final symbol in variations) {
+        final price = priceProvider.getPriceForCurrency(symbol, selectedCurrency);
+        if (price != null && price > 0.0) {
+          return price;
+        }
+      }
+      
+      return 0.0; // برگرداندن 0.0 که باعث نمایش "Fetching price..." می‌شود
+    } catch (e) {
+      print('❌ Error getting safe token price for $tokenSymbol: $e');
+      return 0.0;
     }
-    
-    return 0.0; // برگرداندن 0.0 که باعث نمایش "Fetching price..." می‌شود
   }
 
   /// دریافت نام جایگزین برای توکن (مطابق با Kotlin)
@@ -535,109 +665,50 @@ class _SendScreenState extends State<SendScreen> {
             ),
             const SizedBox(height: 16),
             Flexible(
-              child: ListView(
+              child: ListView.separated(
                 shrinkWrap: true,
-                children: [
-                  _NetworkOption(
-                    name: _safeTranslate('all', 'All'),
-                    icon: "assets/images/all.png",
-                    isSelected: selectedNetwork == "All",
+                itemCount: 11,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final networks = [
+                    'All',
+                    'Bitcoin',
+                    'Ethereum',
+                    'Binance Smart Chain',
+                    'Polygon',
+                    'Tron',
+                    'Arbitrum',
+                    'XRP',
+                    'Avalanche',
+                    'Polkadot',
+                    'Solana'
+                  ];
+                  final icons = [
+                    'assets/images/all.png',
+                    'assets/images/btc.png',
+                    'assets/images/ethereum_logo.png',
+                    'assets/images/binance_logo.png',
+                    'assets/images/pol.png',
+                    'assets/images/tron.png',
+                    'assets/images/arb.png',
+                    'assets/images/xrp.png',
+                    'assets/images/avax.png',
+                    'assets/images/dot.png',
+                    'assets/images/sol.png'
+                  ];
+                  final networkName = networks[index];
+                  final isSelected = selectedNetwork == networkName;
+                  
+                  return _NetworkOption(
+                    name: networkName == 'All' ? _safeTranslate('all', 'All') : networkName,
+                    icon: icons[index],
+                    isSelected: isSelected,
                     onTap: () {
-                      setState(() => selectedNetwork = "All");
+                      setState(() => selectedNetwork = networkName);
                       Navigator.pop(context);
                     },
-                  ),
-                  _NetworkOption(
-                    name: "Bitcoin",
-                    icon: "assets/images/btc.png",
-                    isSelected: selectedNetwork == "Bitcoin",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Bitcoin");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Ethereum",
-                    icon: "assets/images/ethereum_logo.png",
-                    isSelected: selectedNetwork == "Ethereum",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Ethereum");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Binance Smart Chain",
-                    icon: "assets/images/binance_logo.png",
-                    isSelected: selectedNetwork == "Binance Smart Chain",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Binance Smart Chain");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Polygon",
-                    icon: "assets/images/pol.png",
-                    isSelected: selectedNetwork == "Polygon",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Polygon");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Tron",
-                    icon: "assets/images/tron.png",
-                    isSelected: selectedNetwork == "Tron",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Tron");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Arbitrum",
-                    icon: "assets/images/arb.png",
-                    isSelected: selectedNetwork == "Arbitrum",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Arbitrum");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "XRP",
-                    icon: "assets/images/xrp.png",
-                    isSelected: selectedNetwork == "XRP",
-                    onTap: () {
-                      setState(() => selectedNetwork = "XRP");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Avalanche",
-                    icon: "assets/images/avax.png",
-                    isSelected: selectedNetwork == "Avalanche",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Avalanche");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Polkadot",
-                    icon: "assets/images/dot.png",
-                    isSelected: selectedNetwork == "Polkadot",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Polkadot");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Solana",
-                    icon: "assets/images/sol.png",
-                    isSelected: selectedNetwork == "Solana",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Solana");
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
+                  );
+                },
               ),
             ),
           ],
@@ -658,59 +729,10 @@ class _SendScreenState extends State<SendScreen> {
 
       return matchesSearch && matchesNetwork;
     }).toList();
-  }
-
-  /// تست دستی برای بررسی API (مطابق با Kotlin send_screen.kt)
-  Future<void> _testGetUserBalance() async {
-    print('🧪 Manual Test - Starting getBalance test (matching Kotlin send_screen.kt)...');
-    
-    try {
-      // Test با userId واقعی
-      final testUserId = userId ?? 'd7fd960c-0b3b-4f0c-8963-baa6b365953d';
-      
-      print('🧪 Test UserID: $testUserId');
-      print('🧪 Test - Using getBalance API with empty currencyNames and blockchain');
-      
-      final apiService = ApiService();
-      final response = await apiService.getBalance(
-        testUserId,
-        currencyNames: [], // خالی مانند Kotlin send_screen.kt
-        blockchain: {},
-      );
-      
-      print('🧪 Test Response:');
-      print('   Success: ${response.success}');
-      print('   UserID: ${response.userID}');
-      print('   Balances count: ${response.balances?.length ?? 0}');
-      
-      if (response.balances != null) {
-        for (final balance in response.balances!) {
-          print('   Balance: ${balance.symbol} = ${balance.balance} (${balance.blockchain})');
-        }
-      }
-      
-      // نمایش نتیجه در UI
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Test getBalance API Result: ${response.success ? 'Success' : 'Failed'}'),
-            backgroundColor: response.success ? Colors.green : Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      print('🧪 Test Error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Test getBalance API Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
-  }
 
+  
+  
   @override
   Widget build(BuildContext context) {
     return MainLayout(
@@ -727,81 +749,60 @@ class _SendScreenState extends State<SendScreen> {
             _safeTranslate('send_token', 'Send Token'),
             style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.black),
-              onPressed: () {
-                _fetchBalanceDirectly();
-              },
-            ),
-          ],
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _testGetUserBalance,
-          backgroundColor: Colors.blue,
-          child: const Icon(Icons.bug_report),
-          tooltip: 'Test getBalance API',
-        ),
+
         body: RefreshIndicator(
           onRefresh: _refreshTokens,
           child: Column(
             children: [
-              // Search and filter section
+              // Search and filter section - مطابق با receive screen
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Search bar
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5F5F5),
-                        borderRadius: BorderRadius.circular(12),
+                    // Search bar - مطابق با receive screen
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: _safeTranslate('search_tokens', 'Search tokens...'),
+                        prefixIcon: const Icon(Icons.search),
+                        filled: true,
+                        fillColor: const Color(0x25757575),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(25),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.search, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: _safeTranslate('search_tokens', 'Search tokens...'),
-                                border: InputBorder.none,
-                                isDense: true,
-                              ),
-                              onChanged: (value) {
-                                setState(() {
-                                  searchText = value;
-                                });
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          searchText = value;
+                        });
+                      },
                     ),
                     const SizedBox(height: 12),
-                    // Network filter - مطابق با سایر صفحات
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: GestureDetector(
-                        onTap: _showNetworkFilter,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F3F4),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                selectedNetwork,
-                                style: const TextStyle(fontSize: 14, color: Colors.black),
+                    // Network filter - مطابق با receive screen
+                    GestureDetector(
+                      onTap: _showNetworkFilter,
+                      child: Container(
+                        width: 200,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: const Color(0x25757575),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                selectedNetwork == 'All' ? _safeTranslate('select_network', 'Select Network') : selectedNetwork,
+                                style: const TextStyle(fontSize: 16, color: Color(0xFF2c2c2c)),
                               ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.arrow_drop_down, color: Colors.black, size: 20),
-                            ],
-                          ),
+                            ),
+                            const Icon(Icons.arrow_drop_down, size: 20),
+                            const SizedBox(width: 8),
+                          ],
                         ),
                       ),
                     ),
@@ -837,9 +838,10 @@ class _SendScreenState extends State<SendScreen> {
       );
     }
 
-    return ListView.builder(
+    return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: filteredTokens.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final token = filteredTokens[index];
         return _TokenItem(
@@ -884,106 +886,128 @@ class _TokenItem extends StatelessWidget {
     required this.onTap,
   });
 
+  /// ساخت آیکن توکن مطابق با home screen
+  Widget _buildTokenIcon(CryptoToken token) {
+    // لوگوهای معروف را از asset نمایش بده
+    final assetIcons = {
+      'BTC': 'assets/images/btc.png',
+      'ETH': 'assets/images/ethereum_logo.png',
+      'BNB': 'assets/images/binance_logo.png',
+      'TRX': 'assets/images/tron.png',
+      'USDT': 'assets/images/usdt.png',
+      'USDC': 'assets/images/usdc.png',
+      'ADA': 'assets/images/cardano.png',
+      'DOT': 'assets/images/dot.png',
+      'SOL': 'assets/images/sol.png',
+      'AVAX': 'assets/images/avax.png',
+      'MATIC': 'assets/images/pol.png',
+      'XRP': 'assets/images/xrp.png',
+      'LINK': 'assets/images/chainlink.png',
+      'UNI': 'assets/images/uniswap.png',
+      'SHIB': 'assets/images/shiba.png',
+      'LTC': 'assets/images/litecoin_logo.png',
+      'DOGE': 'assets/images/dogecoin.png',
+    };
+    
+    final symbol = (token.symbol ?? '').toUpperCase();
+    final assetIcon = assetIcons[symbol];
+
+    if (assetIcon != null) {
+      // استفاده از asset image برای توکن‌های معروف
+      return Image.asset(
+        assetIcon, 
+        width: 30, 
+        height: 30, 
+        errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+      );
+    } else if ((token.iconUrl ?? '').startsWith('http')) {
+      // استفاده از network image برای سایر توکن‌ها
+      return CachedNetworkImage(
+        imageUrl: token.iconUrl ?? '',
+        width: 30,
+        height: 30,
+        errorWidget: (context, url, error) => const Icon(Icons.error),
+      );
+    } else if ((token.iconUrl ?? '').startsWith('assets/')) {
+      // استفاده از asset image اگر path مشخص شده
+      return Image.asset(
+        token.iconUrl ?? '', 
+        width: 30, 
+        height: 30, 
+        errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+      );
+    } else {
+      // fallback آیکن پیش‌فرض
+      return const Icon(Icons.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final amount = token.amount ?? 0.0;
-    final price = getSafeTokenPrice(token.symbol == null ? '' : token.symbol!);
+    final amount = token.amount;
+    final price = getSafeTokenPrice(token.symbol != null ? token.symbol! : '');
     final formattedAmount = formatAmount(amount, price);
     final dollarValue = calculateDollarValue(amount, price);
 
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.07),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          color: const Color(0xFFF7F7F7),
+          borderRadius: BorderRadius.circular(8),
         ),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
         child: Row(
           children: [
-            // Token icon
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: CachedNetworkImage(
-                  imageUrl: token.iconUrl ?? 'https://coinceeper.com/defualtIcons/coin.png',
-                  width: 48,
-                  height: 48,
-                  fit: BoxFit.cover,
-                  errorWidget: (context, url, error) {
-                    return const Icon(Icons.currency_bitcoin, size: 32, color: Colors.orange);
-                  },
-                  placeholder: (context, url) {
-                    return const CircularProgressIndicator(strokeWidth: 2);
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            // Token info
+            // Token icon - مطابق با receive screen
+            _buildTokenIcon(token),
+            const SizedBox(width: 12),
+            // Token info - مطابق با receive screen
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    token.name ?? (token.symbol == null ? '' : token.symbol!),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${token.name ?? (token.symbol ?? '')} (${token.symbol ?? ''})',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        formattedAmount,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${token.symbol == null ? '' : token.symbol!} • ${token.blockchainName ?? ''}',
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                    ),
+                  const SizedBox(height: 1),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          token.blockchainName ?? '',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 13, color: Colors.grey),
+                        ),
+                      ),
+                      Text(
+                        dollarValue,
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ),
-            // Amount and price
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  formattedAmount,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  dollarValue,
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 8),
-            // Arrow icon
-            const Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-              color: Colors.grey,
             ),
           ],
         ),
@@ -992,7 +1016,7 @@ class _TokenItem extends StatelessWidget {
   }
 }
 
-/// کامپوننت انتخاب شبکه (مطابق با سایر صفحات)
+  /// کامپوننت انتخاب شبکه (مطابق با receive screen)
 class _NetworkOption extends StatelessWidget {
   final String name;
   final String icon;
@@ -1008,13 +1032,14 @@ class _NetworkOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF11c699).withValues(alpha: 0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? const Color(0x1A1AC89E) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
@@ -1026,17 +1051,15 @@ class _NetworkOption extends StatelessWidget {
                 return const Icon(Icons.currency_bitcoin, size: 24, color: Colors.orange);
               },
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Text(
               name,
-              style: TextStyle(
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? const Color(0xFF11c699) : Colors.black,
-              ),
+              style: const TextStyle(fontSize: 16, color: Colors.black),
             ),
-            const Spacer(),
-            if (isSelected)
-              const Icon(Icons.check, color: Color(0xFF11c699)),
+            if (isSelected) ...[
+              const Spacer(),
+              const Icon(Icons.check, color: Color(0xFF08C495)),
+            ],
           ],
         ),
       ),

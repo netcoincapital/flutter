@@ -91,6 +91,8 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
     print('🚀 Starting wallet import process...');
     print('📝 Seed phrase length: ${_seedController.text.trim().length}');
     
+    late final response; // تعریف response خارج از try-catch
+    
     try {
       final mnemonic = _seedController.text.trim();
       
@@ -98,7 +100,7 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
       // Call API to import wallet
       final apiService = ServiceProvider.instance.apiService;
       
-      final response = await apiService.importWallet(mnemonic);
+      response = await apiService.importWallet(mnemonic);
       
       print('📥 API Response received:');
       print('   Status: ${response.status}');
@@ -296,38 +298,78 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
       
       if (errorMsg.contains('successfully imported')) {
         print('🔄 Fallback path - Wallet imported but no data received');
-        // فرض: اطلاعات والت را باید مجدد از سرور یا ورودی بگیریم (در اینجا فقط نام والت و mnemonic را داریم)
         final mnemonic = _seedController.text.trim();
-        // اگر اطلاعات userID و walletID را نیاز دارید، باید آن‌ها را از response قبلی ذخیره کنید یا مجدد واکشی کنید
-        // در اینجا فرض می‌کنیم فقط mnemonic و walletName را داریم
-        print('💾 Saving wallet info with empty userID/walletID...');
-        final wallets = await SecureStorage.instance.getWalletsList();
-        int maxNum = 0;
-        final regex = RegExp(r'^Imported wallet (\d+) ?$');
-        for (final w in wallets) {
-          final name = w['walletName'] ?? w['name'] ?? '';
-          final match = regex.firstMatch(name);
-          if (match != null) {
-            final num = int.tryParse(match.group(1) ?? '0') ?? 0;
-            if (num > maxNum) maxNum = num;
-          }
-        }
-        final newWalletName = 'Imported wallet ${maxNum + 1}';
-        await WalletStateManager.instance.saveWalletInfo(
-          walletName: newWalletName,
-          userId: '',
-          walletId: '',
-          mnemonic: mnemonic,
-        );
         
-        // **اطمینان از ذخیره mnemonic در fallback path**: 
-        if (mnemonic.isNotEmpty) {
-          // حتی اگر userID خالی باشد، mnemonic را با کلید مخصوص ذخیره می‌کنیم
-          await SecureStorage.instance.saveMnemonic(newWalletName, '', mnemonic);
-          print('✅ Mnemonic saved in SecureStorage (fallback) with key: Mnemonic__$newWalletName');
+        // بررسی اینکه آیا response تعریف شده و دارای data است یا نه
+        try {
+          if (response.data != null) {
+            print('✅ Response data exists in fallback, using actual UserID');
+            final walletData = response.data!;
+            
+            // Save wallet information securely with actual data
+            await WalletStateManager.instance.saveWalletInfo(
+              walletName: newWalletName,
+              userId: walletData.userID ?? '',
+              walletId: walletData.walletID ?? '',
+              mnemonic: walletData.mnemonic ?? mnemonic,
+            );
+            
+            print('✅ Fallback: Saved wallet with actual UserID: ${walletData.userID}');
+            
+            // اطمینان از ذخیره mnemonic با UserID واقعی
+            if (walletData.userID != null && (walletData.mnemonic != null || mnemonic.isNotEmpty)) {
+              final mnemonicToSave = walletData.mnemonic ?? mnemonic;
+              await SecureStorage.instance.saveMnemonic(newWalletName, walletData.userID!, mnemonicToSave);
+              print('✅ Mnemonic saved in SecureStorage (fallback) with key: Mnemonic_${walletData.userID!}_$newWalletName');
+            }
+          } else {
+            print('⚠️ No response data in fallback, using empty UserID');
+            
+            await WalletStateManager.instance.saveWalletInfo(
+              walletName: newWalletName,
+              userId: '',
+              walletId: '',
+              mnemonic: mnemonic,
+            );
+            
+            // اطمینان از ذخیره mnemonic در fallback path
+            if (mnemonic.isNotEmpty) {
+              await SecureStorage.instance.saveMnemonic(newWalletName, '', mnemonic);
+              print('✅ Mnemonic saved in SecureStorage (fallback) with key: Mnemonic__$newWalletName');
+            }
+          }
+        } catch (responseError) {
+          print('⚠️ Error accessing response in fallback: $responseError');
+          print('⚠️ Using empty UserID as fallback');
+          
+          await WalletStateManager.instance.saveWalletInfo(
+            walletName: newWalletName,
+            userId: '',
+            walletId: '',
+            mnemonic: mnemonic,
+          );
+          
+          // اطمینان از ذخیره mnemonic در fallback path
+          if (mnemonic.isNotEmpty) {
+            await SecureStorage.instance.saveMnemonic(newWalletName, '', mnemonic);
+            print('✅ Mnemonic saved in SecureStorage (fallback) with key: Mnemonic__$newWalletName');
+          }
         }
         final fallbackAppProvider = Provider.of<AppProvider>(context, listen: false);
         await fallbackAppProvider.setCurrentWallet(newWalletName);
+        
+        // بروزرسانی TokenProvider با userId صحیح
+        final tokenProvider = Provider.of<TokenProvider>(context, listen: false);
+        try {
+          if (response.data != null) {
+            final userIdToUpdate = response.data!.userID ?? '';
+            print('🔄 Updating TokenProvider with userId (fallback): $userIdToUpdate');
+            tokenProvider.updateUserId(userIdToUpdate);
+          }
+        } catch (responseError) {
+          print('⚠️ Error accessing response for TokenProvider update: $responseError');
+        }
+        
         setState(() {
           _isLoading = false;
           _showErrorModal = false;
@@ -341,14 +383,26 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
               walletName: newWalletName,
               onSuccess: () {
                 print('🔐 Passcode set successfully (fallback path)...');
+                String userIdForBackup = '';
+                String walletIdForBackup = '';
+                String mnemonicForBackup = mnemonic;
+                
+                try {
+                  userIdForBackup = response.data?.userID ?? '';
+                  walletIdForBackup = response.data?.walletID ?? '';
+                  mnemonicForBackup = response.data?.mnemonic ?? mnemonic;
+                } catch (responseError) {
+                  print('⚠️ Error accessing response for backup navigation: $responseError');
+                }
+                
                 Navigator.pushReplacementNamed(
                   context,
                   '/backup',
                   arguments: {
                     'walletName': newWalletName,
-                    'userID': '',
-                    'walletID': '',
-                    'mnemonic': mnemonic,
+                    'userID': userIdForBackup,
+                    'walletID': walletIdForBackup,
+                    'mnemonic': mnemonicForBackup,
                   },
                 );
               },

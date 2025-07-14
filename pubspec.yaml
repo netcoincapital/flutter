@@ -61,6 +61,8 @@ dependencies:
   # Utilities
   path_provider: ^2.1.4
   crypto: ^3.0.5
+  url_launcher: ^6.3.0
+  external_app_launcher: ^4.0.0
   
   # JSON Serialization
   json_annotation: ^4.9.0

@@ -11,8 +11,9 @@ import 'wallets_screen.dart';
 import 'package:my_flutter_app/screens/security_screen.dart';
 import 'package:my_flutter_app/screens/passcode_screen.dart';
 import '../services/notification_helper.dart';
-import '../services/data_clearance_manager.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:external_app_launcher/external_app_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -236,6 +237,257 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // TODO: دریافت از SecureStorage یا Provider
     return 'wallet_456'; // مقدار نمونه
   }
+
+  /// باز کردن لینک تلگرام
+  Future<void> _openTelegramLink() async {
+    const telegramUrl = 'https://t.me/Laxce_L2';
+    
+    print('🔗 Trying to open Telegram link...');
+    
+    // Try direct URL launch first
+    try {
+      print('🌐 Trying direct URL launcher...');
+      final success = await launchUrl(
+        Uri.parse(telegramUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      
+      if (success) {
+        print('✅ URL launcher succeeded!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_safeTranslate('opening_telegram', 'Opening Telegram...')), duration: const Duration(seconds: 1)),
+          );
+        }
+        return;
+      }
+      print('❌ URL launcher returned false');
+    } catch (urlError) {
+      print('❌ URL launcher failed: $urlError');
+    }
+    
+    // Try external app launcher
+    try {
+      print('📱 Trying External App Launcher...');
+      await LaunchApp.openApp(
+        androidPackageName: 'org.telegram.messenger',
+        iosUrlScheme: 'tg://resolve?domain=Laxce_L2',
+        appStoreLink: telegramUrl,
+        openStore: false,
+      );
+      
+      print('✅ External launcher succeeded!');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_safeTranslate('opening_telegram', 'Opening Telegram...')), duration: const Duration(seconds: 1)),
+        );
+      }
+      return;
+    } catch (externalError) {
+      print('📱 External launcher failed: $externalError');
+    }
+    
+    // Try with different launch modes
+    try {
+      print('🔄 Trying with platformDefault mode...');
+      final success = await launchUrl(
+        Uri.parse(telegramUrl),
+        mode: LaunchMode.platformDefault,
+      );
+      
+      if (success) {
+        print('✅ Platform default succeeded!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_safeTranslate('opening_telegram', 'Opening Telegram...')), duration: const Duration(seconds: 1)),
+          );
+        }
+        return;
+      }
+    } catch (e) {
+      print('❌ Platform default failed: $e');
+    }
+    
+    // Final fallback - copy link to clipboard
+    print('📋 Copying to clipboard as final fallback...');
+    await Clipboard.setData(ClipboardData(text: telegramUrl));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_safeTranslate('link_copied_to_clipboard', 'Link copied to clipboard. Please open manually.')),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  /// باز کردن لینک X (توییتر)
+  Future<void> _openXLink() async {
+    const xUrl = 'https://x.com/laxcecrypto';
+    
+    print('🔗 Trying to open X link...');
+    
+    // Try direct URL launch first
+    try {
+      print('🌐 Trying direct URL launcher...');
+      final success = await launchUrl(
+        Uri.parse(xUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      
+      if (success) {
+        print('✅ URL launcher succeeded!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_safeTranslate('opening_x', 'Opening X...')), duration: const Duration(seconds: 1)),
+          );
+        }
+        return;
+      }
+      print('❌ URL launcher returned false');
+    } catch (urlError) {
+      print('❌ URL launcher failed: $urlError');
+    }
+    
+    // Try external app launcher
+    try {
+      print('📱 Trying External App Launcher...');
+      await LaunchApp.openApp(
+        androidPackageName: 'com.twitter.android',
+        iosUrlScheme: 'twitter://user?screen_name=laxcecrypto',
+        appStoreLink: xUrl,
+        openStore: false,
+      );
+      
+      print('✅ External launcher succeeded!');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_safeTranslate('opening_x', 'Opening X...')), duration: const Duration(seconds: 1)),
+        );
+      }
+      return;
+    } catch (externalError) {
+      print('📱 External launcher failed: $externalError');
+    }
+    
+    // Try with different launch modes
+    try {
+      print('🔄 Trying with platformDefault mode...');
+      final success = await launchUrl(
+        Uri.parse(xUrl),
+        mode: LaunchMode.platformDefault,
+      );
+      
+      if (success) {
+        print('✅ Platform default succeeded!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_safeTranslate('opening_x', 'Opening X...')), duration: const Duration(seconds: 1)),
+          );
+        }
+        return;
+      }
+    } catch (e) {
+      print('❌ Platform default failed: $e');
+    }
+    
+    // Final fallback - copy link to clipboard
+    print('📋 Copying to clipboard as final fallback...');
+    await Clipboard.setData(ClipboardData(text: xUrl));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_safeTranslate('link_copied_to_clipboard', 'Link copied to clipboard. Please open manually.')),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  /// باز کردن لینک اینستاگرام
+  Future<void> _openInstagramLink() async {
+    const instagramUrl = 'https://www.instagram.com/laxcecrypto/';
+    
+    print('🔗 Trying to open Instagram link...');
+    
+    // Try direct URL launch first
+    try {
+      print('🌐 Trying direct URL launcher...');
+      final success = await launchUrl(
+        Uri.parse(instagramUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      
+      if (success) {
+        print('✅ URL launcher succeeded!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_safeTranslate('opening_instagram', 'Opening Instagram...')), duration: const Duration(seconds: 1)),
+          );
+        }
+        return;
+      }
+      print('❌ URL launcher returned false');
+    } catch (urlError) {
+      print('❌ URL launcher failed: $urlError');
+    }
+    
+    // Try external app launcher
+    try {
+      print('📱 Trying External App Launcher...');
+      await LaunchApp.openApp(
+        androidPackageName: 'com.instagram.android',
+        iosUrlScheme: 'instagram://user?username=laxcecrypto',
+        appStoreLink: instagramUrl,
+        openStore: false,
+      );
+      
+      print('✅ External launcher succeeded!');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_safeTranslate('opening_instagram', 'Opening Instagram...')), duration: const Duration(seconds: 1)),
+        );
+      }
+      return;
+    } catch (externalError) {
+      print('📱 External launcher failed: $externalError');
+    }
+    
+    // Try with different launch modes
+    try {
+      print('🔄 Trying with platformDefault mode...');
+      final success = await launchUrl(
+        Uri.parse(instagramUrl),
+        mode: LaunchMode.platformDefault,
+      );
+      
+      if (success) {
+        print('✅ Platform default succeeded!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_safeTranslate('opening_instagram', 'Opening Instagram...')), duration: const Duration(seconds: 1)),
+          );
+        }
+        return;
+      }
+    } catch (e) {
+      print('❌ Platform default failed: $e');
+    }
+    
+    // Final fallback - copy link to clipboard
+    print('📋 Copying to clipboard as final fallback...');
+    await Clipboard.setData(ClipboardData(text: instagramUrl));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_safeTranslate('link_copied_to_clipboard', 'Link copied to clipboard. Please open manually.')),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+
 
   /// نمایش دیالوگ وضعیت شبکه
   void _showNetworkStatusDialog() {
@@ -489,43 +741,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                 ),
-                _Section(
-                  title: _safeTranslate('data_management', 'Data Management'),
-                  children: [
-                    _SettingItem(
-                      icon: 'assets/images/delete.png',
-                      title: _safeTranslate('factory_reset', 'Factory Reset'),
-                      subtitle: _safeTranslate('clear_all_data_reset_app', 'Clear all data and reset app'),
-                      onTap: () {
-                        DataClearanceManager.factoryReset(context);
-                      },
-                    ),
-                  ],
-                ),
+
                 _Section(
                   title: _safeTranslate('social_media', 'Social media'),
                   children: [
                     _SettingItem(
                       icon: 'assets/images/x.png',
                       title: _safeTranslate('x_platform', 'X platform'),
-                      onTap: () {
-                        // باز کردن لینک X (توییتر)
-                        // TODO: استفاده از url_launcher
-                      },
+                      onTap: _openXLink,
                     ),
                     _SettingItem(
                       icon: 'assets/images/instagram.png',
                       title: _safeTranslate('instagram', 'Instagram'),
-                      onTap: () {
-                        // باز کردن لینک اینستاگرام
-                      },
+                      onTap: _openInstagramLink,
                     ),
                     _SettingItem(
                       icon: 'assets/images/telegram.png',
                       title: _safeTranslate('telegram', 'Telegram'),
-                      onTap: () {
-                        // باز کردن لینک تلگرام
-                      },
+                      onTap: _openTelegramLink,
                     ),
                   ],
                 ),

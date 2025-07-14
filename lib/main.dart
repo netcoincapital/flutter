@@ -254,8 +254,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       print('🔍 Determining initial screen...');
       
       // 🎯 Step 1: Critical route determination (must be first)
-      final initialRoute = await WalletStateManager.instance.getInitialScreen();
-      print('🎯 Initial route determined: $initialRoute');
+      String initialRoute;
+      
+      // بررسی وجود کیف پول
+      final hasWallet = await WalletStateManager.instance.hasWallet();
+      final hasPasscode = await WalletStateManager.instance.hasPasscode();
+      
+      print('🔍 Wallet check: hasWallet=$hasWallet, hasPasscode=$hasPasscode');
+      
+      if (hasWallet && hasPasscode) {
+        // اگر کیف پول و پسکد وجود دارد، همیشه به enter-passcode برود
+        initialRoute = '/enter-passcode';
+        print('🎯 User has wallet and passcode -> going to enter-passcode');
+      } else {
+        // در غیر این صورت از WalletStateManager استفاده کن
+        initialRoute = await WalletStateManager.instance.getInitialScreen();
+        print('🎯 Using WalletStateManager route: $initialRoute');
+      }
+      
+      print('🎯 Final initial route determined: $initialRoute');
       
       // 🚀 Step 2: Run all non-critical initializations in parallel
       final parallelFutures = await Future.wait([

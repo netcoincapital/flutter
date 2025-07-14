@@ -498,16 +498,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (didPop) {
-        if (!didPop) {
-          // خروج از اپلیکیشن بجای برگشت به صفحه قبل
-          SystemNavigator.pop();
-        }
+    return WillPopScope(
+      onWillPop: () async {
+        // خروج از اپلیکیشن بجای برگشت به صفحه قبل
+        SystemNavigator.pop();
+        return false;
       },
       child: Consumer<AppProvider>(
-        builder: (context, appProvider, _) {
+      builder: (context, appProvider, _) {
         // Show loading if AppProvider is not initialized yet
         if (!_isInitialized || appProvider.tokenProvider == null) {
           return Scaffold(
@@ -886,7 +884,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         );
       },
-      )
+    );
 );  }
 
   /// محاسبه کل ارزش توکن‌ها با استفاده از PriceProvider
