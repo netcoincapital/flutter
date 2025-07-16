@@ -3,6 +3,8 @@ import 'package:easy_localization/easy_localization.dart';
 import '../services/security_settings_manager.dart';
 import '../services/passcode_manager.dart';
 import 'passcode_screen.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SecurityScreen extends StatefulWidget {
   const SecurityScreen({Key? key}) : super(key: key);
@@ -11,7 +13,7 @@ class SecurityScreen extends StatefulWidget {
   State<SecurityScreen> createState() => _SecurityScreenState();
 }
 
-class _SecurityScreenState extends State<SecurityScreen> {
+class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObserver {
   final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
   
   bool _isLoading = true;
@@ -20,6 +22,10 @@ class _SecurityScreenState extends State<SecurityScreen> {
   LockMethod _lockMethod = LockMethod.passcodeAndBiometric;
   bool _biometricAvailable = false;
   bool _passcodeSet = false;
+  
+  // Auto-lock variables
+  DateTime? _backgroundTime;
+  bool _isInBackground = false;
 
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
@@ -33,7 +39,103 @@ class _SecurityScreenState extends State<SecurityScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeAndLoadSettings();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// App lifecycle handler for auto-lock
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        _handleAppGoingToBackground();
+        break;
+      case AppLifecycleState.resumed:
+        _handleAppComingToForeground();
+        break;
+      default:
+        break;
+    }
+  }
+
+  /// Handle app going to background
+  void _handleAppGoingToBackground() {
+    if (_passcodeEnabled && _passcodeSet) {
+      _backgroundTime = DateTime.now();
+      _isInBackground = true;
+      print('🔒 App went to background at: $_backgroundTime');
+    }
+  }
+
+  /// Handle app coming to foreground
+  void _handleAppComingToForeground() {
+    if (_isInBackground && _backgroundTime != null && _passcodeEnabled && _passcodeSet) {
+      _isInBackground = false;
+      final currentTime = DateTime.now();
+      final elapsedTime = currentTime.difference(_backgroundTime!);
+      
+      print('🔓 App came to foreground. Elapsed time: ${elapsedTime.inSeconds}s');
+      
+      // Check if auto-lock should be triggered
+      if (_shouldLockApp(elapsedTime)) {
+        _triggerAutoLock();
+      }
+      
+      _backgroundTime = null;
+    }
+  }
+
+  /// Determine if app should be locked based on elapsed time
+  bool _shouldLockApp(Duration elapsedTime) {
+    switch (_autoLockDuration) {
+      case AutoLockDuration.immediate:
+        return true; // Always lock immediately
+      case AutoLockDuration.oneMinute:
+        return elapsedTime.inMinutes >= 1;
+      case AutoLockDuration.fiveMinutes:
+        return elapsedTime.inMinutes >= 5;
+      case AutoLockDuration.tenMinutes:
+        return elapsedTime.inMinutes >= 10;
+      case AutoLockDuration.fifteenMinutes:
+        return elapsedTime.inMinutes >= 15;
+      default:
+        return false;
+    }
+  }
+
+  /// Trigger auto-lock by showing passcode screen
+  void _triggerAutoLock() {
+    if (!mounted) return;
+    
+    print('🔒 Triggering auto-lock...');
+    
+    // Show passcode screen as modal that cannot be dismissed
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WillPopScope(
+          onWillPop: () async => false, // Prevent back button
+          child: PasscodeScreen(
+            title: _safeTranslate('enter_passcode', 'Enter Passcode'),
+            onSuccess: () {
+              Navigator.pop(context);
+              print('🔓 Auto-lock passcode entered successfully');
+            },
+            isFromBackground: true,
+          ),
+        ),
+        settings: const RouteSettings(name: '/auto_lock'),
+      ),
+    );
   }
 
   /// مقداردهی و بارگذاری تنظیمات
@@ -44,6 +146,31 @@ class _SecurityScreenState extends State<SecurityScreen> {
       
       // بارگذاری تنظیمات
       await _loadSecuritySettings();
+      
+      // Check if this is the first time accessing security screen
+      // We want passcode to be enabled by default (user requirement)
+      final prefs = await SharedPreferences.getInstance();
+      const securityScreenAccessedKey = 'security_screen_accessed';
+      
+      // If this is the first time accessing security screen
+      final hasAccessedBefore = prefs.getBool(securityScreenAccessedKey) ?? false;
+      if (!hasAccessedBefore) {
+        // Check if passcode is already set
+        final passcodeAlreadySet = await PasscodeManager.isPasscodeSet();
+        
+        if (passcodeAlreadySet) {
+          // If passcode is already set, just enable it
+          await _securityManager.setPasscodeEnabled(true);
+          await prefs.setBool(securityScreenAccessedKey, true);
+          print('🔒 Passcode already set - enabled by default');
+        } else {
+          // If passcode is not set, show setup dialog
+          _showInitialPasscodeSetupDialog();
+        }
+        
+        // Reload settings after potential changes
+        await _loadSecuritySettings();
+      }
     } catch (e) {
       print('❌ Error initializing security screen: $e');
       setState(() {
@@ -52,24 +179,33 @@ class _SecurityScreenState extends State<SecurityScreen> {
     }
   }
 
+  /// نمایش dialog اولیه برای تنظیم passcode
+  void _showInitialPasscodeSetupDialog() {
+    // Remove dialog - initial passcode setup dialog removed
+  }
+
   /// بارگذاری تنظیمات امنیتی
   Future<void> _loadSecuritySettings() async {
     try {
       final settings = await _securityManager.getSecuritySettingsSummary();
       
-      setState(() {
-        _passcodeEnabled = settings['passcodeEnabled'] ?? true;
-        _autoLockDuration = settings['autoLockDuration'] ?? AutoLockDuration.immediate;
-        _lockMethod = settings['lockMethod'] ?? LockMethod.passcodeAndBiometric;
-        _biometricAvailable = settings['biometricAvailable'] ?? false;
-        _passcodeSet = settings['passcodeSet'] ?? false;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _passcodeEnabled = settings['passcodeEnabled'] ?? true; // Default to true
+          _autoLockDuration = settings['autoLockDuration'] ?? AutoLockDuration.immediate;
+          _lockMethod = settings['lockMethod'] ?? LockMethod.passcodeAndBiometric;
+          _biometricAvailable = settings['biometricAvailable'] ?? false;
+          _passcodeSet = settings['passcodeSet'] ?? false;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       print('❌ Error loading security settings: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -84,266 +220,131 @@ class _SecurityScreenState extends State<SecurityScreen> {
             builder: (_) => PasscodeScreen(
               title: _safeTranslate('choose_passcode', 'Choose Passcode'),
               onSuccess: () async {
+                // بعد از تنظیم موفقیت‌آمیز passcode، آن را فعال کن
                 await _securityManager.setPasscodeEnabled(true);
                 await _loadSecuritySettings();
-                Navigator.pop(context);
+                
+                if (mounted) {
+                  Navigator.pop(context);
+                  
+                  // Show success message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        _safeTranslate('passcode_set_successfully', 'Passcode set and enabled successfully')
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
               },
             ),
           ),
         );
+        
+        // اگر کاربر از passcode screen بازگشت بدون تنظیم passcode، toggle را غیرفعال کن
+        if (result == null) {
+          await _loadSecuritySettings(); // Reload to reset the toggle
+        }
+        
         return;
+      }
+      
+      if (!enabled) {
+        // اگر کاربر می‌خواهد passcode را غیرفعال کند
+        final confirmDisable = await _showConfirmDisableDialog();
+        if (!confirmDisable) {
+          await _loadSecuritySettings(); // Reset toggle to previous state
+          return;
+        }
       }
 
       final success = await _securityManager.setPasscodeEnabled(enabled);
       if (success) {
         await _loadSecuritySettings();
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              enabled 
-                ? _safeTranslate('passcode_enabled', 'Passcode enabled successfully')
-                : _safeTranslate('passcode_disabled', 'Passcode disabled successfully')
+        // Reset auto-lock tracking when passcode is disabled
+        if (!enabled) {
+          _backgroundTime = null;
+          _isInBackground = false;
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                enabled 
+                  ? _safeTranslate('passcode_enabled', 'Passcode enabled successfully')
+                  : _safeTranslate('passcode_disabled', 'Passcode disabled successfully')
+              ),
+              backgroundColor: Colors.green,
             ),
-            backgroundColor: Colors.green,
-          ),
-        );
+          );
+        }
       } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                enabled 
+                  ? _safeTranslate('passcode_enable_failed', 'Failed to enable passcode')
+                  : _safeTranslate('passcode_disable_failed', 'Failed to disable passcode. Biometric authentication not available.')
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        
+        // Reset toggle to previous state on failure
+        await _loadSecuritySettings();
+      }
+    } catch (e) {
+      print('❌ Error toggling passcode: $e');
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              enabled 
-                ? _safeTranslate('passcode_enable_failed', 'Failed to enable passcode')
-                : _safeTranslate('passcode_disable_failed', 'Failed to disable passcode. Biometric authentication not available.')
-            ),
+            content: Text(_safeTranslate('error_occurred', 'An error occurred: {error}').replaceAll('{error}', e.toString())),
             backgroundColor: Colors.red,
           ),
         );
       }
-    } catch (e) {
-      print('❌ Error toggling passcode: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_safeTranslate('error_occurred', 'An error occurred: {error}').replaceAll('{error}', e.toString())),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  /// نمایش dialog انتخاب auto-lock duration
-  Future<void> _showAutoLockDialog() async {
-    final autoLockOptions = [
-      AutoLockDuration.immediate,
-      AutoLockDuration.oneMinute,
-      AutoLockDuration.fiveMinutes,
-      AutoLockDuration.tenMinutes,
-      AutoLockDuration.fifteenMinutes,
-    ];
-
-    final result = await showModalBottomSheet<AutoLockDuration>(
-      context: context,
-      isScrollControlled: false,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFEFF6F3),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Text(
-                _safeTranslate('select_auto_lock_time', 'Select Auto-lock Time'),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              const SizedBox(height: 16),
-              ...autoLockOptions.map((duration) => InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => Navigator.pop(context, duration),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8),
-                  child: Row(
-                    children: [
-                      Radio<AutoLockDuration>(
-                        value: duration,
-                        groupValue: _autoLockDuration,
-                        onChanged: (value) => Navigator.pop(context, value),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _securityManager.getAutoLockDurationText(duration),
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-              )),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (result != null) {
-      await _securityManager.setAutoLockDuration(result);
+      
+      // Reset toggle to previous state on error
       await _loadSecuritySettings();
     }
   }
 
+  /// نمایش تأیید غیرفعال کردن passcode
+  Future<bool> _showConfirmDisableDialog() async {
+    // Remove dialog - confirm disable dialog removed
+    return true; // Always return true to allow disabling
+  }
+
+  /// نمایش dialog انتخاب auto-lock duration
+  Future<void> _showAutoLockDialog() async {
+    // Remove modal bottom sheet - auto lock dialog removed
+  }
+
   /// نمایش dialog انتخاب lock method
   Future<void> _showLockMethodDialog() async {
-    final lockMethodOptions = <LockMethod, String>{
-      LockMethod.passcodeAndBiometric: _safeTranslate('passcode_biometric_recommended', 'Passcode / Biometric (Recommended)'),
-      LockMethod.passcodeOnly: _safeTranslate('passcode_only', 'Passcode Only'),
-      LockMethod.biometricOnly: _safeTranslate('biometric_only', 'Biometric Only'),
-    };
+    // Remove modal bottom sheet - lock method dialog removed
+  }
 
-    final result = await showModalBottomSheet<LockMethod>(
-      context: context,
-      isScrollControlled: false,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFEFF6F3),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Text(
-                _safeTranslate('select_lock_method', 'Select Lock Method'),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              const SizedBox(height: 16),
-              ...lockMethodOptions.entries.map((entry) {
-                final method = entry.key;
-                final label = entry.value;
-                
-                // بررسی در دسترس بودن روش
-                bool isAvailable = true;
-                String disabledReason = '';
-                
-                if (method == LockMethod.biometricOnly || method == LockMethod.passcodeAndBiometric) {
-                  if (!_biometricAvailable) {
-                    isAvailable = false;
-                    disabledReason = _safeTranslate('biometric_not_available', 'Biometric not available');
-                  }
-                }
-                
-                if (method == LockMethod.passcodeOnly || method == LockMethod.passcodeAndBiometric) {
-                  if (!_passcodeSet) {
-                    isAvailable = false;
-                    disabledReason = _safeTranslate('passcode_not_set', 'Passcode not set');
-                  }
-                }
-
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: isAvailable ? () => Navigator.pop(context, method) : null,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8),
-                    child: Row(
-                      children: [
-                        Radio<LockMethod>(
-                          value: method,
-                          groupValue: _lockMethod,
-                          onChanged: isAvailable ? (value) => Navigator.pop(context, value) : null,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                label,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: isAvailable ? Colors.black : Colors.grey,
-                                ),
-                              ),
-                              if (!isAvailable && disabledReason.isNotEmpty)
-                                Text(
-                                  disabledReason,
-                                  style: const TextStyle(fontSize: 12, color: Colors.red),
-                                ),
-                            ],
-                          ),
-                        ),
-                        if (method == LockMethod.passcodeAndBiometric)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              _safeTranslate('recommended', 'Recommended'),
-                              style: const TextStyle(fontSize: 10, color: Colors.green),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (result != null) {
-      final success = await _securityManager.setLockMethod(result);
-      if (success) {
-        await _loadSecuritySettings();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _safeTranslate('lock_method_updated', 'Lock method updated successfully')
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _safeTranslate('lock_method_update_failed', 'Failed to update lock method')
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+  /// Get description for auto-lock duration
+  String _getAutoLockDescription(AutoLockDuration duration) {
+    switch (duration) {
+      case AutoLockDuration.immediate:
+        return _safeTranslate('lock_immediately_desc', 'Lock as soon as app goes to background');
+      case AutoLockDuration.oneMinute:
+        return _safeTranslate('lock_after_1min_desc', 'Lock after 1 minute in background');
+      case AutoLockDuration.fiveMinutes:
+        return _safeTranslate('lock_after_5min_desc', 'Lock after 5 minutes in background');
+      case AutoLockDuration.tenMinutes:
+        return _safeTranslate('lock_after_10min_desc', 'Lock after 10 minutes in background');
+      case AutoLockDuration.fifteenMinutes:
+        return _safeTranslate('lock_after_15min_desc', 'Lock after 15 minutes in background');
+      default:
+        return '';
     }
   }
 
@@ -384,9 +385,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
             // گزینه اول: Passcode Toggle
             _SettingItemWithSwitch(
               title: _safeTranslate('passcode', 'Passcode'),
-              subtitle: _passcodeEnabled && _passcodeSet
-                  ? _safeTranslate('passcode_enabled_description', 'App will require passcode to unlock')
-                  : _safeTranslate('passcode_disabled_description', 'App will open without passcode'),
+              subtitle: _getPasscodeStatusText(),
               value: _passcodeEnabled,
               onChanged: _togglePasscode,
             ),
@@ -396,9 +395,10 @@ class _SecurityScreenState extends State<SecurityScreen> {
             // گزینه دوم: Auto-lock Duration
             _SettingItem(
               title: _safeTranslate('auto_lock', 'Auto-lock'),
-              subtitle: _securityManager.getAutoLockDurationText(_autoLockDuration),
+              subtitle: _getAutoLockStatusText(),
               onTap: _passcodeEnabled ? _showAutoLockDialog : null,
               isDisabled: !_passcodeEnabled,
+              trailing: _passcodeEnabled ? _buildAutoLockIndicator() : null,
             ),
             
             const SizedBox(height: 16),
@@ -406,12 +406,19 @@ class _SecurityScreenState extends State<SecurityScreen> {
             // گزینه سوم: Lock Method
             _SettingItem(
               title: _safeTranslate('lock_method', 'Lock method'),
-              subtitle: _securityManager.getLockMethodText(_lockMethod),
+              subtitle: _getLockMethodStatusText(),
               onTap: _passcodeEnabled ? _showLockMethodDialog : null,
               isDisabled: !_passcodeEnabled,
+              trailing: _passcodeEnabled ? _buildLockMethodIndicator() : null,
             ),
             
             const SizedBox(height: 24),
+            
+            // Auto-lock Status Card (only show when passcode is enabled)
+            if (_passcodeEnabled && _passcodeSet)
+              _buildAutoLockStatusCard(),
+            
+            const SizedBox(height: 16),
             
             // اطلاعات اضافی
             Container(
@@ -465,6 +472,142 @@ class _SecurityScreenState extends State<SecurityScreen> {
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Get passcode status text
+  String _getPasscodeStatusText() {
+    if (!_passcodeEnabled) {
+      return _safeTranslate('passcode_disabled_description', 'App will open without passcode');
+    }
+    
+    if (_passcodeSet) {
+      return _safeTranslate('passcode_enabled_description', 'App will require passcode to unlock');
+    }
+    
+    return _safeTranslate('passcode_not_set_description', 'Passcode not configured yet');
+  }
+
+  /// Get auto-lock status text
+  String _getAutoLockStatusText() {
+    if (!_passcodeEnabled) {
+      return _safeTranslate('auto_lock_disabled_description', 'Enable passcode to use auto-lock');
+    }
+    
+    final durationText = _securityManager.getAutoLockDurationText(_autoLockDuration);
+    return _safeTranslate('auto_lock_enabled_description', 'Lock after: {duration}').replaceAll('{duration}', durationText);
+  }
+
+  /// Get lock method status text
+  String _getLockMethodStatusText() {
+    if (!_passcodeEnabled) {
+      return _safeTranslate('lock_method_disabled_description', 'Enable passcode to select lock method');
+    }
+    
+    return _securityManager.getLockMethodText(_lockMethod);
+  }
+
+  /// Build auto-lock indicator
+  Widget _buildAutoLockIndicator() {
+    Color color;
+    switch (_autoLockDuration) {
+      case AutoLockDuration.immediate:
+        color = Colors.green;
+        break;
+      case AutoLockDuration.oneMinute:
+        color = Colors.orange;
+        break;
+      default:
+        color = Colors.red;
+    }
+    
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  /// Build lock method indicator
+  Widget _buildLockMethodIndicator() {
+    IconData icon;
+    Color color;
+    
+    switch (_lockMethod) {
+      case LockMethod.passcodeAndBiometric:
+        icon = Icons.security;
+        color = Colors.green;
+        break;
+      case LockMethod.passcodeOnly:
+        icon = Icons.lock;
+        color = Colors.orange;
+        break;
+      case LockMethod.biometricOnly:
+        icon = Icons.fingerprint;
+        color = Colors.blue;
+        break;
+    }
+    
+    return Icon(icon, color: color, size: 16);
+  }
+
+  /// Build auto-lock status card
+  Widget _buildAutoLockStatusCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _isInBackground ? Colors.orange.withOpacity(0.1) : Colors.green.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isInBackground ? Colors.orange.withOpacity(0.3) : Colors.green.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _isInBackground ? Icons.pause_circle : Icons.play_circle,
+                color: _isInBackground ? Colors.orange : Colors.green,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _safeTranslate('auto_lock_status', 'Auto-lock Status'),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: _isInBackground ? Colors.orange : Colors.green,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isInBackground 
+              ? _safeTranslate('app_in_background', 'App is in background - auto-lock timer is running')
+              : _safeTranslate('app_in_foreground', 'App is active - auto-lock timer is paused'),
+            style: TextStyle(
+              fontSize: 14,
+              color: _isInBackground ? Colors.orange : Colors.green,
+            ),
+          ),
+          if (_backgroundTime != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _safeTranslate('background_since', 'Background since: {time}').replaceAll(
+                  '{time}', 
+                  DateFormat('HH:mm:ss').format(_backgroundTime!),
+                ),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -528,12 +671,14 @@ class _SettingItem extends StatelessWidget {
   final String subtitle;
   final VoidCallback? onTap;
   final bool isDisabled;
+  final Widget? trailing; // Added trailing widget
   
   const _SettingItem({
     required this.title,
     required this.subtitle,
     required this.onTap,
     this.isDisabled = false,
+    this.trailing, // Initialize trailing
   });
 
   @override
@@ -576,6 +721,11 @@ class _SettingItem extends StatelessWidget {
                   ],
                 ),
               ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+                const SizedBox(width: 8),
+              ],
               Icon(
                 Icons.arrow_forward_ios,
                 size: 16,

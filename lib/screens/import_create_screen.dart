@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'dart:convert';
+import '../services/secure_storage.dart';
 
 class ImportCreateScreen extends StatefulWidget {
   const ImportCreateScreen({super.key});
@@ -36,19 +37,13 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
   }
 
   void _showCreatorModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return AnimatedGradientModal();
-      },
-    );
+    // Remove modal bottom sheet - creator modal removed
   }
 
   @override
   void initState() {
     super.initState();
+    _checkExistingWallet();
     _animationController = AnimationController(
       duration: const Duration(seconds: 10),
       vsync: this,
@@ -63,6 +58,25 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
     _animationController.repeat(reverse: true);
   }
 
+  /// Check if wallet exists and redirect to home if it does
+  Future<void> _checkExistingWallet() async {
+    try {
+      final wallets = await SecureStorage.instance.getWalletsList();
+      if (wallets.isNotEmpty) {
+        print('🔄 Existing wallet found, redirecting to home...');
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/',
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking existing wallet: $e');
+    }
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -72,7 +86,19 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async => false, // Prevent back navigation
+      onWillPop: () async {
+        // Check if wallets exist, if so, don't allow back navigation
+        try {
+          final wallets = await SecureStorage.instance.getWalletsList();
+          if (wallets.isNotEmpty) {
+            print('🚫 Back navigation blocked - wallet exists');
+            return false;
+          }
+        } catch (e) {
+          print('❌ Error checking wallets for back navigation: $e');
+        }
+        return false; // By default, prevent back navigation for this screen
+      },
       child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(

@@ -253,91 +253,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   }
 
   void _showNetworkModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Text(
-              _safeTranslate('select_network', 'Select Network'),
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: blockchains.length,
-                itemBuilder: (context, index) {
-                  final blockchain = blockchains[index];
-                  final isSelected = blockchain['name'] == selectedNetwork;
-                  
-                  return GestureDetector(
-                    onTap: () {
-                      _onNetworkSelected(blockchain['name']);
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: isSelected ? const Color(0x1A1AC89E) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Image.asset(
-                            blockchain['icon'],
-                            width: 24,
-                            height: 24,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(Icons.currency_bitcoin, size: 24, color: Colors.orange);
-                            },
-                          ),
-                          const SizedBox(width: 14),
-                          Text(
-                            blockchain['name'] == 'All Blockchains' 
-                                ? _safeTranslate('all_blockchains', 'All Blockchains')
-                                : blockchain['name'],
-                            style: const TextStyle(fontSize: 16, color: Colors.black),
-                          ),
-                          if (isSelected) ...[
-                            const Spacer(),
-                            const Icon(Icons.check, color: Color(0xFF08C495)),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Remove modal bottom sheet - network selection removed
   }
 
   void _onSearchChanged(String value) {
@@ -361,12 +277,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       final priceProvider = Provider.of<PriceProvider>(context, listen: false);
       
       if (tokenProvider == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_safeTranslate('token_provider_not_available', 'Token provider not available')),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // Remove error message - silent failure
         return;
       }
       
@@ -447,12 +358,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       
     } catch (e) {
       print('❌ Error toggling token ${token.symbol}: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_safeTranslate('error_changing_token_status', 'Error changing token status') + ': ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Remove error message - silent failure
     }
   }
 

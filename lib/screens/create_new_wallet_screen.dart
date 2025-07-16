@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'dart:async'; // Add missing import for Completer
+import 'dart:async';
 import 'passcode_screen.dart';
 import '../services/api_service.dart';
 import '../services/service_provider.dart';
@@ -10,7 +10,7 @@ import '../services/secure_storage.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../services/device_registration_manager.dart';
-import '../services/update_balance_helper.dart'; // اضافه کردن helper مطابق Kotlin
+import '../services/update_balance_helper.dart';
 
 class CreateNewWalletScreen extends StatefulWidget {
   const CreateNewWalletScreen({Key? key}) : super(key: key);
@@ -21,7 +21,7 @@ class CreateNewWalletScreen extends StatefulWidget {
 
 class _CreateNewWalletScreenState extends State<CreateNewWalletScreen> {
   String? errorMessage;
-  String walletName = 'Wallet 1';
+  String walletName = '';
   bool showErrorModal = false;
   bool isLoading = false;
   late ApiService _apiService;
@@ -38,8 +38,28 @@ class _CreateNewWalletScreenState extends State<CreateNewWalletScreen> {
   @override
   void initState() {
     super.initState();
+    _checkExistingWallet();
     _apiService = ServiceProvider.instance.apiService;
     _suggestNextWalletName();
+  }
+
+  /// Check if wallet exists and redirect to home if it does
+  Future<void> _checkExistingWallet() async {
+    try {
+      final wallets = await SecureStorage.instance.getWalletsList();
+      if (wallets.isNotEmpty) {
+        print('🔄 Existing wallet found, redirecting to home...');
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/',
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking existing wallet: $e');
+    }
   }
 
   Future<void> _suggestNextWalletName() async {
@@ -147,16 +167,23 @@ class _CreateNewWalletScreenState extends State<CreateNewWalletScreen> {
 
         // ✅ Fixed: Use AppProvider instead of directly accessing TokenProvider
         if (mounted) {
-          final appProvider = Provider.of<AppProvider>(context, listen: false);
-          final tokenProvider = appProvider.tokenProvider;
-          
-          // Update TokenProvider if it exists
-          if (tokenProvider != null) {
-            tokenProvider.updateUserId(response.userID!);
+          try {
+            final appProvider = Provider.of<AppProvider>(context, listen: false);
+            final tokenProvider = appProvider.tokenProvider;
+            
+            // Update TokenProvider if it exists
+            if (tokenProvider != null) {
+              tokenProvider.updateUserId(response.userID!);
+              print('✅ TokenProvider updated with userId: ${response.userID!}');
+            } else {
+              print('⚠️ TokenProvider is null');
+            }
+            
+            // Refresh AppProvider wallets list
+            await appProvider.refreshWallets();
+          } catch (e) {
+            print('❌ Error accessing AppProvider: $e');
           }
-          
-          // Refresh AppProvider wallets list
-          await appProvider.refreshWallets();
         }
 
         print('🔄 Wallet generation successful, now proceeding with additional API calls (matching Kotlin)');
@@ -206,19 +233,6 @@ class _CreateNewWalletScreenState extends State<CreateNewWalletScreen> {
         print('   Update Balance: $updateBalanceSuccess');
         print('   Device Registration: $deviceRegistrationSuccess');
         print('   Overall Success: $allApisSuccessful');
-
-        // Show success message
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                _safeTranslate('wallet_created_success_message', 'Wallet created successfully! UserID: ${response.userID!}, Mnemonic: ${response.mnemonic != null ? "RECEIVED" : "NOT RECEIVED"}'),
-              ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
 
         // Navigate to passcode screen مطابق با Kotlin
         if (mounted) {
@@ -271,58 +285,81 @@ class _CreateNewWalletScreenState extends State<CreateNewWalletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0BAB9B),
-        elevation: 0,
-        title: Text(
-          _safeTranslate('generate_new_wallet', 'Generate New Wallet'),
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: SingleChildScrollView(  // ✅ Fixed: Add ScrollView to prevent overflow
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              WalletOptionItemNew(
-                title: _safeTranslate('secret_phrase', 'Secret phrase'),
-                points: 100,
-                buttonText: _safeTranslate('generate', 'Generate'),
-                isLoading: isLoading,
-                onClickCreate: _generateWallet,
-                expandedContent: (context) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return WillPopScope(
+      onWillPop: () async {
+        // Check if wallets exist, if so, don't allow back navigation
+        try {
+          final wallets = await SecureStorage.instance.getWalletsList();
+          if (wallets.isNotEmpty) {
+            print('🚫 Back navigation blocked - wallet exists');
+            return false;
+          }
+        } catch (e) {
+          print('❌ Error checking wallets for back navigation: $e');
+        }
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header - مطابق با Kotlin
+                Row(
                   children: [
-                    DetailRow(
-                      label: _safeTranslate('security', 'Security'),
-                      content: _safeTranslate('create_recover_description', 'Create and recover wallet with a 12, 18, or 24-word secret phrase. You must manually store this, or back up with Google Drive storage.'),
-                    ),
-                    const SizedBox(height: 12),
-                    DetailRow(
-                      label: _safeTranslate('transactions', 'Transactions'),
-                      content: _safeTranslate('transaction_networks_description', 'Transactions are available on more networks (chains), but require more steps to complete.'),
-                      showIcons: true,
-                    ),
-                    const SizedBox(height: 12),
-                    DetailRow(
-                      label: _safeTranslate('fee', 'Fee'),
-                      content: _safeTranslate('fees_description', 'Pay network fee (gas) with native tokens only. For example, if your transaction is on the Ethereum network, you can only pay for this fee with ETH.'),
+                    Text(
+                      _safeTranslate('generate_new_wallet', 'Generate new wallet'),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              
-              if (showErrorModal)
-                CreateWalletErrorModal(
-                  show: showErrorModal,
-                  onDismiss: () => setState(() => showErrorModal = false),
-                  message: errorMessage ?? _safeTranslate('error', 'Error'),
+                const SizedBox(height: 16),
+                
+                // Wallet Option Item - مطابق با Kotlin
+                WalletOptionItemNew(
+                  title: _safeTranslate('secret_phrase', 'Secret phrase'),
+                  points: 100,
+                  buttonText: _safeTranslate('generate', 'Generate'),
+                  isLoading: isLoading,
+                  onClickCreate: _generateWallet,
+                  expandedContent: (context) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DetailRow(
+                        label: _safeTranslate('security', 'Security'),
+                        content: _safeTranslate('create_recover_description', 'Create and recover wallet with a 12, 18, or 24-word secret phrase. You must manually store this, or back up with Google Drive storage.'),
+                      ),
+                      const SizedBox(height: 12),
+                      DetailRow(
+                        label: _safeTranslate('transactions', 'Transaction'),
+                        content: _safeTranslate('transaction_networks_description', 'Transactions are available on more networks (chains), but require more steps to complete.'),
+                        showIcons: true,
+                      ),
+                      const SizedBox(height: 12),
+                      DetailRow(
+                        label: _safeTranslate('fee', 'Fees'),
+                        content: _safeTranslate('fees_description', 'Pay network fee (gas) with native tokens only. For example, if your transaction is on the Ethereum network, you can only pay for this fee with ETH.'),
+                      ),
+                    ],
+                  ),
                 ),
-            ],
+                
+                // Error Modal - مطابق با Kotlin
+                if (showErrorModal)
+                  CreateWalletErrorModal(
+                    show: showErrorModal,
+                    onDismiss: () => setState(() => showErrorModal = false),
+                    message: errorMessage ?? _safeTranslate('error', 'Error'),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -372,135 +409,105 @@ class _WalletOptionItemNewState extends State<WalletOptionItemNew> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: const Color(0x0D16B369), // مطابق با Kotlin Color(0x0D16B369)
+        borderRadius: BorderRadius.circular(12),
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            widget.title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
-                            ),
+          Row(
+            children: [
+              // Left side - Title and points
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          widget.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
                           ),
-                          if (widget.points != null) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.green,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '+${widget.points} ${_safeTranslate('points', 'points')}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            isExpanded = !isExpanded;
-                          });
-                        },
-                        child: Row(
-                          children: [
-                            Text(
-                              isExpanded ? _safeTranslate('hide_details', 'Hide details') : _safeTranslate('show_details', 'Show details'),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Colors.blue,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
-                            Icon(
-                              isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                              color: Colors.blue,
-                              size: 20,
-                            ),
-                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                SizedBox(
-                  width: 100,
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: widget.isLoading ? null : _onClick,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0BAB9B),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: widget.isLoading 
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            widget.buttonText,
+                        if (widget.points != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '+${widget.points} ${_safeTranslate('points', 'points')}',
                             style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Colors.grey,
+                              fontWeight: FontWeight.normal,
                             ),
                           ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isExpanded && widget.expandedContent != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.05),
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(16),
-                  bottomRight: Radius.circular(16),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                                         GestureDetector(
+                       onTap: () {
+                         setState(() {
+                           isExpanded = !isExpanded;
+                         });
+                       },
+                       child: Text(
+                         isExpanded ? 'Hide details ▲' : 'Show details ▼',
+                         style: const TextStyle(
+                           fontSize: 12,
+                           color: Color(0xFF16B369),
+                         ),
+                       ),
+                     ),
+                  ],
                 ),
               ),
-              child: widget.expandedContent!(context),
-            ),
+              
+              // Right side - Button مطابق با Kotlin
+              Container(
+                width: 110,
+                height: 36,
+                child: OutlinedButton(
+                  onPressed: widget.isLoading ? null : _onClick,
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: const Color(0xFF16B369),
+                    side: const BorderSide(color: Color(0xFF16B369), width: 1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    elevation: 0,
+                    padding: EdgeInsets.zero,
+                  ),
+                  child: widget.isLoading 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF16B369),
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          widget.buttonText,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+          
+          // Expanded content مطابق با Kotlin
+          if (isExpanded && widget.expandedContent != null) ...[
+            const SizedBox(height: 16),
+            widget.expandedContent!(context),
+          ],
         ],
       ),
     );
@@ -527,16 +534,16 @@ class DetailRow extends StatelessWidget {
         Text(
           label,
           style: const TextStyle(
-            fontSize: 16,
+            fontSize: 14,
             fontWeight: FontWeight.bold,
-            color: Colors.black,
+            color: Color(0xA6000000), // مطابق با Kotlin
           ),
         ),
         const SizedBox(height: 4),
         Text(
           content,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 12,
             color: Colors.grey,
             height: 1.4,
           ),
@@ -545,28 +552,19 @@ class DetailRow extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
+              _buildNetworkIcon('assets/images/btc.png'),
+              const SizedBox(width: 8),
               _buildNetworkIcon('assets/images/ethereum_logo.png'),
               const SizedBox(width: 8),
               _buildNetworkIcon('assets/images/binance_logo.png'),
               const SizedBox(width: 8),
-              _buildNetworkIcon('assets/images/btc.png'),
+              _buildNetworkIcon('assets/images/tron.png'),
               const SizedBox(width: 8),
-              Container(
-                width: 24,
-                height: 24,
-                decoration: const BoxDecoration(
+              Text(
+                '+ more chains',
+                style: const TextStyle(
+                  fontSize: 12,
                   color: Colors.grey,
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text(
-                    '+',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
                 ),
               ),
             ],
@@ -580,9 +578,6 @@ class DetailRow extends StatelessWidget {
     return Container(
       width: 24,
       height: 24,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-      ),
       child: ClipOval(
         child: Image.asset(
           assetPath,
@@ -593,7 +588,10 @@ class DetailRow extends StatelessWidget {
             return Container(
               width: 24,
               height: 24,
-              color: Colors.grey,
+              decoration: const BoxDecoration(
+                color: Colors.grey,
+                shape: BoxShape.circle,
+              ),
             );
           },
         ),
@@ -631,43 +629,86 @@ class CreateWalletErrorModal extends StatelessWidget {
     
     return Container(
       margin: const EdgeInsets.only(top: 16),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.withOpacity(0.3)),
+        color: Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.6),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.error, color: Colors.red, size: 24),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _safeTranslate(context, 'error', title),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red,
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: onDismiss,
-                icon: const Icon(Icons.close, color: Colors.red, size: 20),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ],
+          // Error icon
+          Container(
+            width: 48,
+            height: 48,
+            child: Image.asset(
+              'assets/images/error.png',
+              width: 48,
+              height: 48,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.error,
+                  size: 48,
+                  color: Colors.red,
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // Title
+          Text(
+            _safeTranslate(context, 'error', title),
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
           ),
           const SizedBox(height: 8),
+          
+          // Message
           Text(
             message,
             style: const TextStyle(
-              fontSize: 14,
-              color: Colors.red,
-              height: 1.4,
+              fontSize: 16,
+              color: Colors.grey,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          
+          // OK Button مطابق با Kotlin
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: onDismiss,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF1961),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                'OK',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ),
         ],

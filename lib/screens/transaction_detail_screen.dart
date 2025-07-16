@@ -235,10 +235,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                         IconButton(
                           icon: const Icon(Icons.share, color: Colors.black),
                           onPressed: explorerUrl.isNotEmpty ? () {
-                            // Share explorer URL
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('${_safeTranslate('share', 'Share')}: $explorerUrl')),
-                            );
+                            // Remove success message - share silently
                           } : null,
                         ),
                       ],

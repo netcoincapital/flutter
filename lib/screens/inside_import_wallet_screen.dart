@@ -35,7 +35,27 @@ class _InsideImportWalletScreenState extends State<InsideImportWalletScreen> {
   @override
   void initState() {
     super.initState();
+    _checkExistingWallet();
     _suggestNextImportedWalletName();
+  }
+
+  /// Check if wallet exists and redirect to home if it does
+  Future<void> _checkExistingWallet() async {
+    try {
+      final wallets = await SecureStorage.instance.getWalletsList();
+      if (wallets.isNotEmpty) {
+        print('🔄 Existing wallet found, redirecting to home...');
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/',
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking existing wallet: $e');
+    }
   }
 
   Future<void> _suggestNextImportedWalletName() async {
@@ -66,6 +86,45 @@ class _InsideImportWalletScreenState extends State<InsideImportWalletScreen> {
     return [12, 18, 24].contains(words.length);
   }
 
+  /// Normalize mnemonic for comparison
+  String _normalizeMnemonic(String mnemonic) {
+    return mnemonic.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  /// Check if mnemonic already exists in any wallet
+  Future<bool> _checkMnemonicExists(String mnemonic) async {
+    try {
+      final wallets = await SecureStorage.instance.getWalletsList();
+      
+      for (final wallet in wallets) {
+        final walletName = wallet['walletName'] ?? wallet['name'] ?? '';
+        final userId = wallet['userID'] ?? wallet['userId'] ?? '';
+        
+        if (walletName.isNotEmpty) {
+          // Try to get mnemonic for this wallet (check both with and without userId)
+          String? existingMnemonic;
+          
+          if (userId.isNotEmpty) {
+            existingMnemonic = await SecureStorage.instance.getMnemonic(walletName, userId);
+          } else {
+            // For wallets without userId, try with empty string
+            existingMnemonic = await SecureStorage.instance.getMnemonic(walletName, '');
+          }
+          
+          if (existingMnemonic != null && _normalizeMnemonic(existingMnemonic) == _normalizeMnemonic(mnemonic)) {
+            print('🔍 Mnemonic already exists in wallet: $walletName (userId: $userId)');
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      print('❌ Error checking mnemonic existence: $e');
+      return false;
+    }
+  }
+
   void _restoreWallet() async {
     final phrase = _secretPhraseController.text.trim();
     if (!validateSecretPhrase(phrase)) {
@@ -75,6 +134,22 @@ class _InsideImportWalletScreenState extends State<InsideImportWalletScreen> {
       });
       return;
     }
+
+    // Check if mnemonic already exists before making API call
+    print('🔍 Checking if mnemonic already exists...');
+    final mnemonicExists = await _checkMnemonicExists(phrase);
+    
+    if (mnemonicExists) {
+      print('⚠️ Mnemonic already exists, showing error modal');
+      setState(() {
+        errorMessage = 'This wallet has already been imported. Please use a different seed phrase.';
+        showErrorModal = true;
+      });
+      return;
+    }
+    
+    print('✅ Mnemonic check passed, proceeding with import...');
+
     setState(() {
       isLoading = true;
       errorMessage = '';
@@ -173,14 +248,28 @@ class _InsideImportWalletScreenState extends State<InsideImportWalletScreen> {
   @override
   Widget build(BuildContext context) {
     final isValid = validateSecretPhrase(_secretPhraseController.text);
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    final scaffold = WillPopScope(
+      onWillPop: () async {
+        // Check if wallets exist, if so, don't allow back navigation
+        try {
+          final wallets = await SecureStorage.instance.getWalletsList();
+          if (wallets.isNotEmpty) {
+            print('🚫 Back navigation blocked - wallet exists');
+            return false;
+          }
+        } catch (e) {
+          print('❌ Error checking wallets for back navigation: $e');
+        }
+        return true;
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        title: Text(_safeTranslate('multi_coin_wallet', 'Multi-coin wallet'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
-        iconTheme: const IconThemeData(color: Colors.black),
-      ),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: Text(_safeTranslate('multi_coin_wallet', 'Multi-coin wallet'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
+          iconTheme: const IconThemeData(color: Colors.black),
+        ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -209,6 +298,7 @@ class _InsideImportWalletScreenState extends State<InsideImportWalletScreen> {
                       ),
                     ),
                     style: const TextStyle(fontSize: 16),
+                    onChanged: (_) => setState(() {}),
                   ),
                   TextButton(
                     onPressed: _pasteFromClipboard,
@@ -249,8 +339,89 @@ class _InsideImportWalletScreenState extends State<InsideImportWalletScreen> {
             ],
           ),
         ),
+              ),
+        bottomNavigationBar: const BottomMenuWithSiri(),
       ),
-      bottomNavigationBar: const BottomMenuWithSiri(),
+    );
+
+    return showErrorModal
+        ? Stack(
+            children: [
+              scaffold,
+              _ErrorModal(
+                message: errorMessage,
+                onDismiss: () => setState(() => showErrorModal = false),
+              ),
+            ],
+          )
+        : scaffold;
+  }
+}
+
+class _ErrorModal extends StatelessWidget {
+  final String message;
+  final VoidCallback onDismiss;
+  const _ErrorModal({required this.message, required this.onDismiss});
+
+  // Safe translate method with fallback
+  String _safeTranslate(BuildContext context, String key, String fallback) {
+    try {
+      return context.tr(key);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onDismiss,
+      child: Container(
+        color: Colors.black.withOpacity(0.6),
+        child: Center(
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.8,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(25),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error, color: Color(0xFFFF1961), size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  _safeTranslate(context, 'error', 'Error'),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: onDismiss,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF1961),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                    ),
+                    child: Text(_safeTranslate(context, 'ok', 'OK'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 } 

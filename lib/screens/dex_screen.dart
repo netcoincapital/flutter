@@ -225,92 +225,16 @@ class _SwapTabState extends State<_SwapTab> {
     setState(() { isSwapping = true; });
     await Future.delayed(const Duration(seconds: 1));
     setState(() { isSwapping = false; });
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text(_safeTranslate('swap_successful', 'Swap Successful!'), style: const TextStyle(fontWeight: FontWeight.bold)),
-        content: Text(_safeTranslate('swap_completed_successfully', 'Your swap was completed successfully.')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('ok', 'OK'), style: const TextStyle(color: Color(0xFF11c699))),
-          ),
-        ],
-      ),
-    );
+    // Remove alert dialog - swap completed silently
   }
 
   void _showSlippageSettings() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('slippage_tolerance', 'Slippage Tolerance')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_safeTranslate('set_max_slippage', 'Set the maximum price slippage you are willing to accept.')),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: _safeTranslate('slippage_percent', 'Slippage %'),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text('%'),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('cancel', 'Cancel')),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('save', 'Save')),
-          ),
-        ],
-      ),
-    );
+    // Remove modal bottom sheet - slippage settings removed
   }
 
   Future<int?> _showTokenSelector(BuildContext context, int currentIndex) async {
-    return showModalBottomSheet<int>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (context) {
-        return ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(_safeTranslate('select_token', 'Select Token'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            ),
-            ...tokens.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final t = entry.value;
-              return ListTile(
-                leading: Image.asset(t['icon'], width: 32, height: 32),
-                title: Text('${t['name']} (${t['symbol']})'),
-                subtitle: Text('${_safeTranslate('balance', 'Balance')}: ${t['balance']}'),
-                selected: idx == currentIndex,
-                onTap: () => Navigator.pop(context, idx),
-              );
-            }).toList(),
-          ],
-        );
-      },
-    );
+    // Remove modal bottom sheet - use direct selection or navigation
+    return currentIndex; // Return current index to avoid changes
   }
 
   @override
@@ -595,14 +519,7 @@ class _LiquidityPoolTab extends StatelessWidget {
                 Text(_safeTranslate(context, 'your_pools', 'Your Pools'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
                 ElevatedButton.icon(
                   onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                      ),
-                      builder: (context) => const _AddLiquiditySheet(),
-                    );
+                    // Remove modal bottom sheet - add liquidity removed
                   },
                   icon: const Icon(Icons.add, size: 26),
                   label: Text(_safeTranslate(context, 'add_liquidity', 'Add Liquidity'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -789,115 +706,11 @@ class _AddLiquiditySheetState extends State<_AddLiquiditySheet> {
   double get share => 0.12; // mock share
 
   void _selectToken(int which) async {
-    final idx = await showModalBottomSheet<int>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (context) {
-        return ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(_safeTranslate('select_token', 'Select Token'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            ),
-            ...tokens.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final t = entry.value;
-              return ListTile(
-                leading: Image.asset(t['icon'], width: 32, height: 32),
-                title: Text('${t['name']} (${t['symbol']})'),
-                selected: which == 0 ? idx == token1 : idx == token2,
-                onTap: () => Navigator.pop(context, idx),
-              );
-            }).toList(),
-          ],
-        );
-      },
-    );
-    if (idx != null && idx != (which == 0 ? token2 : token1)) {
-      setState(() {
-        if (which == 0) token1 = idx; else token2 = idx;
-      });
-    }
+    // Remove modal bottom sheet - token selection removed
   }
 
   void _showRemoveLiquidity() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('remove_liquidity', 'Remove Liquidity')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_safeTranslate('remove_liquidity_description', 'Select the percentage of liquidity you want to remove:')),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: 0.5,
-                    min: 0.0,
-                    max: 1.0,
-                    divisions: 20,
-                    onChanged: (value) {
-                      // Handle slider change
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                const Text('50%'),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF7F9FC),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_safeTranslate('you_will_receive', 'You will receive:')),
-                      const Text(''),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('${tokens[token1]['symbol']}:'),
-                      const Text('0.5'),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('${tokens[token2]['symbol']}:'),
-                      const Text('0.5'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('cancel', 'Cancel')),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('remove', 'Remove')),
-          ),
-        ],
-      ),
-    );
+    // Remove dialog - remove liquidity removed
   }
 
   @override
@@ -1547,39 +1360,7 @@ class _CreatePoolScreenState extends State<_CreatePoolScreen> {
   }
 
   void _selectToken(int which) async {
-    final idx = await showModalBottomSheet<int>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (context) {
-        return ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(_safeTranslate('select_token', 'Select Token'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            ),
-            ...availableTokens.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final t = entry.value;
-              return ListTile(
-                leading: Image.asset(t['icon'], width: 32, height: 32),
-                title: Text('${t['name']} (${t['symbol']})'),
-                subtitle: Text('${t['address']}'),
-                selected: which == 0 ? idx == token1Index : idx == token2Index,
-                onTap: () => Navigator.pop(context, idx),
-              );
-            }).toList(),
-          ],
-        );
-      },
-    );
-    if (idx != null && idx != (which == 0 ? token2Index : token1Index)) {
-      setState(() {
-        if (which == 0) token1Index = idx; else token2Index = idx;
-      });
-    }
+    // Remove modal bottom sheet - token selection removed
   }
 
   bool _canCreatePool() {
@@ -1591,62 +1372,12 @@ class _CreatePoolScreenState extends State<_CreatePoolScreen> {
   }
 
   void _createPool() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('create_pool', 'Create Pool')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_safeTranslate('create_pool_confirmation', 'Are you sure you want to create this pool?')),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF7F9FC),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  Text('${availableTokens[token1Index]['symbol']} - ${availableTokens[token2Index]['symbol']}'),
-                  Text('${_safeTranslate('fee', 'Fee')}: ${poolFee}%'),
-                  Text('${_safeTranslate('initial_liquidity', 'Initial Liquidity')}: ${token1Amount} ${availableTokens[token1Index]['symbol']} + ${token2Amount} ${availableTokens[token2Index]['symbol']}'),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('cancel', 'Cancel')),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _showSuccessDialog();
-            },
-            child: Text(_safeTranslate('create_pool', 'Create')),
-          ),
-        ],
-      ),
-    );
+    // Remove dialog - create pool confirmation removed
+    _showSuccessDialog();
   }
 
   void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('pool_created', 'Pool Created!'), style: const TextStyle(color: Colors.green)),
-        content: Text(_safeTranslate('pool_created_successfully', 'Your liquidity pool has been created successfully.')),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('ok', 'OK')),
-          ),
-        ],
-      ),
-    );
+    // Remove dialog - success dialog removed
   }
 }
 
@@ -1768,45 +1499,5 @@ class _LiquidityInput extends StatelessWidget {
 } 
 
 void _showRemoveLiquidityDialog(BuildContext context, Map<String, dynamic> pool) {
-  // Safe translate method with fallback
-  String _safeTranslate(String key, String fallback) {
-    try {
-      return context.tr(key);
-    } catch (e) {
-      return fallback;
-    }
-  }
-
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(_safeTranslate('remove_liquidity', 'Remove Liquidity')),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('${_safeTranslate('remove_liquidity_from', 'How much liquidity do you want to remove from')} ${pool['pair']}?'),
-          const SizedBox(height: 16),
-          Slider(
-            value: 0.5,
-            min: 0.0,
-            max: 1.0,
-            divisions: 20,
-            onChanged: (value) {},
-          ),
-          const SizedBox(height: 8),
-          const Text('50%'),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(_safeTranslate('cancel', 'Cancel')),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(_safeTranslate('remove', 'Remove')),
-        ),
-      ],
-    ),
-  );
+  // Remove dialog - remove liquidity dialog removed
 } 

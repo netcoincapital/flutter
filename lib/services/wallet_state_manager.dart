@@ -290,8 +290,10 @@ class WalletStateManager {
       print('⚠️ Has ${keys.length} keys but no valid wallet or important data');
       print('🔑 Keys found: ${keys.take(5).join(', ')}${keys.length > 5 ? '...' : ''}');
       
-      // If we have any data at all, don't treat as fresh install to be safe
-      return keys.isEmpty;
+      // If we have any data but no valid wallet or important data, treat as fresh install
+      // This ensures that corrupted or incomplete data doesn't prevent fresh install
+      print('🆕 Treating as fresh install due to no valid wallet or important data');
+      return true;
       
     } catch (e) {
       print('❌ Error checking fresh install: $e');

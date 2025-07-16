@@ -163,90 +163,8 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     }).toList();
   }
 
-  void _showNetworkSelector() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Text(_safeTranslate('select_network', 'Select Network'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: 11, // Fixed list of 11 networks
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final networks = [
-                      'All Blockchains',
-                      'Bitcoin',
-                      'Ethereum',
-                      'Binance Smart Chain',
-                      'Polygon',
-                      'Tron',
-                      'Arbitrum',
-                      'XRP',
-                      'Avalanche',
-                      'Polkadot',
-                      'Solana'
-                    ];
-                    final bc = networks[index];
-                    final isSelected = selectedNetwork == bc;
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () {
-                        setState(() => selectedNetwork = bc);
-                        Navigator.pop(context);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: isSelected ? const Color(0x1A1AC89E) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            _blockchainIcon(bc),
-                            const SizedBox(width: 14),
-                            Text(bc, style: const TextStyle(fontSize: 16, color: Colors.black)),
-                            if (isSelected) ...[
-                              const Spacer(),
-                              const Icon(Icons.check, color: Color(0xFF08C495)),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
-    );
+  void _showTokenSelector() {
+    // Remove modal bottom sheet - token selector removed
   }
 
   Widget _blockchainIcon(String bc) {
@@ -309,7 +227,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                   ),
                   const SizedBox(height: 12),
                   GestureDetector(
-                    onTap: _showNetworkSelector,
+                    onTap: _showTokenSelector,
                     child: Container(
                       width: 200,
                       height: 32,
@@ -411,7 +329,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                                   icon: const Icon(Icons.copy, color: Colors.grey),
                                   onPressed: () async {
                                     await Clipboard.setData(ClipboardData(text: address));
-                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_safeTranslate('wallet_address_copied', 'Wallet address copied'))));
+                                    // Remove success message - copied silently
                                   },
                                 ),
                               ],

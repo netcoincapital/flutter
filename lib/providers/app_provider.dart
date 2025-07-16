@@ -68,13 +68,25 @@ class AppProvider extends ChangeNotifier {
     await _checkPermissions();
     await _loadWallets();
     
-    // Initialize TokenProvider for current user
-    await _initializeTokenProvider();
+    // Initialize TokenProvider for current user (non-blocking)
+    _initializeTokenProviderInBackground();
     
-    print('🚀 AppProvider initialized');
+    print('🚀 AppProvider initialized (TokenProvider loading in background)');
   }
   
-  /// مقداردهی اولیه TokenProvider
+  /// مقداردهی اولیه TokenProvider در background
+  void _initializeTokenProviderInBackground() {
+    if (_currentUserId != null) {
+      // Initialize TokenProvider in background without blocking UI
+      _getOrCreateTokenProvider(_currentUserId!).then((_) {
+        print('✅ TokenProvider initialized in background');
+      }).catchError((error) {
+        print('❌ TokenProvider initialization failed: $error');
+      });
+    }
+  }
+  
+  /// مقداردهی اولیه TokenProvider (deprecated - use background version)
   Future<void> _initializeTokenProvider() async {
     if (_currentUserId != null) {
       await _getOrCreateTokenProvider(_currentUserId!);
@@ -95,14 +107,21 @@ class AppProvider extends ChangeNotifier {
       context: null, // We'll handle context differently
     );
     
-    // Wait for TokenProvider to initialize
-    await tokenProvider.initialize();
-    
     // Listen to TokenProvider changes and propagate to AppProvider
     tokenProvider.addListener(_onTokenProviderChanged);
     
     _tokenProviders[userId] = tokenProvider;
     _currentTokenProvider = tokenProvider;
+    
+    // Make TokenProvider available immediately, then initialize in background
+    notifyListeners();
+    
+    // Initialize TokenProvider in background
+    tokenProvider.initializeInBackground().then((_) {
+      print('✅ TokenProvider fully initialized for user: $userId');
+    }).catchError((error) {
+      print('❌ TokenProvider initialization failed for user $userId: $error');
+    });
     
     return tokenProvider;
   }
@@ -203,7 +222,7 @@ class AppProvider extends ChangeNotifier {
         _currentTokenProvider!.removeListener(_onTokenProviderChanged);
       }
       
-      // Switch to the appropriate TokenProvider
+      // Switch to the appropriate TokenProvider (non-blocking)
       await _getOrCreateTokenProvider(_currentUserId!);
       
       // Update other providers that depend on wallet selection
@@ -236,8 +255,8 @@ class AppProvider extends ChangeNotifier {
     await SecureStorage.instance.saveWalletsList(_wallets);
     await SecureStorage.instance.saveUserId(walletName, userId);
     
-    // Create TokenProvider for the new wallet
-    await _getOrCreateTokenProvider(userId);
+    // Create TokenProvider for the new wallet (non-blocking)
+    _getOrCreateTokenProvider(userId);
     
     notifyListeners();
     print('➕ Added wallet: $walletName');
@@ -270,9 +289,9 @@ class AppProvider extends ChangeNotifier {
           ? await SecureStorage.instance.getUserIdForWallet(_currentWalletName!)
           : null;
           
-      // Initialize TokenProvider for new current wallet
+      // Initialize TokenProvider for new current wallet (non-blocking)
       if (_currentUserId != null) {
-        await _getOrCreateTokenProvider(_currentUserId!);
+        _getOrCreateTokenProvider(_currentUserId!);
       }
     }
     

@@ -42,35 +42,53 @@ class SecuritySettingsManager {
       if (!isInitialized) {
         print('🔒 Initializing security settings for first time...');
         
-        // بررسی اینکه آیا کاربر قبلاً passcode داشته یا نه
-        final hasExistingPasscode = await PasscodeManager.isPasscodeSet();
-        
-        // تنظیم مقادیر پیش‌فرض فقط برای fresh users
-        if (!hasExistingPasscode) {
-          // کاربر جدید: passcode غیرفعال
-          await prefs.setBool(_passcodeEnabledKey, false);
-          print('🔒 New user detected - passcode disabled by default');
-        } else {
-          // کاربر موجود: passcode فعال (backward compatibility)
-          await prefs.setBool(_passcodeEnabledKey, true);
-          print('🔒 Existing user detected - passcode enabled for compatibility');
-        }
+        // برای همه کاربران (جدید و موجود) پیش‌فرض غیرفعال است
+        // کاربر می‌تواند در security screen فعال کند
+        await prefs.setBool(_passcodeEnabledKey, false);
+        print('🔒 Default passcode state set to disabled - user can enable in security screen');
         
         // سایر تنظیمات پیش‌فرض
         await prefs.setInt(_autoLockDurationKey, AutoLockDuration.immediate.index); // پیش‌فرض: فوری
         await prefs.setInt(_lockMethodKey, LockMethod.passcodeAndBiometric.index); // پیش‌فرض: هر دو
         await prefs.setBool(_securityInitializedKey, true);
         
-        print('✅ Security settings initialized with smart defaults');
+        print('✅ Security settings initialized with consistent defaults');
       } else {
         print('🔒 Security settings already initialized');
+        
+        // اگر passcode_enabled key وجود نداشته باشد، پیش‌فرض false قرار بده
+        if (!prefs.containsKey(_passcodeEnabledKey)) {
+          await prefs.setBool(_passcodeEnabledKey, false);
+          print('🔒 Missing passcode_enabled key - set to default false');
+        }
       }
       
       // نمایش تنظیمات فعلی
       await _debugCurrentSettings();
-      
     } catch (e) {
       print('❌ Error initializing security settings: $e');
+    }
+  }
+
+  /// Reset security settings to default values
+  Future<void> resetSecuritySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // حذف تمام کلیدهای امنیتی
+      await prefs.remove(_passcodeEnabledKey);
+      await prefs.remove(_autoLockDurationKey);
+      await prefs.remove(_lockMethodKey);
+      await prefs.remove(_lastBackgroundTimeKey);
+      await prefs.remove(_biometricEnabledKey);
+      await prefs.remove(_securityInitializedKey);
+      
+      print('🔒 Security settings reset to defaults');
+      
+      // مجدداً initialize کن
+      await initialize();
+    } catch (e) {
+      print('❌ Error resetting security settings: $e');
     }
   }
 
@@ -89,6 +107,25 @@ class SecuritySettingsManager {
     }
   }
 
+  /// Debug method to check current security settings state
+  Future<void> debugSecurityState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      print('🔍 === SECURITY SETTINGS DEBUG ===');
+      print('🔍 _passcodeEnabledKey exists: ${prefs.containsKey(_passcodeEnabledKey)}');
+      print('🔍 _passcodeEnabledKey value: ${prefs.getBool(_passcodeEnabledKey)}');
+      print('🔍 _securityInitializedKey: ${prefs.getBool(_securityInitializedKey)}');
+      print('🔍 PasscodeManager.isPasscodeSet(): ${await PasscodeManager.isPasscodeSet()}');
+      
+      final isEnabled = await isPasscodeEnabled();
+      print('🔍 Final isPasscodeEnabled(): $isEnabled');
+      print('🔍 ================================');
+    } catch (e) {
+      print('❌ Error in debugSecurityState: $e');
+    }
+  }
+
   // ================ PASSCODE TOGGLE ================
   
   /// فعال/غیرفعال کردن passcode
@@ -99,34 +136,32 @@ class SecuritySettingsManager {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_passcodeEnabledKey, enabled);
       
-      // اگر passcode غیرفعال شد، اطمینان حاصل کن که lock method مناسب است
+      // اگر passcode غیرفعال شد، lock method را مدیریت کن
       if (!enabled) {
         final lockMethod = await getLockMethod();
+        final biometricAvailable = await isBiometricAvailable();
+        
         if (lockMethod == LockMethod.passcodeOnly) {
-          // تغییر به biometric only اگر در دسترس است
-          final biometricAvailable = await isBiometricAvailable();
           if (biometricAvailable) {
+            // اگر biometric در دسترس است، به biometric only تغییر بده
             await setLockMethod(LockMethod.biometricOnly);
             print('🔒 Changed lock method to biometric only');
           } else {
-            // اگر biometric در دسترس نیست، passcode را مجدداً فعال کن
-            await prefs.setBool(_passcodeEnabledKey, true);
-            print('⚠️ Cannot disable passcode - biometric not available');
-            return false;
+            // اگر biometric در دسترس نیست، همچنان passcode را غیرفعال کن
+            // در این حالت، اپلیکیشن بدون احراز هویت کار می‌کند
+            print('🔓 Passcode disabled - app will work without authentication');
           }
         } else if (lockMethod == LockMethod.passcodeAndBiometric) {
-          // تغییر به biometric only
-          final biometricAvailable = await isBiometricAvailable();
           if (biometricAvailable) {
+            // تغییر به biometric only
             await setLockMethod(LockMethod.biometricOnly);
             print('🔒 Changed lock method to biometric only');
           } else {
-            // اگر biometric در دسترس نیست، passcode را مجدداً فعال کن
-            await prefs.setBool(_passcodeEnabledKey, true);
-            print('⚠️ Cannot disable passcode - biometric not available');
-            return false;
+            // اگر biometric در دسترس نیست، همچنان passcode را غیرفعال کن
+            print('🔓 Passcode disabled - app will work without authentication');
           }
         }
+        // در هر حالت، passcode غیرفعال می‌ماند
       }
       
       print('✅ Passcode enabled setting saved: $enabled');
@@ -153,14 +188,11 @@ class SecuritySettingsManager {
         print('🔒 Passcode enabled check (explicit from prefs): $enabled');
         return enabled;
       } else {
-        // اگر تنظیم نشده، بر اساس وجود passcode تصمیم بگیر
-        final hasPasscode = await PasscodeManager.isPasscodeSet();
-        print('🔍 DEBUG: No explicit setting found, checking PasscodeManager.isPasscodeSet(): $hasPasscode');
+        // اگر تنظیم نشده، پیش‌فرض غیرفعال است
+        // این به کاربر اختیار می‌دهد که خودش تصمیم بگیرد
+        final defaultEnabled = false;
         
-        // برای کاربران جدید، پیش‌فرض غیرفعال است
-        final defaultEnabled = hasPasscode; // اگر passcode وجود دارد، فعال باشد
-        
-        print('🔒 Passcode enabled check (default based on hasPasscode): $defaultEnabled');
+        print('🔒 Passcode enabled check (default for new setting): $defaultEnabled');
         
         // ذخیره کردن این مقدار پیش‌فرض برای استفاده‌های آینده
         await prefs.setBool(_passcodeEnabledKey, defaultEnabled);
@@ -170,7 +202,7 @@ class SecuritySettingsManager {
       }
     } catch (e) {
       print('❌ Error checking passcode enabled: $e');
-      return true; // پیش‌فرض امن
+      return false; // پیش‌فرض امن تغییر یافت به false
     }
   }
 

@@ -175,151 +175,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  void _showNetworkFilter() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Text(
-              _safeTranslate('select_network', 'Select Network'),
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  _NetworkOption(
-                    name: _safeTranslate('all_networks', 'All Networks'),
-                    icon: "assets/images/all.png",
-                    isSelected: selectedNetwork == "All Networks",
-                    onTap: () {
-                      setState(() => selectedNetwork = "All Networks");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Bitcoin",
-                    icon: "assets/images/btc.png",
-                    isSelected: selectedNetwork == "Bitcoin",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Bitcoin");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Ethereum",
-                    icon: "assets/images/ethereum_logo.png",
-                    isSelected: selectedNetwork == "Ethereum",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Ethereum");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Binance Smart Chain",
-                    icon: "assets/images/binance_logo.png",
-                    isSelected: selectedNetwork == "Binance Smart Chain",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Binance Smart Chain");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Polygon",
-                    icon: "assets/images/pol.png",
-                    isSelected: selectedNetwork == "Polygon",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Polygon");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Tron",
-                    icon: "assets/images/tron.png",
-                    isSelected: selectedNetwork == "Tron",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Tron");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Arbitrum",
-                    icon: "assets/images/arb.png",
-                    isSelected: selectedNetwork == "Arbitrum",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Arbitrum");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "XRP",
-                    icon: "assets/images/xrp.png",
-                    isSelected: selectedNetwork == "XRP",
-                    onTap: () {
-                      setState(() => selectedNetwork = "XRP");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Avalanche",
-                    icon: "assets/images/avax.png",
-                    isSelected: selectedNetwork == "Avalanche",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Avalanche");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Polkadot",
-                    icon: "assets/images/dot.png",
-                    isSelected: selectedNetwork == "Polkadot",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Polkadot");
-                      Navigator.pop(context);
-                    },
-                  ),
-                  _NetworkOption(
-                    name: "Solana",
-                    icon: "assets/images/sol.png",
-                    isSelected: selectedNetwork == "Solana",
-                    onTap: () {
-                      setState(() => selectedNetwork = "Solana");
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  void _showFilterModal() {
+    // Remove modal bottom sheet - filter modal removed
   }
 
   String _formatAmount(String amount) {
@@ -375,7 +232,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: GestureDetector(
-                    onTap: _showNetworkFilter,
+                    onTap: _showFilterModal,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(

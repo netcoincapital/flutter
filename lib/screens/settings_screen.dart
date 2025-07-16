@@ -72,150 +72,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// نمایش دیالوگ مدیریت دستگاه
   void _showDeviceManagementDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('device_management', 'Device Management')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.devices),
-              title: Text(_safeTranslate('registered_devices', 'Registered Devices')),
-              subtitle: Text(_safeTranslate('view_and_manage_devices', 'View and manage your registered devices')),
-              onTap: () {
-                Navigator.pop(context);
-                _showRegisteredDevices();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.refresh),
-              title: Text(_safeTranslate('re_register_device', 'Re-register Device')),
-              subtitle: Text(_safeTranslate('register_device_again', 'Register this device again')),
-              onTap: () {
-                Navigator.pop(context);
-                _reRegisterDevice();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete),
-              title: Text(_safeTranslate('unregister_device', 'Unregister Device')),
-              subtitle: Text(_safeTranslate('remove_device_from_server', 'Remove this device from server')),
-              onTap: () {
-                Navigator.pop(context);
-                _unregisterDevice();
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('cancel', 'Cancel')),
-          ),
-        ],
-      ),
-    );
+    // Remove dialog - device management removed
   }
 
   /// نمایش دستگاه‌های ثبت شده
-  Future<void> _showRegisteredDevices() async {
-    try {
-      final devices = await DeviceRegistrationManager.instance.getAllRegisteredDevices();
-      
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(_safeTranslate('registered_devices', 'Registered Devices')),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: devices.isEmpty
-                ? Text(_safeTranslate('no_devices_registered', 'No devices registered'))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: devices.length,
-                    itemBuilder: (context, index) {
-                      final device = devices[index];
-                      return ListTile(
-                        title: Text(device['deviceName'] ?? _safeTranslate('unknown', 'Unknown Device')),
-                        subtitle: Text('${_safeTranslate('registered', 'Registered')}: ${device['registeredAt'] ?? _safeTranslate('unknown', 'Unknown')}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete),
-                          onPressed: () => _deleteDevice(device),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(_safeTranslate('close', 'Close')),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_safeTranslate('error_loading_devices', 'Error loading devices: {error}').replaceAll('{error}', e.toString()))),
-      );
-    }
+  void _showRegisteredDevices() {
+    // Remove dialog - registered devices removed
   }
 
   /// ثبت مجدد دستگاه
-  Future<void> _reRegisterDevice() async {
-    try {
-      final userId = await _getUserId();
-      final walletId = await _getWalletId();
-      
-      if (userId != null && walletId != null) {
-        final success = await DeviceRegistrationManager.instance.registerDevice(
-          userId: userId,
-          walletId: walletId,
-        );
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success 
-              ? _safeTranslate('device_reregistered_successfully', 'Device re-registered successfully') 
-              : _safeTranslate('failed_to_reregister_device', 'Failed to re-register device')),
-            backgroundColor: success ? Colors.green : Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_safeTranslate('error_reregistering_device', 'Error re-registering device: {error}').replaceAll('{error}', e.toString()))),
-      );
-    }
+  void _reRegisterDevice() {
+    // Remove dialog - re-register device removed
   }
 
   /// حذف ثبت دستگاه
-  Future<void> _unregisterDevice() async {
-    try {
-      final userId = await _getUserId();
-      final walletId = await _getWalletId();
-      
-      if (userId != null && walletId != null) {
-        final success = await DeviceRegistrationManager.instance.unregisterDevice(
-          userId: userId,
-          walletId: walletId,
-        );
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success 
-              ? _safeTranslate('device_unregistered_successfully', 'Device unregistered successfully') 
-              : _safeTranslate('failed_to_unregister_device', 'Failed to unregister device')),
-            backgroundColor: success ? Colors.green : Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_safeTranslate('error_unregistering_device', 'Error unregistering device: {error}').replaceAll('{error}', e.toString()))),
-      );
-    }
+  void _unregisterDevice() {
+    // Remove dialog - unregister device removed
   }
 
   /// حذف دستگاه خاص
@@ -497,121 +369,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// نمایش دیالوگ وضعیت شبکه
   void _showNetworkStatusDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('network_status', 'Network Status')),
-        content: FutureBuilder<Map<String, dynamic>>(
-          future: Future.value(ServiceProvider.instance.getNetworkStatus()),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            
-            if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}');
-            }
-            
-            final networkInfo = snapshot.data ?? {};
-            final isOnline = networkInfo['isOnline'] ?? false;
-            final connectionType = networkInfo['connectionType'] ?? 'unknown';
-            final hasRealInternet = networkInfo['hasRealInternet'] ?? false;
-            
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _NetworkStatusItem(
-                  label: _safeTranslate('connection_status', 'Connection Status'),
-                  value: isOnline ? _safeTranslate('connected', 'Connected') : _safeTranslate('disconnected', 'Disconnected'),
-                  isOnline: isOnline,
-                ),
-                const SizedBox(height: 8),
-                _NetworkStatusItem(
-                  label: _safeTranslate('connection_type', 'Connection Type'),
-                  value: connectionType.toUpperCase(),
-                  isOnline: true,
-                ),
-                const SizedBox(height: 8),
-                _NetworkStatusItem(
-                  label: _safeTranslate('internet_access', 'Internet Access'),
-                  value: hasRealInternet ? _safeTranslate('available', 'Available') : _safeTranslate('unavailable', 'Unavailable'),
-                  isOnline: hasRealInternet,
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('close', 'Close')),
-          ),
-        ],
-      ),
-    );
+    // Remove dialog - network status dialog removed
   }
 
   /// نمایش دیالوگ مدیریت نوتیفیکیشن
   void _showNotificationManagementDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('notification_management', 'Notification Management')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.notifications_active),
-              title: Text(_safeTranslate('request_permission', 'Request Permission')),
-              onTap: () async {
-                Navigator.pop(context);
-                await NotificationHelper.requestNotificationPermission(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(_safeTranslate('permission_requested', 'Permission requested!'))),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete),
-              title: Text(_safeTranslate('clear_all_notifications', 'Clear All Notifications')),
-              onTap: () async {
-                Navigator.pop(context);
-                await NotificationHelper.cancelAllNotifications();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(_safeTranslate('all_notifications_cleared', 'All notifications cleared!'))),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_forever),
-              title: Text(_safeTranslate('delete_notification_channels', 'Delete Notification Channels')),
-              onTap: () async {
-                Navigator.pop(context);
-                await NotificationHelper.deleteNotificationChannels();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(_safeTranslate('notification_channels_deleted', 'Notification channels deleted!'))),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.celebration),
-              title: Text(_safeTranslate('show_welcome_notification', 'Show Welcome Notification')),
-              onTap: () async {
-                Navigator.pop(context);
-                await NotificationHelper.showWelcomeNotification();
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_safeTranslate('close', 'Close')),
-          ),
-        ],
-      ),
-    );
+    // Remove dialog - notification management dialog removed
   }
 
   @override

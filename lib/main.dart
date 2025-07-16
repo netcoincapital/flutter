@@ -12,6 +12,7 @@ import 'services/secure_storage.dart';
 import 'services/wallet_state_manager.dart';
 import 'services/language_manager.dart';
 import 'services/security_settings_manager.dart';
+import 'services/uninstall_data_manager.dart';
 import 'providers/history_provider.dart';
 import 'providers/network_provider.dart';
 import 'providers/app_provider.dart';
@@ -243,21 +244,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _clearSecureStorageIfPrefsEmpty() async {
     try {
-      const storage = FlutterSecureStorage();
-      final secureKeys = await storage.readAll();
+      print('🔍 Starting fresh install check...');
       
-      // Check if passcode exists in SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final passcodeHash = prefs.getString('passcode_hash');
+      // استفاده از UninstallDataManager برای بررسی و پاکسازی داده‌های باقی‌مانده
+      await UninstallDataManager.checkAndCleanupOnFreshInstall();
       
-      // فقط اگر واقعاً هیچ داده‌ای در SecureStorage نیست AND هیچ پسکدی وجود ندارد، fresh install است
-      if (secureKeys.isEmpty && passcodeHash == null) {
-        print('🆕 True fresh install detected - no secure data and no passcode found');
-        await prefs.clear(); // Clear any leftover SharedPreferences
-      } else {
-        print('📱 Existing user detected - ${secureKeys.length} secure keys found, passcode exists: ${passcodeHash != null}');
-        // Don't clear anything - user has existing data
-      }
+      // بررسی مجدد بعد از پاکسازی
+      print('🔍 Verifying cleanup results...');
+      final dataStatus = await UninstallDataManager.getDataStatus();
+      print('📊 Data status after cleanup: $dataStatus');
+      
     } catch (e) {
       print('❌ Error checking install state: $e');
       // Don't clear anything on error to be safe
@@ -377,6 +373,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       final prefs = await SharedPreferences.getInstance();
       final passcodeHash = prefs.getString('passcode_hash');
       print('🔑 DEBUG: SharedPreferences passcode_hash = ${passcodeHash != null ? "EXISTS" : "NULL"}');
+      
+      // ✅ Debug: Check security settings state
+      await _securityManager.debugSecurityState();
     } catch (e) {
       print('❌ Error checking passcode debug: $e');
     }

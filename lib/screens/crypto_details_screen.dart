@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'dart:convert';
 
 import 'package:my_flutter_app/screens/receive_wallet_screen.dart';
 import '../models/transaction.dart';
+import '../models/crypto_token.dart';
 import '../services/api_models.dart' as api;
 import '../services/secure_storage.dart';
 import '../services/service_provider.dart';
@@ -65,6 +67,74 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
       // دریافت قیمت این توکن خاص (مطابق با Kotlin crypto_details.kt)
       await priceProvider.fetchPrices([widget.tokenSymbol], currencies: [priceProvider.selectedCurrency]);
     });
+  }
+
+  /// ایجاد CryptoToken object برای ارسال به صفحه Send
+  CryptoToken _createCryptoTokenForSend() {
+    return CryptoToken(
+      name: widget.tokenName,
+      symbol: widget.tokenSymbol,
+      blockchainName: widget.blockchainName,
+      iconUrl: widget.iconUrl,
+      isEnabled: true,
+      amount: tokenBalance,
+      isToken: widget.isToken,
+      smartContractAddress: null, // می‌تواند null باشد یا از API دریافت شود
+    );
+  }
+
+  /// هدایت به صفحه Send
+  void _navigateToSendScreen() async {
+    try {
+      // ایجاد CryptoToken object
+      final cryptoToken = _createCryptoTokenForSend();
+      
+      // تبدیل به JSON و encode کردن
+      final tokenJson = jsonEncode(cryptoToken.toJson());
+      final encodedTokenJson = Uri.encodeComponent(tokenJson);
+      
+      print('🚀 Navigating to Send screen with token data:');
+      print('   Token: ${widget.tokenSymbol}');
+      print('   Balance: $tokenBalance');
+      print('   Blockchain: ${widget.blockchainName}');
+      print('   Encoded JSON length: ${encodedTokenJson.length}');
+      
+      // هدایت به صفحه Send با format مطابق onGenerateRoute
+      Navigator.pushNamed(
+        context,
+        '/send_detail/$encodedTokenJson',
+      );
+    } catch (e) {
+      print('❌ Error navigating to send screen: $e');
+      // Remove error message - silent failure
+    }
+  }
+
+  /// دریافت آدرس کیف پول از API
+  Future<String?> _getWalletAddress() async {
+    try {
+      final userId = await SecureStorage.getUserId();
+      if (userId == null) {
+        print('❌ CryptoDetails - No userId found for getting wallet address');
+        return null;
+      }
+
+      print('🔍 CryptoDetails - Getting wallet address for blockchain: ${widget.blockchainName}');
+      
+      final apiService = ServiceProvider.instance.apiService;
+      final response = await apiService.receiveToken(userId, widget.blockchainName);
+      
+      if (response.success && response.publicAddress != null) {
+        print('✅ CryptoDetails - Wallet address received: ${response.publicAddress}');
+        return response.publicAddress;
+      } else {
+        print('❌ CryptoDetails - Failed to get wallet address: ${response.message}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ CryptoDetails - Error getting wallet address: $e');
+      return null;
+    }
   }
 
   /// دریافت موجودی توکن خاص (مطابق با crypto_details.kt)
@@ -371,24 +441,38 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
                       assetIcon: 'assets/images/send.png',
                       label: _safeTranslate('send', 'Send'),
                       color: const Color(0x80D7FBE7),
-                      onTap: () {},
+                      onTap: () {
+                        _navigateToSendScreen();
+                      },
                     ),
                     _ActionButton(
                       assetIcon: 'assets/images/receive.png',
                       label: _safeTranslate('receive', 'Receive'),
                       color: const Color(0xFFE0F7FA),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ReceiveWalletScreen(
-                              cryptoName: widget.tokenName,
-                              blockchainName: widget.blockchainName,
-                              address: '', // آدرس را اینجا مقداردهی کن یا از prop بگیر
-                              symbol: widget.tokenSymbol,
-                            ),
-                          ),
-                        );
+                      onTap: () async {
+                        try {
+                          // دریافت آدرس کیف پول
+                          final address = await _getWalletAddress();
+                          
+                          if (address != null && address.isNotEmpty) {
+                            // باز کردن صفحه receive با آدرس واقعی
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ReceiveWalletScreen(
+                                  cryptoName: widget.tokenName,
+                                  blockchainName: widget.blockchainName,
+                                  address: address,
+                                  symbol: widget.tokenSymbol,
+                                ),
+                              ),
+                            );
+                          } else {
+                            // Remove error message - silent failure
+                          }
+                        } catch (e) {
+                          // Remove error message - silent failure
+                        }
                       },
                     ),
                   ],

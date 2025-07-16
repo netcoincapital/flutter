@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-
+import 'dart:io';
 import 'package:flutter/services.dart';
 
 class BottomMenuWithSiri extends StatelessWidget {
@@ -121,14 +121,20 @@ class _BottomMenuState extends State<BottomMenu> {
 
   @override
   Widget build(BuildContext context) {
+    // Remove bottom padding for iOS to move menu even lower
+    final bottomPadding = Platform.isIOS ? 0.0 : 0.0;
+    
     return Container(
       width: double.infinity,
-      height: 50,
+      height: 80 + bottomPadding, // Increased height for more padding
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.only(
+        top: 14, // Increased top padding
+        bottom: 14 + bottomPadding, // Increased bottom padding
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -155,28 +161,10 @@ class _BottomMenuState extends State<BottomMenu> {
                 final result = await Navigator.pushNamed(context, '/qr-scanner');
                 if (result != null && result is String && result.isNotEmpty) {
                   if (mounted) {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Scanned Content'),
-                        content: Text(result),
-                        actions: [
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              Clipboard.setData(ClipboardData(text: result));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Copied to clipboard')),
-                              );
-                            },
-                            child: const Text('Copy'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Cancel'),
-                          ),
-                        ],
-                      ),
+                    // Remove alert dialog - just copy to clipboard silently
+                    Clipboard.setData(ClipboardData(text: result));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Copied to clipboard')),
                     );
                   }
                 }

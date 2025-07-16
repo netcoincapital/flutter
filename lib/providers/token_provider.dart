@@ -45,8 +45,34 @@ class TokenProvider extends ChangeNotifier {
   // گترهای سازگاری با کد موجود
   List<CryptoToken> get tokens => _activeTokens;
   List<CryptoToken> get enabledTokens => _activeTokens.where((t) => t.isEnabled).toList();
+  
+  // Getter to check if TokenProvider is fully initialized
+  bool get isInitialized => !_isLoading && _activeTokens.isNotEmpty;
 
-  // متد اولیه‌سازی
+  // متد اولیه‌سازی در background
+  Future<void> initializeInBackground() async {
+    print('🔄 TokenProvider: Initializing in background for user: $_userId');
+    
+    try {
+      // Initialize TokenPreferences first
+      await tokenPreferences.initialize();
+      
+      // Initialize default tokens immediately
+      await _initializeDefaultTokensQuickly();
+      
+      // Load cached tokens immediately
+      await _loadCachedTokensQuickly();
+      
+      // Background tasks - don't wait for these
+      _runBackgroundTasks();
+      
+      print('✅ TokenProvider: Quick initialization completed for user: $_userId');
+    } catch (e) {
+      print('❌ TokenProvider: Error in background initialization: $e');
+    }
+  }
+  
+  // متد اولیه‌سازی (legacy - برای compatibility)
   Future<void> initialize() async {
     print('🔄 TokenProvider: Initializing for user: $_userId');
     
@@ -69,6 +95,90 @@ class TokenProvider extends ChangeNotifier {
     print('✅ TokenProvider: Initialized successfully for user: $_userId');
   }
 
+  // مقداردهی اولیه سریع توکن‌های پیش‌فرض
+  Future<void> _initializeDefaultTokensQuickly() async {
+    final defaultTokens = [
+      CryptoToken(
+        name: 'Bitcoin',
+        symbol: 'BTC',
+        blockchainName: 'Bitcoin',
+        iconUrl: 'https://coinceeper.com/defualtIcons/bitcoin.png',
+        isEnabled: true,
+        isToken: false,
+        smartContractAddress: null,
+      ),
+      CryptoToken(
+        name: 'Ethereum',
+        symbol: 'ETH',
+        blockchainName: 'Ethereum',
+        iconUrl: 'https://coinceeper.com/defualtIcons/ethereum.png',
+        isEnabled: true,
+        isToken: false,
+        smartContractAddress: null,
+      ),
+      CryptoToken(
+        name: 'Tron',
+        symbol: 'TRX',
+        blockchainName: 'Tron',
+        iconUrl: 'https://coinceeper.com/defualtIcons/tron.png',
+        isEnabled: true,
+        isToken: false,
+        smartContractAddress: null,
+      ),
+    ];
+    
+    // Set default tokens immediately
+    _currencies = defaultTokens;
+    _activeTokens = defaultTokens;
+    notifyListeners();
+    
+    print('✅ TokenProvider: Default tokens set immediately');
+  }
+  
+  // بارگذاری سریع توکن‌های cached
+  Future<void> _loadCachedTokensQuickly() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('cachedUserTokens_$_userId');
+      
+      if (jsonStr != null) {
+        final List<dynamic> list = json.decode(jsonStr);
+        final cachedTokens = list.map((e) => CryptoToken.fromJson(e)).toList();
+        
+        // Override with cached tokens if available
+        _currencies = cachedTokens;
+        _activeTokens = cachedTokens.where((t) => t.isEnabled).toList();
+        
+        print('✅ TokenProvider: Cached tokens loaded quickly (${_activeTokens.length} active)');
+        notifyListeners();
+      }
+    } catch (e) {
+      print('⚠️ TokenProvider: Could not load cached tokens: $e');
+    }
+  }
+  
+  // اجرای tasks در background
+  void _runBackgroundTasks() {
+    print('🔄 TokenProvider: Starting background tasks...');
+    
+    // Fetch gas fees
+    _fetchGasFees();
+    
+    // Load fresh tokens from API
+    smartLoadTokens(forceRefresh: false).then((_) {
+      print('✅ TokenProvider: Fresh tokens loaded from API');
+    }).catchError((e) {
+      print('❌ TokenProvider: Error loading fresh tokens: $e');
+    });
+    
+    // Load balances
+    fetchBalancesForActiveTokens().then((_) {
+      print('✅ TokenProvider: Balances loaded in background');
+    }).catchError((e) {
+      print('❌ TokenProvider: Error loading balances: $e');
+    });
+  }
+  
   // مقداردهی اولیه توکن‌های پیش‌فرض
   Future<void> _initializeDefaultTokens() async {
     final defaultTokens = [

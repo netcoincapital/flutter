@@ -86,11 +86,15 @@ class _WalletsScreenState extends State<WalletsScreen> {
     print('💰 Selected wallet: $walletName with userId: $userId');
   }
 
+  void _showWalletOptions(String walletName) {
+    // Remove modal bottom sheet - wallet options removed
+  }
+
   void _showAddWalletModal() {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => _AddWalletModalContent(
         onCreateNewWallet: _onCreateNewWallet,
         onAddExistingWallet: _onAddExistingWallet,
