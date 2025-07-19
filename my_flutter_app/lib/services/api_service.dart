@@ -619,84 +619,49 @@ class ApiService {
     required String userID,
     required String transactionId,
     required String blockchain,
-    required String privateKey,
+    // ✅ SECURITY FIX: Remove privateKey parameter - backend will get it from database
+    // required String privateKey, // ❌ REMOVED FOR SECURITY
   }) async {
     try {
-      final request = ConfirmTransactionRequest(
-        userID: userID,
-        transactionId: transactionId,
-        blockchain: blockchain,
-        privateKey: privateKey,
-      );
-      
-      // Debug log for confirm transaction
-      print('🔧 DEBUG: confirmTransaction request data:');
+      final requestBody = {
+        'UserID': userID,
+        'transaction_id': transactionId,
+        'blockchain': blockchain,
+        // ✅ SECURITY: No private key sent from frontend
+        // 'private_key': privateKey, // ❌ REMOVED FOR SECURITY
+      };
+
+      print('🔧 DEBUG: Secure confirmTransaction request:');
       print('   UserID: $userID');
-      print('   TransactionId: $transactionId');
+      print('   TransactionID: $transactionId');
       print('   Blockchain: $blockchain');
-      print('   PrivateKey: ${privateKey.substring(0, 8)}...');
-      print('   Full URL: ${_baseUrl}send/confirm');
-      print('   Request Body: ${request.toJson()}');
-      
-      // Add UserID to headers (same as cURL test)
-      final headers = await _getHeaders();
-      headers['UserID'] = userID;
-      print('   Headers: $headers');
-      
+      print('   ✅ Private key will be retrieved securely from backend database');
+
       final response = await _dio.post(
-        'send/confirm',
-        data: request.toJson(),
-        options: Options(headers: headers),
+        '/send/confirm',
+        data: requestBody,
       );
-      
-      print('✅ confirmTransaction Response: ${response.data}');
-      
-      return ConfirmTransactionResponse.fromJson(response.data);
-    } on DioException catch (e) {
-      print('❌ confirmTransaction ERROR:');
-      print('   Status Code: ${e.response?.statusCode}');
-      print('   Response Data: ${e.response?.data}');
-      print('   Response Headers: ${e.response?.headers}');
-      print('   Request Data: ${e.requestOptions.data}');
-      print('   Request Headers: ${e.requestOptions.headers}');
-      print('   Request Method: ${e.requestOptions.method}');
-      print('   Request URL: ${e.requestOptions.uri}');
-      print('   Error Message: ${e.message}');
-      print('   Error Type: ${e.type}');
-      
-      // If it's a 400 error but response has data, try to parse it
-      if (e.response?.statusCode == 400 && e.response?.data != null) {
-        try {
-          print('🔧 Trying to parse 400 response as success...');
-          final responseData = e.response!.data;
-          print('   Raw response data: $responseData');
-          
-          // Check if it's actually a success response
-          if (responseData is Map<String, dynamic>) {
-            final message = responseData['message'];
-            final status = responseData['status'];
-            final txHash = responseData['tx_hash'] ?? responseData['transaction_hash'];
-            
-            if (message == "Transaction sent successfully" || 
-                status == "sent" || 
-                (txHash != null && txHash.toString().isNotEmpty)) {
-              print('✅ Found success response in 400 error! Parsing as success...');
-              return ConfirmTransactionResponse.fromJson(responseData);
-            }
-            
-            // Handle specific Tatum API errors
-            if (message != null && message.contains('Failed to broadcast transaction via Tatum API')) {
-              print('❌ Tatum API broadcast failed - this is a server-side issue');
-              throw Exception('Network broadcast failed. Please try again later.');
-            }
-          }
-        } catch (parseError) {
-          print('❌ Error parsing 400 response: $parseError');
-        }
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        return ConfirmTransactionResponse(
+          success: data['success'] ?? false,
+          message: data['message'],
+          transactionHash: data['transaction_hash'],
+          txHash: data['tx_hash'],
+        );
+      } else {
+        return ConfirmTransactionResponse(
+          success: false,
+          message: 'HTTP ${response.statusCode}: ${response.statusMessage}',
+        );
       }
-      
-      _handleError(e);
-      rethrow;
+    } catch (e) {
+      print('❌ Error in secure confirmTransaction: $e');
+      return ConfirmTransactionResponse(
+        success: false,
+        message: 'Network error: ${e.toString()}',
+      );
     }
   }
   

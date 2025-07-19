@@ -5,6 +5,8 @@ import '../services/passcode_manager.dart';
 import 'passcode_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart'; // Added for kDebugMode
+import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // Added for SecureStorage
 
 class SecurityScreen extends StatefulWidget {
   const SecurityScreen({Key? key}) : super(key: key);
@@ -470,10 +472,87 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
             ),
             
             const SizedBox(height: 24),
+            
+            // Debug button for testing passcode persistence
+            if (kDebugMode) ...[
+              const SizedBox(height: 20),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.bug_report, color: Colors.purple),
+                  title: Text(_safeTranslate('debug_passcode_state', 'Debug Passcode State')),
+                  subtitle: Text(_safeTranslate('debug_passcode_subtitle', 'Test passcode persistence')),
+                  onTap: _debugPasscodeState,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+  
+  /// Debug method to test passcode state
+  Future<void> _debugPasscodeState() async {
+    try {
+      print('🔍 === MANUAL PASSCODE DEBUG ===');
+      
+      // Check SharedPreferences directly
+      final prefs = await SharedPreferences.getInstance();
+      final passcodeHash = prefs.getString('passcode_hash');
+      final passcodeSalt = prefs.getString('passcode_salt');
+      print('🔑 SharedPreferences passcode_hash = ${passcodeHash != null ? "EXISTS" : "NULL"}');
+      print('🔑 SharedPreferences passcode_salt = ${passcodeSalt != null ? "EXISTS" : "NULL"}');
+      
+      // Check SecureStorage backup
+      const secureStorage = FlutterSecureStorage();
+      final secureHash = await secureStorage.read(key: 'passcode_hash_secure');
+      final secureSalt = await secureStorage.read(key: 'passcode_salt_secure');
+      print('🔑 SecureStorage passcode_hash_secure = ${secureHash != null ? "EXISTS" : "NULL"}');
+      print('🔑 SecureStorage passcode_salt_secure = ${secureSalt != null ? "EXISTS" : "NULL"}');
+      
+      // Use PasscodeManager to check
+      final isPasscodeSet = await PasscodeManager.isPasscodeSet();
+      print('🔑 PasscodeManager.isPasscodeSet() = $isPasscodeSet');
+      
+      // Check if enabled in settings
+      final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+      print('🔑 SecuritySettingsManager.isPasscodeEnabled() = $isPasscodeEnabled');
+      
+      print('🔍 === END MANUAL DEBUG ===');
+      
+      // Show dialog with results
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Passcode Debug Results'),
+            content: Text(
+              'SharedPreferences:\n'
+              'passcode_hash: ${passcodeHash != null ? "EXISTS" : "NULL"}\n'
+              'passcode_salt: ${passcodeSalt != null ? "EXISTS" : "NULL"}\n\n'
+              'SecureStorage:\n'
+              'passcode_hash_secure: ${secureHash != null ? "EXISTS" : "NULL"}\n'
+              'passcode_salt_secure: ${secureSalt != null ? "EXISTS" : "NULL"}\n\n'
+              'PasscodeManager.isPasscodeSet(): $isPasscodeSet\n'
+              'SecurityManager.isPasscodeEnabled(): $isPasscodeEnabled',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error in debug: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Debug error: $e')),
+        );
+      }
+    }
   }
 
   /// Get passcode status text
