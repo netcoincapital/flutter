@@ -148,6 +148,7 @@ Map<String, dynamic> _$UpdateBalanceRequestToJson(
 PrepareTransactionRequest _$PrepareTransactionRequestFromJson(
         Map<String, dynamic> json) =>
     PrepareTransactionRequest(
+      userID: json['UserID'] as String,
       blockchainName: json['blockchain'] as String,
       senderAddress: json['sender_address'] as String,
       recipientAddress: json['recipient_address'] as String,
@@ -158,6 +159,7 @@ PrepareTransactionRequest _$PrepareTransactionRequestFromJson(
 Map<String, dynamic> _$PrepareTransactionRequestToJson(
         PrepareTransactionRequest instance) =>
     <String, dynamic>{
+      'UserID': instance.userID,
       'blockchain': instance.blockchainName,
       'sender_address': instance.senderAddress,
       'recipient_address': instance.recipientAddress,
@@ -167,6 +169,7 @@ Map<String, dynamic> _$PrepareTransactionRequestToJson(
 
 EstimateFeeRequest _$EstimateFeeRequestFromJson(Map<String, dynamic> json) =>
     EstimateFeeRequest(
+      userID: json['UserID'] as String,
       blockchain: json['blockchain'] as String,
       fromAddress: json['from_address'] as String,
       toAddress: json['to_address'] as String,
@@ -177,6 +180,7 @@ EstimateFeeRequest _$EstimateFeeRequestFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$EstimateFeeRequestToJson(EstimateFeeRequest instance) =>
     <String, dynamic>{
+      'UserID': instance.userID,
       'blockchain': instance.blockchain,
       'from_address': instance.fromAddress,
       'to_address': instance.toAddress,
@@ -208,21 +212,19 @@ Map<String, dynamic> _$RegisterDeviceRequestToJson(
 ConfirmTransactionRequest _$ConfirmTransactionRequestFromJson(
         Map<String, dynamic> json) =>
     ConfirmTransactionRequest(
+      userID: json['UserID'] as String,
       transactionId: json['transaction_id'] as String,
-      senderAddress: json['sender_address'] as String?,
-      recipientAddress: json['recipient_address'] as String?,
-      amount: json['amount'] as String?,
-      blockchainName: json['blockchain_name'] as String?,
+      blockchain: json['blockchain'] as String,
+      privateKey: json['private_key'] as String,
     );
 
 Map<String, dynamic> _$ConfirmTransactionRequestToJson(
         ConfirmTransactionRequest instance) =>
     <String, dynamic>{
+      'UserID': instance.userID,
       'transaction_id': instance.transactionId,
-      'sender_address': instance.senderAddress,
-      'recipient_address': instance.recipientAddress,
-      'amount': instance.amount,
-      'blockchain_name': instance.blockchainName,
+      'blockchain': instance.blockchain,
+      'private_key': instance.privateKey,
     };
 
 GetUserBalanceRequest _$GetUserBalanceRequestFromJson(
@@ -604,8 +606,8 @@ Map<String, dynamic> _$PrepareTransactionResponseToJson(
 
 PriorityOption _$PriorityOptionFromJson(Map<String, dynamic> json) =>
     PriorityOption(
-      fee: (json['fee'] as num).toInt(),
-      feeEth: (json['fee_eth'] as num).toDouble(),
+      fee: (json['fee'] as num?)?.toInt(),
+      feeEth: (json['fee_eth'] as num?)?.toDouble(),
     );
 
 Map<String, dynamic> _$PriorityOptionToJson(PriorityOption instance) =>
@@ -616,9 +618,15 @@ Map<String, dynamic> _$PriorityOptionToJson(PriorityOption instance) =>
 
 PriorityOptions _$PriorityOptionsFromJson(Map<String, dynamic> json) =>
     PriorityOptions(
-      average: PriorityOption.fromJson(json['average'] as Map<String, dynamic>),
-      fast: PriorityOption.fromJson(json['fast'] as Map<String, dynamic>),
-      slow: PriorityOption.fromJson(json['slow'] as Map<String, dynamic>),
+      average: json['average'] == null
+          ? null
+          : PriorityOption.fromJson(json['average'] as Map<String, dynamic>),
+      fast: json['fast'] == null
+          ? null
+          : PriorityOption.fromJson(json['fast'] as Map<String, dynamic>),
+      slow: json['slow'] == null
+          ? null
+          : PriorityOption.fromJson(json['slow'] as Map<String, dynamic>),
     );
 
 Map<String, dynamic> _$PriorityOptionsToJson(PriorityOptions instance) =>
@@ -630,15 +638,17 @@ Map<String, dynamic> _$PriorityOptionsToJson(PriorityOptions instance) =>
 
 EstimateFeeResponse _$EstimateFeeResponseFromJson(Map<String, dynamic> json) =>
     EstimateFeeResponse(
-      fee: (json['fee'] as num).toInt(),
-      feeCurrency: json['fee_currency'] as String,
-      gasPrice: (json['gas_price'] as num).toInt(),
-      gasUsed: (json['gas_used'] as num).toInt(),
-      priorityOptions: PriorityOptions.fromJson(
-          json['priority_options'] as Map<String, dynamic>),
-      timestamp: (json['timestamp'] as num).toInt(),
-      unit: json['unit'] as String,
-      usdPrice: (json['usd_price'] as num).toDouble(),
+      fee: (json['fee'] as num?)?.toInt(),
+      feeCurrency: json['fee_currency'] as String?,
+      gasPrice: (json['gas_price'] as num?)?.toInt(),
+      gasUsed: (json['gas_used'] as num?)?.toInt(),
+      priorityOptions: json['priority_options'] == null
+          ? null
+          : PriorityOptions.fromJson(
+              json['priority_options'] as Map<String, dynamic>),
+      timestamp: (json['timestamp'] as num?)?.toInt(),
+      unit: json['unit'] as String?,
+      usdPrice: (json['usd_price'] as num?)?.toDouble(),
     );
 
 Map<String, dynamic> _$EstimateFeeResponseToJson(
@@ -673,11 +683,12 @@ Map<String, dynamic> _$RegisterDeviceResponseToJson(
 ConfirmTransactionResponse _$ConfirmTransactionResponseFromJson(
         Map<String, dynamic> json) =>
     ConfirmTransactionResponse(
-      success: json['success'] as bool,
-      message: json['message'] as String,
-      transactionHash: json['transaction_hash'] as String,
-      status: json['status'] as String,
-      description: json['description'] as String,
+      success: json['success'] as bool?,
+      message: json['message'] as String?,
+      transactionHash: json['transaction_hash'] as String?,
+      txHash: json['tx_hash'] as String?,
+      status: json['status'] as String?,
+      description: json['description'] as String?,
     );
 
 Map<String, dynamic> _$ConfirmTransactionResponseToJson(
@@ -686,6 +697,7 @@ Map<String, dynamic> _$ConfirmTransactionResponseToJson(
       'success': instance.success,
       'message': instance.message,
       'transaction_hash': instance.transactionHash,
+      'tx_hash': instance.txHash,
       'status': instance.status,
       'description': instance.description,
     };

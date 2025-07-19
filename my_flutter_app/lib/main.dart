@@ -11,6 +11,8 @@ import 'services/notification_helper.dart';
 import 'services/secure_storage.dart';
 import 'services/wallet_state_manager.dart';
 import 'services/language_manager.dart';
+import 'services/security_settings_manager.dart';
+import 'services/uninstall_data_manager.dart';
 import 'providers/history_provider.dart';
 import 'providers/network_provider.dart';
 import 'providers/app_provider.dart';
@@ -34,6 +36,7 @@ import 'screens/send_detail_screen.dart';
 import 'screens/transaction_detail_screen.dart';
 import 'screens/dex_screen.dart';
 import 'screens/passcode_screen.dart';
+import 'screens/security_screen.dart';
 import 'layout/network_overlay.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -159,22 +162,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   String _initialRoute = '/import-create';
   bool _hasPasscode = false;
   DateTime? _lastBackgroundTime;
-  int _autoLockTimeoutMillis = 0; // 0 means Immediate
   bool _isInitialized = false;
+  
+  final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // 🚀 Run initialization tasks in parallel for faster startup
-    Future.wait([
-      _initializeApp(),
-      _loadAutoLockTimeout(),
-    ]).then((_) {
-      print('🚀 All initialization tasks completed in parallel');
+    // 🚀 Initialize SecuritySettingsManager FIRST, then app
+    _initializeSecurityManager().then((_) {
+      print('🔒 SecuritySettingsManager initialized, now initializing app');
+      return _initializeApp();
+    }).then((_) {
+      print('🚀 All initialization tasks completed in sequence');
     }).catchError((e) {
-      print('❌ Error in parallel initialization: $e');
+      print('❌ Error in initialization sequence: $e');
     });
   }
 
@@ -191,57 +195,65 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // App goes to background
       final now = DateTime.now();
       _lastBackgroundTime = now;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('last_background_time', now.millisecondsSinceEpoch);
+      
+      // Save background time using SecuritySettingsManager
+      await _securityManager.saveLastBackgroundTime();
+      
+      print('📱 App went to background at: $now');
     } else if (state == AppLifecycleState.resumed) {
       // App comes to foreground
-      final prefs = await SharedPreferences.getInstance();
-      final lastMillis = prefs.getInt('last_background_time') ?? 0;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final elapsed = now - lastMillis;
-      if (_autoLockTimeoutMillis > 0 && elapsed > _autoLockTimeoutMillis) {
-        // Show passcode screen if timeout exceeded
+      print('📱 App resumed from background');
+      
+      // بررسی اینکه آیا passcode فعال است
+      final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+      
+      if (!isPasscodeEnabled) {
+        print('🔓 Passcode disabled - no auto-lock needed');
+        return;
+      }
+      
+      // Check if we should show passcode screen
+      final shouldShowPasscode = await _securityManager.shouldShowPasscodeAfterBackground();
+      
+      if (shouldShowPasscode) {
+        print('🔒 Auto-lock triggered - showing passcode screen');
         SchedulerBinding.instance.addPostFrameCallback((_) {
           Navigator.of(context).pushNamedAndRemoveUntil(
             '/enter-passcode',
             (route) => false,
           );
         });
-      } else if (_autoLockTimeoutMillis == 0 && lastMillis > 0) {
-        // Immediate lock
-        SchedulerBinding.instance.addPostFrameCallback((_) {
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/enter-passcode',
-            (route) => false,
-          );
-        });
+      } else {
+        print('🔓 No auto-lock needed - app remains unlocked');
       }
     }
   }
 
-  Future<void> _loadAutoLockTimeout() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Default: 0 (Immediate), can be set elsewhere in the app
-    _autoLockTimeoutMillis = prefs.getInt('auto_lock_timeout_millis') ?? 0;
+  Future<void> _initializeSecurityManager() async {
+    try {
+      // Initialize security settings with defaults
+      await _securityManager.initialize();
+      
+      // Get summary after initialization
+      final summary = await _securityManager.getSecuritySettingsSummary();
+      print('🔒 Security settings initialized: ${summary['lockMethodText']} - ${summary['autoLockDurationText']}');
+    } catch (e) {
+      print('❌ Error initializing security manager: $e');
+    }
   }
 
   Future<void> _clearSecureStorageIfPrefsEmpty() async {
     try {
-      const storage = FlutterSecureStorage();
-      final secureKeys = await storage.readAll();
+      print('🔍 Starting fresh install check...');
       
-      // Check if passcode exists in SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final passcodeHash = prefs.getString('passcode_hash');
+      // استفاده از UninstallDataManager برای بررسی و پاکسازی داده‌های باقی‌مانده
+      await UninstallDataManager.checkAndCleanupOnFreshInstall();
       
-      // فقط اگر واقعاً هیچ داده‌ای در SecureStorage نیست AND هیچ پسکدی وجود ندارد، fresh install است
-      if (secureKeys.isEmpty && passcodeHash == null) {
-        print('🆕 True fresh install detected - no secure data and no passcode found');
-        await prefs.clear(); // Clear any leftover SharedPreferences
-      } else {
-        print('📱 Existing user detected - ${secureKeys.length} secure keys found, passcode exists: ${passcodeHash != null}');
-        // Don't clear anything - user has existing data
-      }
+      // بررسی مجدد بعد از پاکسازی
+      print('🔍 Verifying cleanup results...');
+      final dataStatus = await UninstallDataManager.getDataStatus();
+      print('📊 Data status after cleanup: $dataStatus');
+      
     } catch (e) {
       print('❌ Error checking install state: $e');
       // Don't clear anything on error to be safe
@@ -256,20 +268,33 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // 🎯 Step 1: Critical route determination (must be first)
       String initialRoute;
       
-      // بررسی وجود کیف پول
+      // بررسی وجود کیف پول و فعال بودن passcode
       final hasWallet = await WalletStateManager.instance.hasWallet();
       final hasPasscode = await WalletStateManager.instance.hasPasscode();
+      final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
       
-      print('🔍 Wallet check: hasWallet=$hasWallet, hasPasscode=$hasPasscode');
+      print('🔍 === ROUTE DETERMINATION DEBUG ===');
+      print('🔍 hasWallet: $hasWallet');
+      print('🔍 hasPasscode: $hasPasscode');
+      print('🔍 isPasscodeEnabled: $isPasscodeEnabled');
       
+      // اگر کیف پول وجود دارد و passcode تنظیم شده است
       if (hasWallet && hasPasscode) {
-        // اگر کیف پول و پسکد وجود دارد، همیشه به enter-passcode برود
+        // اگر passcode تنظیم شده، همیشه به enter-passcode برود (صرف نظر از toggle)
         initialRoute = '/enter-passcode';
-        print('🎯 User has wallet and passcode -> going to enter-passcode');
+        print('🎯 ✅ Wallet and passcode exist -> going to enter-passcode');
       } else {
         // در غیر این صورت از WalletStateManager استفاده کن
         initialRoute = await WalletStateManager.instance.getInitialScreen();
-        print('🎯 Using WalletStateManager route: $initialRoute');
+        print('🎯 ❌ Conditions not met -> using WalletStateManager route: $initialRoute');
+        
+        // اضافه کردن جزئیات بیشتر برای debugging
+        if (!hasWallet) {
+          print('🔍 → Reason: No wallet found');
+        }
+        if (!hasPasscode) {
+          print('🔍 → Reason: No passcode set');
+        }
       }
       
       print('🎯 Final initial route determined: $initialRoute');
@@ -345,6 +370,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       final prefs = await SharedPreferences.getInstance();
       final passcodeHash = prefs.getString('passcode_hash');
       print('🔑 DEBUG: SharedPreferences passcode_hash = ${passcodeHash != null ? "EXISTS" : "NULL"}');
+      
+      // ✅ Debug: Check security settings state
+      await _securityManager.debugSecurityState();
     } catch (e) {
       print('❌ Error checking passcode debug: $e');
     }
@@ -451,6 +479,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           '/wallets': (context) => const WalletsScreen(),
           '/add-token': (context) => const AddTokenScreen(),
           '/settings': (context) => const SettingsScreen(),
+          '/security': (context) => const SecurityScreen(),
           '/qr-scanner': (context) {
             final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
             return QrScannerScreen(

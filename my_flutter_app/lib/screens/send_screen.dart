@@ -455,15 +455,6 @@ class _SendScreenState extends State<SendScreen> {
           balanceItems = [];
         });
         
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_safeTranslate('no_balance_data', errorMessage)),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
       }
       
     } catch (e, stackTrace) {
@@ -491,20 +482,6 @@ class _SendScreenState extends State<SendScreen> {
         errorMessage = 'Error loading balances: ${e.toString()}';
       }
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_safeTranslate('error_loading_balances', errorMessage)),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 7),
-            action: SnackBarAction(
-              label: _safeTranslate('retry', 'Retry'),
-              textColor: Colors.white,
-              onPressed: () => _fetchBalanceDirectly(),
-            ),
-          ),
-        );
-      }
     } finally {
       setState(() {
         isLoading = false;
@@ -628,93 +605,9 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
-  /// نمایش modal برای انتخاب شبکه (مطابق با سایر صفحات)
+  /// نمایش modal برای انتخاب شبکه (مطابق با receive screen)
   void _showNetworkFilter() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Text(
-              _safeTranslate('select_network', 'Select Network'),
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: 11,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final networks = [
-                    'All',
-                    'Bitcoin',
-                    'Ethereum',
-                    'Binance Smart Chain',
-                    'Polygon',
-                    'Tron',
-                    'Arbitrum',
-                    'XRP',
-                    'Avalanche',
-                    'Polkadot',
-                    'Solana'
-                  ];
-                  final icons = [
-                    'assets/images/all.png',
-                    'assets/images/btc.png',
-                    'assets/images/ethereum_logo.png',
-                    'assets/images/binance_logo.png',
-                    'assets/images/pol.png',
-                    'assets/images/tron.png',
-                    'assets/images/arb.png',
-                    'assets/images/xrp.png',
-                    'assets/images/avax.png',
-                    'assets/images/dot.png',
-                    'assets/images/sol.png'
-                  ];
-                  final networkName = networks[index];
-                  final isSelected = selectedNetwork == networkName;
-                  
-                  return _NetworkOption(
-                    name: networkName == 'All' ? _safeTranslate('all', 'All') : networkName,
-                    icon: icons[index],
-                    isSelected: isSelected,
-                    onTap: () {
-                      setState(() => selectedNetwork = networkName);
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Remove modal bottom sheet - network filter removed
   }
 
   /// فیلتر کردن توکن‌ها (مطابق با Kotlin)
@@ -731,7 +624,10 @@ class _SendScreenState extends State<SendScreen> {
     }).toList();
     }
 
-  
+  void _showTokenSelector() {
+    // Remove modal bottom sheet - token selector removed
+  }
+
   
   @override
   Widget build(BuildContext context) {

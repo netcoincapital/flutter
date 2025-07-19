@@ -52,27 +52,9 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
   }
 
   Future<void> _deleteWallet(String walletName) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_safeTranslate('delete_wallet', 'Delete Wallet')),
-        content: Text(_safeTranslate('delete_wallet_confirmation', 'Are you sure you want to delete this wallet?')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(_safeTranslate('cancel', 'Cancel')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(_safeTranslate('delete', 'Delete'), style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      await AddressBookService.deleteWalletFromKeystore(walletName);
-      await _loadWallets();
-    }
+    // Remove dialog - direct delete without confirmation
+    await AddressBookService.deleteWalletFromKeystore(walletName);
+    await _loadWallets();
   }
 
   @override

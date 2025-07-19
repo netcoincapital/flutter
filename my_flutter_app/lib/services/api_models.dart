@@ -253,6 +253,9 @@ class UpdateBalanceRequest {
 /// درخواست برای آماده‌سازی تراکنش
 @JsonSerializable()
 class PrepareTransactionRequest {
+  @JsonKey(name: 'UserID')
+  final String userID;
+  
   @JsonKey(name: 'blockchain')
   final String blockchainName;
   
@@ -268,12 +271,14 @@ class PrepareTransactionRequest {
   final String smartContractAddress;
 
   PrepareTransactionRequest({
+    required this.userID,
     required this.blockchainName,
     required this.senderAddress,
     required this.recipientAddress,
     required this.amount,
     this.smartContractAddress = '',
   }) {
+    assert(userID.isNotEmpty, 'UserID cannot be empty');
     assert(blockchainName.isNotEmpty, 'BlockchainName cannot be empty');
     assert(senderAddress.isNotEmpty, 'SenderAddress cannot be empty');
     assert(recipientAddress.isNotEmpty, 'RecipientAddress cannot be empty');
@@ -287,6 +292,9 @@ class PrepareTransactionRequest {
 /// درخواست برای تخمین کارمزد
 @JsonSerializable()
 class EstimateFeeRequest {
+  @JsonKey(name: 'UserID')
+  final String userID;
+  
   final String blockchain;
   
   @JsonKey(name: 'from_address')
@@ -303,6 +311,7 @@ class EstimateFeeRequest {
   final String tokenContract;
 
   EstimateFeeRequest({
+    required this.userID,
     required this.blockchain,
     required this.fromAddress,
     required this.toAddress,
@@ -310,6 +319,7 @@ class EstimateFeeRequest {
     this.type,
     this.tokenContract = '',
   }) {
+    assert(userID.isNotEmpty, 'UserID cannot be empty');
     assert(blockchain.isNotEmpty, 'Blockchain cannot be empty');
     assert(fromAddress.isNotEmpty, 'FromAddress cannot be empty');
     assert(toAddress.isNotEmpty, 'ToAddress cannot be empty');
@@ -358,28 +368,27 @@ class RegisterDeviceRequest {
 /// درخواست برای تایید تراکنش
 @JsonSerializable()
 class ConfirmTransactionRequest {
+  @JsonKey(name: 'UserID')
+  final String userID;
+  
   @JsonKey(name: 'transaction_id')
   final String transactionId;
   
-  @JsonKey(name: 'sender_address')
-  final String? senderAddress;
+  final String blockchain;
   
-  @JsonKey(name: 'recipient_address')
-  final String? recipientAddress;
-  
-  final String? amount;
-  
-  @JsonKey(name: 'blockchain_name')
-  final String? blockchainName;
+  @JsonKey(name: 'private_key')
+  final String privateKey;
 
   ConfirmTransactionRequest({
+    required this.userID,
     required this.transactionId,
-    this.senderAddress,
-    this.recipientAddress,
-    this.amount,
-    this.blockchainName,
+    required this.blockchain,
+    required this.privateKey,
   }) {
-    assert(transactionId.isNotEmpty, 'TransactionID cannot be empty');
+    assert(userID.isNotEmpty, 'UserID cannot be empty');
+    assert(transactionId.isNotEmpty, 'TransactionId cannot be empty');
+    assert(blockchain.isNotEmpty, 'Blockchain cannot be empty');
+    assert(privateKey.isNotEmpty, 'PrivateKey cannot be empty');
   }
 
   factory ConfirmTransactionRequest.fromJson(Map<String, dynamic> json) => _$ConfirmTransactionRequestFromJson(json);
@@ -881,14 +890,14 @@ class PrepareTransactionResponse {
 /// گزینه اولویت
 @JsonSerializable()
 class PriorityOption {
-  final int fee;
+  final int? fee;
   
   @JsonKey(name: 'fee_eth')
-  final double feeEth;
+  final double? feeEth;
 
   const PriorityOption({
-    required this.fee,
-    required this.feeEth,
+    this.fee,
+    this.feeEth,
   });
 
   factory PriorityOption.fromJson(Map<String, dynamic> json) => _$PriorityOptionFromJson(json);
@@ -898,14 +907,14 @@ class PriorityOption {
 /// گزینه‌های اولویت
 @JsonSerializable()
 class PriorityOptions {
-  final PriorityOption average;
-  final PriorityOption fast;
-  final PriorityOption slow;
+  final PriorityOption? average;
+  final PriorityOption? fast;
+  final PriorityOption? slow;
 
   const PriorityOptions({
-    required this.average,
-    required this.fast,
-    required this.slow,
+    this.average,
+    this.fast,
+    this.slow,
   });
 
   factory PriorityOptions.fromJson(Map<String, dynamic> json) => _$PriorityOptionsFromJson(json);
@@ -915,34 +924,34 @@ class PriorityOptions {
 /// پاسخ تخمین کارمزد
 @JsonSerializable()
 class EstimateFeeResponse {
-  final int fee;
+  final int? fee;
   
   @JsonKey(name: 'fee_currency')
-  final String feeCurrency;
+  final String? feeCurrency;
   
   @JsonKey(name: 'gas_price')
-  final int gasPrice;
+  final int? gasPrice;
   
   @JsonKey(name: 'gas_used')
-  final int gasUsed;
+  final int? gasUsed;
   
   @JsonKey(name: 'priority_options')
-  final PriorityOptions priorityOptions;
-  final int timestamp;
-  final String unit;
+  final PriorityOptions? priorityOptions;
+  final int? timestamp;
+  final String? unit;
   
   @JsonKey(name: 'usd_price')
-  final double usdPrice;
+  final double? usdPrice;
 
   const EstimateFeeResponse({
-    required this.fee,
-    required this.feeCurrency,
-    required this.gasPrice,
-    required this.gasUsed,
-    required this.priorityOptions,
-    required this.timestamp,
-    required this.unit,
-    required this.usdPrice,
+    this.fee,
+    this.feeCurrency,
+    this.gasPrice,
+    this.gasUsed,
+    this.priorityOptions,
+    this.timestamp,
+    this.unit,
+    this.usdPrice,
   });
 
   factory EstimateFeeResponse.fromJson(Map<String, dynamic> json) => _$EstimateFeeResponseFromJson(json);
@@ -971,24 +980,39 @@ class RegisterDeviceResponse {
 /// پاسخ تایید تراکنش
 @JsonSerializable()
 class ConfirmTransactionResponse {
-  final bool success;
-  final String message;
+  final bool? success;
+  final String? message;
   
   @JsonKey(name: 'transaction_hash')
-  final String transactionHash;
-  final String status;
-  final String description;
+  final String? transactionHash;
+  
+  @JsonKey(name: 'tx_hash')
+  final String? txHash;
+  
+  final String? status;
+  final String? description;
 
   const ConfirmTransactionResponse({
-    required this.success,
-    required this.message,
-    required this.transactionHash,
-    required this.status,
-    required this.description,
+    this.success,
+    this.message,
+    this.transactionHash,
+    this.txHash,
+    this.status,
+    this.description,
   });
 
   factory ConfirmTransactionResponse.fromJson(Map<String, dynamic> json) => _$ConfirmTransactionResponseFromJson(json);
   Map<String, dynamic> toJson() => _$ConfirmTransactionResponseToJson(this);
+  
+  // Helper method to check if transaction was successful
+  bool get isSuccess => success == true || 
+                        message == "Transaction sent successfully" || 
+                        status == "sent" ||
+                        (transactionHash != null && transactionHash!.isNotEmpty) ||
+                        (txHash != null && txHash!.isNotEmpty);
+  
+  // Helper method to get transaction hash
+  String? get hash => transactionHash ?? txHash;
 }
 
 

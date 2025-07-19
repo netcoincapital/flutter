@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:io';
 import '../models/crypto_token.dart';
 import '../models/price_data.dart';
 import '../services/api_service.dart';
 import '../utils/token_preferences.dart';
+import '../services/secure_storage.dart';
 
 class TokenProvider extends ChangeNotifier {
   // فیلدهای وضعیت
@@ -45,8 +48,123 @@ class TokenProvider extends ChangeNotifier {
   // گترهای سازگاری با کد موجود
   List<CryptoToken> get tokens => _activeTokens;
   List<CryptoToken> get enabledTokens => _activeTokens.where((t) => t.isEnabled).toList();
+  
+  // Getter to check if TokenProvider is fully initialized
+  bool get isInitialized => !_isLoading && _currencies.isNotEmpty;
 
-  // متد اولیه‌سازی
+  /// بررسی اینکه آیا TokenProvider کاملاً آماده است
+  bool get isFullyReady {
+    return !_isLoading && 
+           _currencies.isNotEmpty && 
+           tokenPreferences.isCacheInitialized &&
+           _activeTokens.isNotEmpty;
+  }
+  
+  /// Debug method to show current state
+  void debugCurrentState() {
+    print('=== TokenProvider Debug State ===');
+    print('User ID: $_userId');
+    print('Is Loading: $_isLoading');
+    print('Is Initialized: $isInitialized');
+    print('Is Fully Ready: $isFullyReady');
+    print('Cache Initialized: ${tokenPreferences.isCacheInitialized}');
+    print('Total Currencies: ${_currencies.length}');
+    print('Active Tokens: ${_activeTokens.length}');
+    print('Active Tokens List: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
+    print('=====================================');
+  }
+  
+  /// Debug method to check token preferences
+  Future<void> debugTokenPreferences() async {
+    print('=== TokenPreferences Debug ===');
+    print('User ID: $_userId');
+    print('Cache Initialized: ${tokenPreferences.isCacheInitialized}');
+    
+    // Validate userId
+    if (_userId.isEmpty) {
+      print('❌ ERROR: User ID is empty! This will cause token persistence to fail.');
+      return;
+    }
+    
+    // Check default tokens
+    final defaultTokens = ['BTC', 'ETH', 'TRX'];
+    for (final symbol in defaultTokens) {
+      final state = tokenPreferences.getTokenStateSync(symbol, symbol, null);
+      print('Token $symbol state: $state');
+    }
+    
+    // Check SharedPreferences keys
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((key) => key.contains(_userId)).toList();
+    print('SharedPreferences keys containing userId: $keys');
+    
+    // Check specific keys
+    for (final key in keys) {
+      final value = prefs.get(key);
+      print('  $key: $value');
+    }
+    
+    print('===============================');
+  }
+
+  /// مقداردهی اولیه در background - مشابه Kotlin
+  Future<void> initializeInBackground() async {
+    print('🔄 TokenProvider: Initializing in background for user: $_userId');
+    
+    _isLoading = true;
+    notifyListeners();
+    
+    try {
+      // 0. Ensure we have a valid userId
+      await _ensureValidUserId();
+      
+      // Recreate TokenPreferences with correct userId
+      tokenPreferences = TokenPreferences(userId: _userId);
+      
+      // 1. Initialize TokenPreferences first
+      await tokenPreferences.initialize();
+      print('✅ TokenProvider: TokenPreferences initialized');
+      
+      // 2. Initialize default tokens immediately
+      await _initializeDefaultTokensQuickly();
+      print('✅ TokenProvider: Default tokens initialized quickly');
+      
+      // 3. Load cached tokens immediately
+      await _loadCachedTokensQuickly();
+      print('✅ TokenProvider: Cached tokens loaded quickly');
+      
+      // 4. Force smart load to ensure we have all tokens
+      await smartLoadTokens(forceRefresh: false);
+      print('✅ TokenProvider: Smart load completed');
+      
+      // 5. Ensure complete synchronization
+      await ensureTokensSynchronized();
+      print('✅ TokenProvider: Complete synchronization done');
+      
+      // 6. Debug current state
+      print('🔍 TokenProvider: Current state after initialization:');
+      print('🔍 TokenProvider: Total currencies: ${_currencies.length}');
+      print('🔍 TokenProvider: Active tokens: ${_activeTokens.length}');
+      print('🔍 TokenProvider: Active tokens list: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
+      
+      // 7. Background tasks - fetch fresh data
+      _runBackgroundTasks();
+      
+      print('✅ TokenProvider: Background initialization completed for user: $_userId');
+      
+    } catch (e) {
+      print('❌ TokenProvider: Error in background initialization: $e');
+      _errorMessage = 'Error initializing: ${e.toString()}';
+      
+      // Even if initialization fails, ensure we have default tokens
+      await _initializeDefaultTokens();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+  
+  // متد اولیه‌سازی (legacy - برای compatibility)
   Future<void> initialize() async {
     print('🔄 TokenProvider: Initializing for user: $_userId');
     
@@ -69,8 +187,8 @@ class TokenProvider extends ChangeNotifier {
     print('✅ TokenProvider: Initialized successfully for user: $_userId');
   }
 
-  // مقداردهی اولیه توکن‌های پیش‌فرض
-  Future<void> _initializeDefaultTokens() async {
+  // مقداردهی اولیه سریع توکن‌های پیش‌فرض
+  Future<void> _initializeDefaultTokensQuickly() async {
     final defaultTokens = [
       CryptoToken(
         name: 'Bitcoin',
@@ -100,34 +218,182 @@ class TokenProvider extends ChangeNotifier {
         smartContractAddress: null,
       ),
     ];
-    final prefs = await SharedPreferences.getInstance();
-    final isFirstRun = prefs.getBool('is_first_run_$_userId') ?? true;
-    if (isFirstRun) {
-      for (final token in defaultTokens) {
-        await tokenPreferences.saveTokenState(
-          token.symbol ?? '',
-          token.blockchainName ?? '',
-          token.smartContractAddress,
-          true,
-        );
+    
+    // Set default tokens immediately
+    _currencies = defaultTokens;
+    _activeTokens = defaultTokens;
+    notifyListeners();
+    
+    print('✅ TokenProvider: Default tokens set immediately');
+  }
+  
+  /// بارگذاری سریع توکن‌های cached
+  Future<void> _loadCachedTokensQuickly() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('cachedUserTokens_$_userId');
+      
+      if (jsonStr != null) {
+        final List<dynamic> list = json.decode(jsonStr);
+        final cachedTokens = list.map((e) => CryptoToken.fromJson(e)).toList();
+        
+        print('🔄 TokenProvider: Found ${cachedTokens.length} cached tokens');
+        
+        // به‌روزرسانی state توکن‌ها از TokenPreferences
+        final updatedTokens = cachedTokens.map((token) {
+          final isEnabled = tokenPreferences.getTokenStateSync(
+            token.symbol ?? '', 
+            token.blockchainName ?? '', 
+            token.smartContractAddress
+          );
+          
+          // اگر state موجود نیست، برای توکن‌های پیش‌فرض true استفاده کن
+          final finalState = isEnabled ?? ['BTC', 'ETH', 'TRX'].contains(token.symbol?.toUpperCase());
+          
+          print('🔍 TokenProvider: Token ${token.symbol} - cached: ${token.isEnabled}, preferences: $isEnabled, final: $finalState');
+          
+          return token.copyWith(isEnabled: finalState);
+        }).toList();
+        
+        // به‌روزرسانی currencies با state درست
+        _currencies = updatedTokens;
+        
+        // فوری به‌روزرسانی active tokens
+        _activeTokens = updatedTokens.where((t) => t.isEnabled).toList();
+        
+        // ذخیره user tokens
+        _userTokens[_userId] = updatedTokens;
+        
+        print('✅ TokenProvider: Cached tokens loaded quickly (${_activeTokens.length} active)');
+        print('✅ TokenProvider: Active tokens: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
+        
+        notifyListeners();
+      } else {
+        print('⚠️ TokenProvider: No cached tokens found for user: $_userId');
       }
-      await prefs.setBool('is_first_run_$_userId', false);
-      _currencies = defaultTokens;
-      _activeTokens = defaultTokens;
-      notifyListeners();
-    } else {
-      // اگر اولین اجرا نیست، فقط مطمئن شو توکن‌های پیش‌فرض فعال باشند
-      for (final token in defaultTokens) {
-        final enabled = await tokenPreferences.getTokenState(
-          token.symbol ?? '',
-          token.blockchainName ?? '',
-          token.smartContractAddress,
-        ) ?? true;
-        if (enabled && !_activeTokens.any((t) => t.symbol == token.symbol)) {
-          _activeTokens.add(token);
-          print('🔄 Added default token to active: ${token.symbol}');
+    } catch (e) {
+      print('❌ TokenProvider: Could not load cached tokens: $e');
+    }
+  }
+  
+  // اجرای tasks در background
+  void _runBackgroundTasks() {
+    print('🔄 TokenProvider: Starting background tasks...');
+    
+    // Fetch gas fees
+    _fetchGasFees();
+    
+    // Load fresh tokens from API
+    smartLoadTokens(forceRefresh: false).then((_) {
+      print('✅ TokenProvider: Fresh tokens loaded from API');
+    }).catchError((e) {
+      print('❌ TokenProvider: Error loading fresh tokens: $e');
+    });
+    
+    // Load balances
+    fetchBalancesForActiveTokens().then((_) {
+      print('✅ TokenProvider: Balances loaded in background');
+    }).catchError((e) {
+      print('❌ TokenProvider: Error loading balances: $e');
+    });
+  }
+  
+  /// مقداردهی اولیه توکن‌های پیش‌فرض - مشابه Kotlin
+  Future<void> _initializeDefaultTokens() async {
+    try {
+      final defaultTokens = [
+        CryptoToken(
+          name: 'Bitcoin',
+          symbol: 'BTC',
+          blockchainName: 'Bitcoin',
+          iconUrl: 'https://coinceeper.com/defualtIcons/bitcoin.png',
+          isEnabled: true,
+          isToken: false,
+          smartContractAddress: null,
+        ),
+        CryptoToken(
+          name: 'Ethereum',
+          symbol: 'ETH',
+          blockchainName: 'Ethereum',
+          iconUrl: 'https://coinceeper.com/defualtIcons/ethereum.png',
+          isEnabled: true,
+          isToken: false,
+          smartContractAddress: null,
+        ),
+        CryptoToken(
+          name: 'Tron',
+          symbol: 'TRX',
+          blockchainName: 'Tron',
+          iconUrl: 'https://coinceeper.com/defualtIcons/tron.png',
+          isEnabled: true,
+          isToken: false,
+          smartContractAddress: null,
+        ),
+      ];
+      
+      final prefs = await SharedPreferences.getInstance();
+      final isFirstRun = prefs.getBool('is_first_run_$_userId') ?? true;
+      
+      print('🔄 TokenProvider - Initialize default tokens for user: $_userId (first run: $isFirstRun)');
+      
+      if (isFirstRun) {
+        // اولین اجرا - ذخیره tokens پیش‌فرض
+        for (final token in defaultTokens) {
+          await tokenPreferences.saveTokenState(
+            token.symbol ?? '',
+            token.blockchainName ?? '',
+            token.smartContractAddress,
+            true,
+          );
+          print('✅ TokenProvider - Saved default token: ${token.symbol}');
         }
+        
+        await prefs.setBool('is_first_run_$_userId', false);
+        _currencies = defaultTokens;
+        _activeTokens = defaultTokens;
+        _userTokens[_userId] = defaultTokens;
+        
+        print('✅ TokenProvider - Default tokens set for first run');
+      } else {
+        // نه اولین اجرا - بررسی وضعیت موجود
+        final existingTokens = <CryptoToken>[];
+        
+        for (final token in defaultTokens) {
+          final enabled = await tokenPreferences.getTokenState(
+            token.symbol ?? '',
+            token.blockchainName ?? '',
+            token.smartContractAddress,
+          ) ?? true; // پیش‌فرض true برای tokens اصلی
+          
+          if (enabled) {
+            existingTokens.add(token);
+            print('✅ TokenProvider - Default token ${token.symbol} is enabled');
+          } else {
+            print('⚪ TokenProvider - Default token ${token.symbol} is disabled');
+          }
+        }
+        
+        // اطمینان از حداقل یک token فعال
+        if (existingTokens.isEmpty) {
+          print('⚠️ TokenProvider - No enabled default tokens, re-enabling Bitcoin');
+          await tokenPreferences.saveTokenState('BTC', 'Bitcoin', null, true);
+          existingTokens.add(defaultTokens[0]); // Bitcoin
+        }
+        
+        // به‌روزرسانی لیست‌ها
+        _activeTokens.addAll(existingTokens.where((token) => 
+          !_activeTokens.any((existing) => existing.symbol == token.symbol)
+        ));
+        
+        print('✅ TokenProvider - Default tokens ensured: ${existingTokens.length} enabled');
       }
+      
+      // اطمینان از notify
+      notifyListeners();
+      
+    } catch (e) {
+      print('❌ TokenProvider - Error initializing default tokens: $e');
+      _errorMessage = 'Error initializing default tokens: ${e.toString()}';
       notifyListeners();
     }
   }
@@ -191,8 +457,19 @@ class TokenProvider extends ChangeNotifier {
     try {
       final List<dynamic> list = json.decode(jsonStr);
       final tokens = list.map((e) => CryptoToken.fromJson(e)).toList();
-      _currencies = tokens;
-      _activeTokens = tokens.where((t) => t.isEnabled).toList();
+      
+      // به‌روزرسانی state توکن‌ها از preferences
+      final updatedTokens = tokens.map((token) {
+        final isEnabled = tokenPreferences.getTokenStateSync(
+          token.symbol ?? '', 
+          token.blockchainName ?? '', 
+          token.smartContractAddress
+        ) ?? false;
+        return token.copyWith(isEnabled: isEnabled);
+      }).toList();
+      
+      _currencies = updatedTokens;
+      _activeTokens = updatedTokens.where((t) => t.isEnabled).toList();
       notifyListeners();
       return true;
     } catch (_) {
@@ -315,31 +592,148 @@ class TokenProvider extends ChangeNotifier {
   }
 
   // --- فعال/غیرفعال کردن توکن ---
+  /// Toggle کردن وضعیت توکن - مشابه Kotlin
   Future<void> toggleToken(CryptoToken token, bool newState) async {
-    print('🔄 Toggling token: ${token.symbol} to $newState');
-    
-    await tokenPreferences.saveTokenState(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress, newState);
-    
-    // به‌روزرسانی لیست توکن‌ها
-    _currencies = _currencies.map((t) {
-      if (t.symbol == token.symbol && t.blockchainName == token.blockchainName && t.smartContractAddress == token.smartContractAddress) {
-        return t.copyWith(isEnabled: newState);
+    try {
+      print('🔄 TokenProvider - Toggling token ${token.name} (${token.symbol}) to $newState for user: $_userId');
+      
+      // 1. ذخیره state در preferences با کلید user-specific
+      await tokenPreferences.saveTokenState(
+        token.symbol ?? '', 
+        token.blockchainName ?? '', 
+        token.smartContractAddress, 
+        newState
+      );
+      
+      // 2. به‌روزرسانی currencies list
+      _currencies = _currencies.map((currentToken) {
+        if (currentToken.symbol == token.symbol && 
+            currentToken.blockchainName == token.blockchainName &&
+            currentToken.smartContractAddress == token.smartContractAddress) {
+          return currentToken.copyWith(isEnabled: newState);
+        }
+        return currentToken;
+      }).toList();
+      
+      // 3. به‌روزرسانی active tokens list
+      if (newState) {
+        // اگر توکن فعال شده، آن را به لیست فعال اضافه کن
+        final existingToken = _activeTokens.firstWhere(
+          (t) => t.symbol == token.symbol && 
+                 t.blockchainName == token.blockchainName &&
+                 t.smartContractAddress == token.smartContractAddress,
+          orElse: () => CryptoToken(name: '', symbol: '', blockchainName: '', isEnabled: false, isToken: true),
+        );
+        
+        if (existingToken.symbol?.isEmpty ?? true) {
+          // توکن در لیست فعال نیست، اضافه کن
+          _activeTokens.add(token.copyWith(isEnabled: true));
+        } else {
+          // توکن در لیست فعال است، به‌روزرسانی کن
+          final index = _activeTokens.indexWhere(
+            (t) => t.symbol == token.symbol && 
+                   t.blockchainName == token.blockchainName &&
+                   t.smartContractAddress == token.smartContractAddress
+          );
+          if (index != -1) {
+            _activeTokens[index] = _activeTokens[index].copyWith(isEnabled: true);
+          }
+        }
+      } else {
+        // اگر توکن غیرفعال شده، آن را از لیست فعال حذف کن
+        _activeTokens.removeWhere(
+          (t) => t.symbol == token.symbol && 
+                 t.blockchainName == token.blockchainName &&
+                 t.smartContractAddress == token.smartContractAddress
+        );
       }
-      return t;
-    }).toList();
-    
-    // به‌روزرسانی توکن‌های فعال
-    _activeTokens = _currencies.where((t) => t.isEnabled).toList();
-    
-    print('🔄 Active tokens after toggle: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
-    
-    // فوراً listeners را اطلاع ده
-    notifyListeners();
-    
-    if (newState) {
-      await fetchPrices();
+      
+      // 4. ذخیره state به‌روزرسانی شده در cache
+      await _saveToCache(await SharedPreferences.getInstance(), _currencies);
+      
+      // 5. ذخیره توکن‌های user-specific
+      _userTokens[_userId] = _currencies;
+      
+      print('🔄 TokenProvider - Active tokens after toggle: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
+      
+      // 6. فوراً notify کن
+      notifyListeners();
+      
+      // 7. اگر توکن فعال شده، قیمت و موجودی fetch کن
+      if (newState) {
+        await fetchPrices();
+        // در background موجودی fetch کن
+        fetchBalancesForActiveTokens().then((_) {
+          print('✅ TokenProvider - Background balance fetch completed');
+        }).catchError((e) {
+          print('❌ TokenProvider - Error in background balance fetch: $e');
+        });
+      }
+      
+      print('✅ TokenProvider - Token ${token.symbol} successfully toggled to $newState');
+      
+    } catch (e) {
+      print('❌ TokenProvider - Error toggling token ${token.symbol}: $e');
+      _errorMessage = 'Failed to update token state: ${e.toString()}';
+      notifyListeners();
     }
   }
+  
+  /// بررسی فعال بودن توکن برای کاربر خاص - مشابه Kotlin
+  bool isTokenEnabled(CryptoToken token) {
+    final state = tokenPreferences.getTokenStateSync(
+      token.symbol ?? '', 
+      token.blockchainName ?? '', 
+      token.smartContractAddress
+    );
+    
+    // اگر state null است، برای توکن‌های پیش‌فرض true برگردان
+    if (state == null) {
+      final defaultTokens = ['BTC', 'ETH', 'TRX'];
+      return defaultTokens.contains(token.symbol?.toUpperCase());
+    }
+    
+    return state;
+  }
+  
+  /// ذخیره state توکن برای کاربر خاص - مشابه Kotlin
+  Future<void> saveTokenStateForUser(CryptoToken token, bool isEnabled) async {
+    await tokenPreferences.saveTokenState(
+      token.symbol ?? '', 
+      token.blockchainName ?? '', 
+      token.smartContractAddress, 
+      isEnabled
+    );
+  }
+  
+  /// دریافت state توکن برای کاربر خاص - مشابه Kotlin
+  bool getTokenStateForUser(CryptoToken token) {
+    return tokenPreferences.getTokenStateSync(
+      token.symbol ?? '', 
+      token.blockchainName ?? '', 
+      token.smartContractAddress
+    ) ?? false;
+  }
+  
+  /// تنظیم tokens فعال برای کاربر خاص - مشابه Kotlin
+  void setActiveTokensForUser(List<CryptoToken> tokens) {
+    _activeTokens = tokens;
+    _userTokens[_userId] = tokens;
+    notifyListeners();
+  }
+  
+  /// ذخیره tokens کاربر - مشابه Kotlin
+  void saveUserTokens(String userId, List<CryptoToken> tokens) {
+    _userTokens[userId] = tokens;
+  }
+  
+  /// ذخیره balances کاربر - مشابه Kotlin
+  void saveUserBalances(String userId, Map<String, String> balances) {
+    _userBalances[userId] = balances;
+  }
+  
+  /// دریافت userId فعلی - مشابه Kotlin
+  String getCurrentUserId() => _userId;
 
   Future<void> updateActiveTokensFromPreferences() async {
     _currencies = _currencies.map((token) {
@@ -703,18 +1097,129 @@ class TokenProvider extends ChangeNotifier {
     }
   }
 
+  /// اطمینان از همگام‌سازی کامل tokens - مشابه Kotlin
   Future<void> ensureTokensSynchronized() async {
-    if (_currencies.isEmpty) {
-      final loaded = await _loadFromCache(await SharedPreferences.getInstance());
-      if (!loaded) {
-        await _loadFromApi(await SharedPreferences.getInstance());
+    try {
+      print('🔄 TokenProvider - Ensuring tokens are fully synchronized for user: $_userId');
+      
+      // 1. اگر currencies خالی است، ابتدا از cache یا API بارگذاری کن
+      if (_currencies.isEmpty) {
+        print('📁 TokenProvider - Currencies is empty, loading from cache or API');
+        final loaded = await _loadFromCache(await SharedPreferences.getInstance());
+        if (!loaded) {
+          print('📁 TokenProvider - No cache available, loading from API');
+          await _loadFromApi(await SharedPreferences.getInstance());
+        }
+      }
+      
+      // 2. همگام‌سازی کامل وضعیت tokens با preferences
+      final updatedCurrencies = _currencies.map((token) {
+        final isEnabled = tokenPreferences.getTokenStateSync(
+          token.symbol ?? '', 
+          token.blockchainName ?? '', 
+          token.smartContractAddress
+        ) ?? false;
+        return token.copyWith(isEnabled: isEnabled);
+      }).toList();
+      
+      _currencies = updatedCurrencies;
+      
+      // 3. به‌روزرسانی active tokens بر اساس preferences
+      final enabledTokens = updatedCurrencies.where((t) => t.isEnabled).toList();
+      
+      // 4. اطمینان از وجود tokens پیش‌فرض اگر هیچ token فعال نیست
+      if (enabledTokens.isEmpty) {
+        print('⚠️ TokenProvider - No enabled tokens found, initializing defaults...');
+        await _initializeDefaultTokens();
+        
+        // بررسی مجدد پس از اولیه‌سازی
+        final reloadedCurrencies = _currencies.map((token) {
+          final isEnabled = tokenPreferences.getTokenStateSync(
+            token.symbol ?? '', 
+            token.blockchainName ?? '', 
+            token.smartContractAddress
+          ) ?? (token.name == 'Bitcoin' || token.name == 'Ethereum' || token.name == 'Tron');
+          return token.copyWith(isEnabled: isEnabled);
+        }).toList();
+        
+        _currencies = reloadedCurrencies;
+        final finalEnabledTokens = reloadedCurrencies.where((t) => t.isEnabled).toList();
+        _activeTokens = finalEnabledTokens;
+        
+        print('✅ TokenProvider - Default tokens reinitialized: ${finalEnabledTokens.length} enabled');
+      } else {
+        _activeTokens = enabledTokens;
+      }
+      
+      // 5. ذخیره user tokens
+      _userTokens[_userId] = _currencies;
+      
+      print('✅ TokenProvider - Synchronization completed');
+      print('✅ TokenProvider - Total currencies: ${_currencies.length}');
+      print('✅ TokenProvider - Active tokens: ${_activeTokens.length}');
+      print('✅ TokenProvider - Active list: ${_activeTokens.map((t) => '${t.name}(${t.symbol})').join(', ')}');
+      
+      // 6. بارگذاری قیمت‌ها برای tokens فعال
+      if (_activeTokens.isNotEmpty) {
+        await fetchPrices();
+      }
+      
+      // 7. Notify listeners
+      notifyListeners();
+      
+    } catch (e) {
+      print('❌ TokenProvider - Error in synchronization: $e');
+      _errorMessage = 'Error synchronizing tokens: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  /// اطمینان از وجود userId معتبر
+  Future<void> _ensureValidUserId() async {
+    if (_userId.isEmpty) {
+      print('⚠️ TokenProvider: User ID is empty, trying to load from storage...');
+      
+      try {
+        // Try to get from SharedPreferences (used by ApiService)
+        final prefs = await SharedPreferences.getInstance();
+        final sharedPrefsUserId = prefs.getString('UserID');
+        
+        if (sharedPrefsUserId != null && sharedPrefsUserId.isNotEmpty) {
+          _userId = sharedPrefsUserId;
+          print('✅ TokenProvider: Loaded user ID from SharedPreferences: $_userId');
+          return;
+        }
+        
+        // Try to get from SecureStorage
+        final selectedUserId = await SecureStorage.instance.getSelectedUserId();
+        if (selectedUserId != null && selectedUserId.isNotEmpty) {
+          _userId = selectedUserId;
+          print('✅ TokenProvider: Loaded user ID from SecureStorage: $_userId');
+          return;
+        }
+        
+        // Try to get from wallet list
+        final wallets = await SecureStorage.instance.getWalletsList();
+        if (wallets.isNotEmpty) {
+          final firstWallet = wallets.first;
+          final walletUserId = firstWallet['userID'];
+          if (walletUserId != null && walletUserId.isNotEmpty) {
+            _userId = walletUserId;
+            print('✅ TokenProvider: Loaded user ID from wallet list: $_userId');
+            return;
+          }
+        }
+        
+        print('❌ TokenProvider: Could not find valid user ID anywhere!');
+        _userId = 'default_user'; // Fallback
+        print('⚠️ TokenProvider: Using fallback user ID: $_userId');
+        
+      } catch (e) {
+        print('❌ TokenProvider: Error loading user ID: $e');
+        _userId = 'default_user'; // Fallback
+        print('⚠️ TokenProvider: Using fallback user ID: $_userId');
       }
     }
-    await updateActiveTokensFromPreferences();
-    if (_activeTokens.isEmpty) {
-      await _initializeDefaultTokens();
-    }
-    await fetchPrices();
   }
 
   // --- متدهای کمکی ---
@@ -823,10 +1328,6 @@ class TokenProvider extends ChangeNotifier {
     return tokenPreferences.getAllEnabledTokenKeysSync() ?? [];
   }
 
-  bool isTokenEnabled(CryptoToken token) {
-    return tokenPreferences.getTokenStateSync(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress) ?? false;
-  }
-
   Future<void> loadTokensWithBalance({bool forceRefresh = false}) async {
     _isLoading = true;
     notifyListeners();
@@ -913,30 +1414,7 @@ class TokenProvider extends ChangeNotifier {
     return [];
   }
 
-  // --- متدهای کمکی برای مدیریت کاربر ---
-  void saveUserTokens(String userId, List<CryptoToken> tokens) {
-    _userTokens[userId] = tokens;
-  }
 
-  void saveUserBalances(String userId, Map<String, String> balances) {
-    _userBalances[userId] = balances;
-  }
-
-  String getCurrentUserId() => _userId;
-
-  // --- متدهای کمکی برای مدیریت وضعیت توکن ---
-  bool getTokenStateForUser(CryptoToken token) {
-    return tokenPreferences.getTokenStateSync(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress) ?? false;
-  }
-
-  Future<void> saveTokenStateForUser(CryptoToken token, bool isEnabled) async {
-    await tokenPreferences.saveTokenState(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress, isEnabled);
-  }
-
-  void setActiveTokensForUser(List<CryptoToken> tokens) {
-    _activeTokens = tokens;
-    _userTokens[_userId] = tokens;
-  }
 
   // --- متدهای سازگاری با کد موجود ---
   void setAllTokens(List<CryptoToken> allTokens) {
@@ -964,11 +1442,71 @@ class TokenProvider extends ChangeNotifier {
     
     print('🔄 Force update - Active tokens: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
     
+    // ذخیره state به‌روزرسانی شده در cache
+    await _saveToCache(await SharedPreferences.getInstance(), _currencies);
+    
     // اگر توکن‌های فعال وجود دارند، قیمت‌ها را دریافت کن
     if (_activeTokens.isNotEmpty) {
       await fetchPrices();
     }
     
     notifyListeners();
+  }
+
+  /// iOS-specific: Recover token states from SecureStorage
+  Future<void> _recoverTokenStatesFromSecureStorageIOS() async {
+    if (!Platform.isIOS) return;
+    
+    try {
+      print('🍎 TokenProvider: Attempting to recover token states from SecureStorage (iOS)...');
+      
+      // Force re-initialize TokenPreferences cache
+      await tokenPreferences.initialize();
+      
+      // Get current currencies and update their states
+      final updatedCurrencies = _currencies.map((token) {
+        final isEnabled = tokenPreferences.getTokenStateSync(
+          token.symbol ?? '', 
+          token.blockchainName ?? '', 
+          token.smartContractAddress
+        );
+        
+        // If state found, update the token
+        if (isEnabled != null) {
+          print('🍎 TokenProvider: Recovered iOS token state: ${token.symbol} = $isEnabled');
+          return token.copyWith(isEnabled: isEnabled);
+        }
+        
+        return token;
+      }).toList();
+      
+      _currencies = updatedCurrencies;
+      _activeTokens = updatedCurrencies.where((t) => t.isEnabled).toList();
+      
+      print('🍎 TokenProvider: iOS recovery completed. Active tokens: ${_activeTokens.length}');
+      
+      notifyListeners();
+    } catch (e) {
+      print('❌ TokenProvider: Error recovering token states from SecureStorage (iOS): $e');
+    }
+  }
+
+  /// iOS-specific: Handle app returning from background
+  Future<void> handleiOSAppResume() async {
+    if (!Platform.isIOS) return;
+    
+    try {
+      print('🍎 TokenProvider: Handling iOS app resume...');
+      
+      // Re-synchronize token states in case they were lost
+      await _recoverTokenStatesFromSecureStorageIOS();
+      
+      // Ensure synchronization
+      await ensureTokensSynchronized();
+      
+      print('🍎 TokenProvider: iOS app resume handling completed');
+    } catch (e) {
+      print('❌ TokenProvider: Error handling iOS app resume: $e');
+    }
   }
 } 

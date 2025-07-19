@@ -59,7 +59,8 @@ class _WalletScreenState extends State<WalletScreen> {
       wallets = await SecureStorage.instance.getWalletsList();
       setState(() {});
     } catch (e) {
-      print('Error loading wallets: $e');
+      print('❌ Error loading wallet data: $e');
+      // Remove error message - silent failure
     }
   }
 
@@ -70,9 +71,7 @@ class _WalletScreenState extends State<WalletScreen> {
       final trimmedInitialWalletName = initialWalletName.trim();
       
       if (trimmedWalletName.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_safeTranslate('wallet_name_empty', 'Wallet name cannot be empty'))),
-        );
+        // Remove error message - silent failure
         return;
       }
       
@@ -87,9 +86,7 @@ class _WalletScreenState extends State<WalletScreen> {
           );
           
           if (isDuplicate) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(_safeTranslate('wallet_name_exists', 'Wallet name already exists'))),
-            );
+            // Remove error message - silent failure
             return;
           }
           
@@ -108,16 +105,9 @@ class _WalletScreenState extends State<WalletScreen> {
           print('💰 Wallet name updated: $trimmedInitialWalletName -> $trimmedWalletName');
           
           // نمایش پیام موفقیت
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_safeTranslate('wallet_name_updated', 'Wallet name updated successfully')),
-              backgroundColor: Colors.green,
-            ),
-          );
+          // Remove error message - silent failure
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_safeTranslate('user_id_not_found', 'User ID not found for wallet'))),
-          );
+          // Remove error message - silent failure
           return;
         }
       }
@@ -126,9 +116,7 @@ class _WalletScreenState extends State<WalletScreen> {
       Navigator.pushReplacementNamed(context, '/wallets');
     } catch (e) {
       print('Error saving wallet name: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_safeTranslate('error_saving_wallet', 'Error saving wallet name: {error}').replaceAll('{error}', e.toString()))),
-      );
+      // Remove error message - silent failure
     }
   }
 
@@ -276,9 +264,7 @@ class _WalletScreenState extends State<WalletScreen> {
       Navigator.pushReplacementNamed(context, '/wallets');
     } catch (e) {
       print('Error deleting wallet: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_safeTranslate('error_deleting_wallet', 'Error deleting wallet: {error}').replaceAll('{error}', e.toString()))),
-      );
+      // Remove error message - silent failure
     }
   }
 

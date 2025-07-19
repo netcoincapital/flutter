@@ -1,5 +1,6 @@
 import 'secure_storage.dart';
 import 'passcode_manager.dart';
+import 'security_settings_manager.dart';
 
 /// Manages wallet state and navigation logic
 class WalletStateManager {
@@ -90,7 +91,7 @@ class WalletStateManager {
     }
   }
 
-  /// Get the appropriate initial screen based on wallet state
+  /// Determine initial screen based on wallet and passcode state
   Future<String> getInitialScreen() async {
     try {
       print('🔍 Determining initial screen...');
@@ -116,7 +117,7 @@ class WalletStateManager {
         return '/passcode-setup';
       }
       
-      // Everything is valid - go to enter passcode
+      // اگر passcode تنظیم شده، همیشه به enter-passcode برود
       print('✅ Valid wallet and passcode found - going to enter-passcode');
       return '/enter-passcode';
       
@@ -126,8 +127,22 @@ class WalletStateManager {
       try {
         final keys = await SecureStorage.instance.getAllKeys();
         if (keys.isNotEmpty) {
-          print('⚠️ Error occurred but found ${keys.length} keys - going to enter-passcode as fallback');
-          return '/enter-passcode';
+          print('⚠️ Error occurred but found ${keys.length} keys - checking passcode state...');
+          
+          // در fallback نیز اگر passcode تنظیم شده، به enter-passcode برود
+          try {
+            final hasPasscodeData = await hasPasscode();
+            if (hasPasscodeData) {
+              print('⚠️ Fallback: passcode exists - going to enter-passcode');
+              return '/enter-passcode';
+            } else {
+              print('⚠️ Fallback: no passcode - going to home');
+              return '/home';
+            }
+          } catch (e2) {
+            print('❌ Error checking passcode state in fallback: $e2');
+            return '/enter-passcode'; // fallback امن
+          }
         }
       } catch (e2) {
         print('❌ Error checking keys: $e2');
@@ -261,8 +276,10 @@ class WalletStateManager {
       print('⚠️ Has ${keys.length} keys but no valid wallet or important data');
       print('🔑 Keys found: ${keys.take(5).join(', ')}${keys.length > 5 ? '...' : ''}');
       
-      // If we have any data at all, don't treat as fresh install to be safe
-      return keys.isEmpty;
+      // If we have any data but no valid wallet or important data, treat as fresh install
+      // This ensures that corrupted or incomplete data doesn't prevent fresh install
+      print('🆕 Treating as fresh install due to no valid wallet or important data');
+      return true;
       
     } catch (e) {
       print('❌ Error checking fresh install: $e');

@@ -96,87 +96,13 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
   }
 
   void _showAmountModal() async {
-    final controller = TextEditingController(text: amount);
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: SingleChildScrollView(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: StatefulBuilder(
-                builder: (context, setModalState) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      Text(_safeTranslate('enter_amount', 'Enter Amount'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: controller,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          labelText: _safeTranslate('amount', 'Amount'),
-                        ),
-                        onChanged: (val) => setModalState(() {}),
-                        autofocus: true,
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: Text(_safeTranslate('cancel', 'Cancel')),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            onPressed: controller.text.trim().isEmpty ? null : () => Navigator.pop(context, controller.text),
-                            child: Text(_safeTranslate('ok', 'OK')),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
-    );
-    if (result != null) {
-      setState(() {
-        amount = result;
-      });
-    }
+    // Remove modal bottom sheet - amount modal removed
   }
 
   Future<void> _shareQrAndAddress() async {
     try {
       if (_qrKey.currentContext == null || !mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_safeTranslate('qr_code_not_ready', 'QR code is not ready.'))));
+        // Remove error message - QR not ready silently
         debugPrint('QR context is null or not mounted');
         return;
       }
@@ -205,9 +131,7 @@ class _ReceiveWalletScreenState extends State<ReceiveWalletScreen> {
     } catch (e, stack) {
       debugPrint('Share error: \\${e.toString()}');
       debugPrint(stack.toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error sharing: \\${e.toString()}')),
-      );
+      // Remove error message - sharing failed silently
     }
   }
 

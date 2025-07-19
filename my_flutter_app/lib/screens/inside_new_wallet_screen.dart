@@ -7,9 +7,9 @@ import '../services/api_service.dart';
 import '../services/service_provider.dart';
 import '../services/wallet_state_manager.dart';
 import '../services/secure_storage.dart';
-import '../providers/token_provider.dart';
 import '../providers/app_provider.dart';
 import '../services/device_registration_manager.dart';
+import '../services/security_settings_manager.dart';
 import 'passcode_screen.dart';
 import 'dart:async'; // اضافه کردن برای Completer
 import '../services/update_balance_helper.dart'; // اضافه کردن helper مطابق Kotlin
@@ -27,6 +27,7 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
   bool showErrorModal = false;
   String walletName = 'New 1';
   late ApiService _apiService;
+  final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
 
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
@@ -40,8 +41,28 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
   @override
   void initState() {
     super.initState();
+    _checkExistingWallet();
     _apiService = ServiceProvider.instance.apiService;
     _suggestNextWalletName();
+  }
+
+  /// Check if wallet exists and redirect to home if it does
+  Future<void> _checkExistingWallet() async {
+    try {
+      final wallets = await SecureStorage.instance.getWalletsList();
+      if (wallets.isNotEmpty) {
+        print('🔄 Existing wallet found, redirecting to home...');
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/',
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking existing wallet: $e');
+    }
   }
 
   Future<void> _suggestNextWalletName() async {
@@ -62,11 +83,15 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
   }
 
   Future<void> _generateWallet() async {
+    print('🔧 DEBUG: _generateWallet called');
+    
     setState(() {
       isLoading = true;
       errorMessage = '';
       showErrorModal = false;
     });
+
+    print('🔧 DEBUG: Loading state set to true');
 
     // Always fetch the latest wallet list from SecureStorage
     final wallets = await SecureStorage.instance.getWalletsList();
@@ -86,6 +111,8 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
       newWalletName = 'New wallet ${++maxNum}';
     } while (wallets.any((w) => (w['walletName'] ?? w['name'] ?? '') == newWalletName));
 
+    print('🔧 DEBUG: Generated wallet name: $newWalletName');
+
     if (newWalletName.trim().isEmpty) {
       setState(() {
         errorMessage = _safeTranslate('wallet_name_cannot_be_empty', 'Wallet name cannot be empty!');
@@ -96,7 +123,10 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
     }
 
     try {
+      print('🔧 DEBUG: Checking network connection...');
       final isConnected = ServiceProvider.instance.networkManager.isConnected;
+      print('🔧 DEBUG: Network connected: $isConnected');
+      
       if (!isConnected) {
         setState(() {
           errorMessage = _safeTranslate('no_internet_connection', 'No internet connection available. Please check your connection.');
@@ -106,8 +136,15 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         return;
       }
 
+      print('🔧 DEBUG: Calling API service...');
+      print('🔧 DEBUG: API Service instance: ${_apiService.runtimeType}');
+      
       final response = await _apiService.generateWallet(newWalletName);
+      print('🔧 DEBUG: API Response received: ${response.toJson()}');
+      
       if (response.success && response.userID != null) {
+        print('🔧 DEBUG: Wallet creation successful!');
+        
         // Get existing wallets list
         final existingWallets = await SecureStorage.instance.getWalletsList();
         
@@ -138,12 +175,24 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         }
         await prefs.setString('walletName', newWalletName);
 
-        final tokenProvider = Provider.of<TokenProvider>(context, listen: false);
-        tokenProvider.updateUserId(response.userID!);
+        // Refresh AppProvider wallets list first
+        if (mounted) {
+          try {
+            final appProvider = Provider.of<AppProvider>(context, listen: false);
+            await appProvider.refreshWallets();
 
-        // Refresh AppProvider wallets list
-        final appProvider = Provider.of<AppProvider>(context, listen: false);
-        await appProvider.refreshWallets();
+            // Update TokenProvider through AppProvider
+            final tokenProvider = appProvider.tokenProvider;
+            if (tokenProvider != null) {
+              tokenProvider.updateUserId(response.userID!);
+              print('✅ TokenProvider updated with userId: ${response.userID!}');
+            } else {
+              print('⚠️ TokenProvider is null');
+            }
+          } catch (e) {
+            print('❌ Error accessing AppProvider: $e');
+          }
+        }
 
         print('🔄 Wallet generation successful, now proceeding with additional API calls (matching Kotlin)');
         
@@ -193,29 +242,52 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         print('   Device Registration: $deviceRegistrationSuccess');
         print('   Overall Success: $allApisSuccessful');
 
+        // Show success message
         if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PasscodeScreen(
-                title: _safeTranslate('choose_passcode', 'Choose Passcode'),
-                walletName: newWalletName,
-                onSuccess: () {
-                  Navigator.pushReplacementNamed(
-                    context,
-                    '/backup',
-                    arguments: {
-                      'walletName': newWalletName,
-                      'userID': response.userID!,
-                      'mnemonic': response.mnemonic ?? '',
-                    },
-                  );
-                },
+          // Remove success message - wallet created silently
+        }
+
+        if (mounted) {
+          // بررسی فعال بودن passcode
+          final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+          
+          if (isPasscodeEnabled) {
+            // اگر passcode فعال است، به passcode screen برو
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PasscodeScreen(
+                  title: _safeTranslate('choose_passcode', 'Choose Passcode'),
+                  walletName: newWalletName,
+                  onSuccess: () {
+                    Navigator.pushReplacementNamed(
+                      context,
+                      '/backup',
+                      arguments: {
+                        'walletName': newWalletName,
+                        'userID': response.userID!,
+                        'mnemonic': response.mnemonic ?? '',
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          );
+            );
+          } else {
+            // اگر passcode غیرفعال است، مستقیم به backup screen برو
+            Navigator.pushReplacementNamed(
+              context,
+              '/backup',
+              arguments: {
+                'walletName': newWalletName,
+                'userID': response.userID!,
+                'mnemonic': response.mnemonic ?? '',
+              },
+            );
+          }
         }
       } else {
+        print('🔧 DEBUG: API call failed - success: ${response.success}, userID: ${response.userID}');
         setState(() {
           errorMessage = response.message ?? _safeTranslate('error_creating_wallet', 'Error creating wallet. Please try again.');
           showErrorModal = true;
@@ -223,6 +295,7 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         });
       }
     } catch (e) {
+      print('🔧 DEBUG: Exception caught: $e');
       setState(() {
         if (e.toString().contains('server security restrictions') || 
             e.toString().contains('Cloudflare')) {
@@ -241,72 +314,94 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    return WillPopScope(
+      onWillPop: () async {
+        // Check if wallets exist, if so, don't allow back navigation
+        try {
+          final wallets = await SecureStorage.instance.getWalletsList();
+          if (wallets.isNotEmpty) {
+            print('🚫 Back navigation blocked - wallet exists');
+            return false;
+          }
+        } catch (e) {
+          print('❌ Error checking wallets for back navigation: $e');
+        }
+        return true;
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        title: Text(_safeTranslate('generate_new_wallet', 'Generate new wallet'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20)),
-        iconTheme: const IconThemeData(color: Colors.black),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: const Color(0x0D16B369),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(_safeTranslate('secret_phrase', 'Secret phrase'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
-                          const SizedBox(height: 10),
-                          Text(_safeTranslate('generate_new_secret_phrase', 'Generate a new secret phrase.'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                    SizedBox(
-                      width: 110,
-                      height: 36,
-                      child: OutlinedButton(
-                        onPressed: isLoading ? null : _generateWallet,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF16B369)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          backgroundColor: isLoading ? Colors.grey : Colors.transparent,
-                          foregroundColor: isLoading ? Colors.grey[200] : const Color(0xFF16B369),
-                          padding: EdgeInsets.zero,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Text(_safeTranslate('generate_new_wallet', 'Generate new wallet'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20)),
+          iconTheme: const IconThemeData(color: Colors.black),
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0x0D16B369),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_safeTranslate('secret_phrase', 'Secret phrase'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black)),
+                            const SizedBox(height: 10),
+                            Text(_safeTranslate('generate_new_secret_phrase', 'Generate a new secret phrase.'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
                         ),
-                        child: isLoading
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF16B369)))
-                            : Text(_safeTranslate('generate', 'Generate'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF16B369))),
                       ),
-                    ),
-                  ],
+                      SizedBox(
+                        width: 110,
+                        height: 36,
+                        child: OutlinedButton(
+                          onPressed: isLoading ? null : () {
+                            print('🔧 DEBUG: Generate button pressed');
+                            _generateWallet();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFF16B369)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            backgroundColor: isLoading ? Colors.grey : Colors.transparent,
+                            foregroundColor: isLoading ? Colors.grey[200] : const Color(0xFF16B369),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: isLoading
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF16B369)))
+                              : Text(_safeTranslate('generate', 'Generate'), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF16B369))),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (errorMessage.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(errorMessage, style: const TextStyle(color: Colors.red, fontSize: 14)),
-                ),
-            ],
+                if (errorMessage.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(errorMessage, style: const TextStyle(color: Colors.red, fontSize: 14)),
+                  ),
+              ],
+            ),
           ),
         ),
+        bottomNavigationBar: const BottomMenuWithSiri(),
       ),
-      bottomNavigationBar: const BottomMenuWithSiri(),
     );
   }
 } 

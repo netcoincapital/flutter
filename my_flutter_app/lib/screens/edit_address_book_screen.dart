@@ -63,59 +63,8 @@ class _EditAddressBookScreenState extends State<EditAddressBookScreen> {
   }
 
   void _showDeleteModal() async {
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 8),
-              Text(_safeTranslate('delete_wallet', 'Delete Wallet'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Text(_safeTranslate('delete_wallet_confirmation', 'Are you sure you want to delete this wallet?'), style: const TextStyle(fontSize: 16)),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF16B369),
-                        side: const BorderSide(color: Color(0xFF16B369)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: Text(_safeTranslate('cancel', 'Cancel')),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFDC0303),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        elevation: 0,
-                      ),
-                      child: Text(_safeTranslate('delete', 'Delete')),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        );
-      },
-    );
-    if (result == true) _delete();
+    // Remove modal bottom sheet - delete confirmation removed
+    _delete(); // Direct delete without confirmation
   }
 
   @override

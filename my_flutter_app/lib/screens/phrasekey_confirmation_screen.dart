@@ -3,6 +3,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'passcode_screen.dart';
 import 'phrasekey_screen.dart';
 import '../services/secure_storage.dart';
+import '../services/security_settings_manager.dart';
 
 class PhraseKeyConfirmationScreen extends StatefulWidget {
   final String walletName;
@@ -23,6 +24,8 @@ class _PhraseKeyConfirmationScreenState extends State<PhraseKeyConfirmationScree
   bool checkbox2 = false;
   bool checkbox3 = false;
 
+  final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
+
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
     try {
@@ -30,6 +33,19 @@ class _PhraseKeyConfirmationScreenState extends State<PhraseKeyConfirmationScree
     } catch (e) {
       return fallback;
     }
+  }
+
+  // تابع برای هدایت به صفحه بعدی
+  void _navigateToNextScreen() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _PhraseKeyScreenWithMnemonic(
+          walletName: widget.walletName,
+          isFromWalletCreation: widget.isFromWalletCreation,
+        ),
+      ),
+    );
   }
 
   @override
@@ -81,29 +97,37 @@ class _PhraseKeyConfirmationScreenState extends State<PhraseKeyConfirmationScree
                 height: 50,
                 child: ElevatedButton(
                   onPressed: allChecked
-                      ? () {
-                          // رفتن به صفحه passcode برای تایید (مطابق با درخواست کاربر)
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => PasscodeScreen(
-                                title: _safeTranslate('enter_passcode', 'Enter Passcode'),
-                                walletName: widget.walletName,
-                                onSuccess: () {
-                                  // بعد از تایید passcode، به phrasekey برو
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => _PhraseKeyScreenWithMnemonic(
-                                        walletName: widget.walletName,
-                                        isFromWalletCreation: widget.isFromWalletCreation,
+                      ? () async {
+                          // بررسی فعال بودن passcode
+                          final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+                          
+                          if (isPasscodeEnabled) {
+                            // اگر passcode فعال است، ابتدا احراز هویت کن
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PasscodeScreen(
+                                  title: _safeTranslate('enter_passcode', 'Enter Passcode'),
+                                  walletName: widget.walletName,
+                                  onSuccess: () {
+                                    // بعد از تایید passcode، به phrasekey برو
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => _PhraseKeyScreenWithMnemonic(
+                                          walletName: widget.walletName,
+                                          isFromWalletCreation: widget.isFromWalletCreation,
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          } else {
+                            // اگر passcode غیرفعال است، مستقیم به phrasekey برو
+                            _navigateToNextScreen();
+                          }
                         }
                       : null,
                   style: ElevatedButton.styleFrom(

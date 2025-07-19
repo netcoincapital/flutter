@@ -497,12 +497,14 @@ class ApiService {
   // ==================== SEND OPERATIONS ====================
   
   /// آماده‌سازی تراکنش برای ارسال
+  /// [userID]: شناسه کاربر
   /// [blockchainName]: نام بلاکچین
   /// [senderAddress]: آدرس فرستنده
   /// [recipientAddress]: آدرس گیرنده
   /// [amount]: مقدار ارسالی
   /// [smartContractAddress]: آدرس قرارداد هوشمند (اختیاری)
   Future<PrepareTransactionResponse> prepareTransaction({
+    required String userID,
     required String blockchainName,
     required String senderAddress,
     required String recipientAddress,
@@ -511,26 +513,49 @@ class ApiService {
   }) async {
     try {
       final request = PrepareTransactionRequest(
+        userID: userID,
         blockchainName: blockchainName,
         senderAddress: senderAddress,
         recipientAddress: recipientAddress,
         amount: amount,
         smartContractAddress: smartContractAddress,
       );
+      
+      // Debug log for exact request data
+      print('🔧 DEBUG: prepareTransaction request data:');
+      print('   Full URL: ${_baseUrl}send/prepare');
+      print('   Base URL: $_baseUrl');
+      print('   Endpoint: send/prepare');
+      print('   Request Body: ${request.toJson()}');
+      print('   Raw JSON: ${jsonEncode(request.toJson())}');
+      
+      // Try with minimal headers for debugging
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      
+      print('🔧 DEBUG: Using minimal headers: $headers');
+      
       final response = await _dio.post(
         'send/prepare',
         data: request.toJson(),
-        options: Options(headers: await _getHeaders()),
+        options: Options(headers: headers),
       );
       
       return PrepareTransactionResponse.fromJson(response.data);
     } on DioException catch (e) {
+      print('❌ prepareTransaction ERROR:');
+      print('   Status Code: ${e.response?.statusCode}');
+      print('   Response Data: ${e.response?.data}');
+      print('   Error Message: ${e.message}');
       _handleError(e);
       rethrow;
     }
   }
   
   /// تخمین کارمزد تراکنش
+  /// [userID]: شناسه کاربر
   /// [blockchain]: نام بلاکچین
   /// [fromAddress]: آدرس فرستنده
   /// [toAddress]: آدرس گیرنده
@@ -538,6 +563,7 @@ class ApiService {
   /// [type]: نوع تراکنش (اختیاری)
   /// [tokenContract]: آدرس توکن (اختیاری)
   Future<EstimateFeeResponse> estimateFee({
+    required String userID,
     required String blockchain,
     required String fromAddress,
     required String toAddress,
@@ -547,6 +573,7 @@ class ApiService {
   }) async {
     try {
       final request = EstimateFeeRequest(
+        userID: userID,
         blockchain: blockchain,
         fromAddress: fromAddress,
         toAddress: toAddress,
@@ -554,48 +581,120 @@ class ApiService {
         type: type,
         tokenContract: tokenContract,
       );
+      
+      print('🔧 DEBUG: EstimateFee Request:');
+      print('   UserID: $userID');
+      print('   Blockchain: $blockchain');
+      print('   From: $fromAddress');
+      print('   To: $toAddress');
+      print('   Amount: $amount');
+      print('   Token Contract: $tokenContract');
+      print('   JSON: ${request.toJson()}');
+      
       final response = await _dio.post(
         'estimate-fee',
         data: request.toJson(),
         options: Options(headers: await _getHeaders()),
       );
       
+      print('✅ EstimateFee Response: ${response.data}');
+      
       return EstimateFeeResponse.fromJson(response.data);
     } on DioException catch (e) {
+      print('❌ EstimateFee DioException: ${e.response?.statusCode} - ${e.response?.data}');
       _handleError(e);
       rethrow;
+    } catch (e) {
+      print('❌ EstimateFee Exception: $e');
+      throw Exception('Error estimating fee: $e');
     }
   }
   
   /// تایید و ارسال تراکنش
+  /// [userID]: شناسه کاربر
   /// [transactionId]: شناسه تراکنش
-  /// [senderAddress]: آدرس فرستنده (اختیاری)
-  /// [recipientAddress]: آدرس گیرنده (اختیاری)
-  /// [amount]: مقدار (اختیاری)
-  /// [blockchainName]: نام بلاکچین (اختیاری)
+  /// [blockchain]: نام بلاکچین
+  /// [privateKey]: کلید خصوصی
   Future<ConfirmTransactionResponse> confirmTransaction({
+    required String userID,
     required String transactionId,
-    String? senderAddress,
-    String? recipientAddress,
-    String? amount,
-    String? blockchainName,
+    required String blockchain,
+    required String privateKey,
   }) async {
     try {
       final request = ConfirmTransactionRequest(
+        userID: userID,
         transactionId: transactionId,
-        senderAddress: senderAddress,
-        recipientAddress: recipientAddress,
-        amount: amount,
-        blockchainName: blockchainName,
+        blockchain: blockchain,
+        privateKey: privateKey,
       );
+      
+      // Debug log for confirm transaction
+      print('🔧 DEBUG: confirmTransaction request data:');
+      print('   UserID: $userID');
+      print('   TransactionId: $transactionId');
+      print('   Blockchain: $blockchain');
+      print('   PrivateKey: ${privateKey.substring(0, 8)}...');
+      print('   Full URL: ${_baseUrl}send/confirm');
+      print('   Request Body: ${request.toJson()}');
+      
+      // Add UserID to headers (same as cURL test)
+      final headers = await _getHeaders();
+      headers['UserID'] = userID;
+      print('   Headers: $headers');
+      
       final response = await _dio.post(
         'send/confirm',
         data: request.toJson(),
-        options: Options(headers: await _getHeaders()),
+        options: Options(headers: headers),
       );
+      
+      print('✅ confirmTransaction Response: ${response.data}');
       
       return ConfirmTransactionResponse.fromJson(response.data);
     } on DioException catch (e) {
+      print('❌ confirmTransaction ERROR:');
+      print('   Status Code: ${e.response?.statusCode}');
+      print('   Response Data: ${e.response?.data}');
+      print('   Response Headers: ${e.response?.headers}');
+      print('   Request Data: ${e.requestOptions.data}');
+      print('   Request Headers: ${e.requestOptions.headers}');
+      print('   Request Method: ${e.requestOptions.method}');
+      print('   Request URL: ${e.requestOptions.uri}');
+      print('   Error Message: ${e.message}');
+      print('   Error Type: ${e.type}');
+      
+      // If it's a 400 error but response has data, try to parse it
+      if (e.response?.statusCode == 400 && e.response?.data != null) {
+        try {
+          print('🔧 Trying to parse 400 response as success...');
+          final responseData = e.response!.data;
+          print('   Raw response data: $responseData');
+          
+          // Check if it's actually a success response
+          if (responseData is Map<String, dynamic>) {
+            final message = responseData['message'];
+            final status = responseData['status'];
+            final txHash = responseData['tx_hash'] ?? responseData['transaction_hash'];
+            
+            if (message == "Transaction sent successfully" || 
+                status == "sent" || 
+                (txHash != null && txHash.toString().isNotEmpty)) {
+              print('✅ Found success response in 400 error! Parsing as success...');
+              return ConfirmTransactionResponse.fromJson(responseData);
+            }
+            
+            // Handle specific Tatum API errors
+            if (message != null && message.contains('Failed to broadcast transaction via Tatum API')) {
+              print('❌ Tatum API broadcast failed - this is a server-side issue');
+              throw Exception('Network broadcast failed. Please try again later.');
+            }
+          }
+        } catch (parseError) {
+          print('❌ Error parsing 400 response: $parseError');
+        }
+      }
+      
       _handleError(e);
       rethrow;
     }

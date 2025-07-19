@@ -216,6 +216,15 @@ class SecureStorage {
     return await getSecureData(key);
   }
 
+  /// دریافت کلید خصوصی برای کیف پول انتخاب شده
+  Future<String?> getPrivateKeyForSelectedWallet() async {
+    final selectedWallet = await getSelectedWallet();
+    if (selectedWallet != null) {
+      return await getPrivateKey(selectedWallet);
+    }
+    return null;
+  }
+
   // ==================== COMPATIBILITY METHODS ====================
 
   /// دریافت UserID (متد سازگاری)
