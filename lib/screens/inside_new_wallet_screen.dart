@@ -83,11 +83,15 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
   }
 
   Future<void> _generateWallet() async {
+    print('🔧 DEBUG: _generateWallet called');
+    
     setState(() {
       isLoading = true;
       errorMessage = '';
       showErrorModal = false;
     });
+
+    print('🔧 DEBUG: Loading state set to true');
 
     // Always fetch the latest wallet list from SecureStorage
     final wallets = await SecureStorage.instance.getWalletsList();
@@ -107,6 +111,8 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
       newWalletName = 'New wallet ${++maxNum}';
     } while (wallets.any((w) => (w['walletName'] ?? w['name'] ?? '') == newWalletName));
 
+    print('🔧 DEBUG: Generated wallet name: $newWalletName');
+
     if (newWalletName.trim().isEmpty) {
       setState(() {
         errorMessage = _safeTranslate('wallet_name_cannot_be_empty', 'Wallet name cannot be empty!');
@@ -117,7 +123,10 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
     }
 
     try {
+      print('🔧 DEBUG: Checking network connection...');
       final isConnected = ServiceProvider.instance.networkManager.isConnected;
+      print('🔧 DEBUG: Network connected: $isConnected');
+      
       if (!isConnected) {
         setState(() {
           errorMessage = _safeTranslate('no_internet_connection', 'No internet connection available. Please check your connection.');
@@ -127,8 +136,15 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         return;
       }
 
+      print('🔧 DEBUG: Calling API service...');
+      print('🔧 DEBUG: API Service instance: ${_apiService.runtimeType}');
+      
       final response = await _apiService.generateWallet(newWalletName);
+      print('🔧 DEBUG: API Response received: ${response.toJson()}');
+      
       if (response.success && response.userID != null) {
+        print('🔧 DEBUG: Wallet creation successful!');
+        
         // Get existing wallets list
         final existingWallets = await SecureStorage.instance.getWalletsList();
         
@@ -271,6 +287,7 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
           }
         }
       } else {
+        print('🔧 DEBUG: API call failed - success: ${response.success}, userID: ${response.userID}');
         setState(() {
           errorMessage = response.message ?? _safeTranslate('error_creating_wallet', 'Error creating wallet. Please try again.');
           showErrorModal = true;
@@ -278,6 +295,7 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         });
       }
     } catch (e) {
+      print('🔧 DEBUG: Exception caught: $e');
       setState(() {
         if (e.toString().contains('server security restrictions') || 
             e.toString().contains('Cloudflare')) {
@@ -315,6 +333,10 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
           title: Text(_safeTranslate('generate_new_wallet', 'Generate new wallet'), style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20)),
           iconTheme: const IconThemeData(color: Colors.black),
         ),
@@ -350,7 +372,10 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
                         width: 110,
                         height: 36,
                         child: OutlinedButton(
-                          onPressed: isLoading ? null : _generateWallet,
+                          onPressed: isLoading ? null : () {
+                            print('🔧 DEBUG: Generate button pressed');
+                            _generateWallet();
+                          },
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: Color(0xFF16B369)),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

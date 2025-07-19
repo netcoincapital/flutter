@@ -298,7 +298,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // هنگام بازگشت به اپ، فوراً balance و قیمت‌ها را به‌روزرسانی کن
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _performFullRefresh();
+        
+        // iOS-specific: Handle token state recovery
+        _handleiOSAppResume();
       });
+    }
+  }
+
+  /// iOS-specific: Handle app resume to recover token states
+  Future<void> _handleiOSAppResume() async {
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final tokenProvider = appProvider.tokenProvider;
+      
+      if (tokenProvider != null) {
+        await tokenProvider.handleiOSAppResume();
+        print('🍎 HomeScreen: iOS app resume handling completed');
+      }
+    } catch (e) {
+      print('❌ HomeScreen: Error handling iOS app resume: $e');
     }
   }
 
@@ -613,6 +631,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final walletName = appProvider.currentWalletName ?? _safeTranslate('my_wallet', 'My Wallet');
         final tokenProvider = appProvider.tokenProvider!;
         
+        // Wait for TokenProvider to be fully initialized
+        if (tokenProvider.isLoading || 
+            (!tokenProvider.isFullyReady && tokenProvider.enabledTokens.isEmpty)) {
+          
+          // Debug current state
+          print('🏠 HomeScreen: TokenProvider not ready yet');
+          tokenProvider.debugCurrentState();
+          
+          return Scaffold(
+            backgroundColor: Colors.white,
+            body: SafeArea(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _safeTranslate('initializing_wallet', 'Initializing wallet...'),
+                      style: const TextStyle(color: Color(0xFF666666)),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _safeTranslate('loading_tokens', 'Loading your tokens...'),
+                      style: const TextStyle(color: Color(0xFF999999), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        
+        // Debug final state
+        print('🏠 HomeScreen: TokenProvider is ready, rendering UI');
+        tokenProvider.debugCurrentState();
+        
+        // Additional debug: Check token preferences state
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          tokenProvider.debugTokenPreferences();
+        });
+        
         // Pre-cache logos when tokens are available (but don't wait for it)
         if (tokenProvider.enabledTokens.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -649,8 +711,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           );
         }
         
-        // Duplicate loading check removed
-        
         // Show "Add Token" screen only if loading is complete and no tokens found
         if (!tokenProvider.isLoading && tokenProvider.enabledTokens.isEmpty) {
           return Scaffold(
@@ -677,8 +737,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         const SizedBox(width: 16),
                         TextButton(
                           onPressed: () async {
-                            // Trigger background refresh
+                            // Force refresh TokenProvider
                             await tokenProvider.forceRefresh();
+                            // Also ensure synchronization
+                            await tokenProvider.ensureTokensSynchronized();
                           },
                           child: Text(_safeTranslate('refresh', 'Refresh')),
                         ),

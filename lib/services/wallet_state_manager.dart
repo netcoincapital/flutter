@@ -117,20 +117,9 @@ class WalletStateManager {
         return '/passcode-setup';
       }
       
-      // بررسی فعال بودن passcode
-      final securityManager = SecuritySettingsManager.instance;
-      await securityManager.initialize(); // اطمینان از مقداردهی
-      final isPasscodeEnabled = await securityManager.isPasscodeEnabled();
-      
-      if (isPasscodeEnabled) {
-        // Everything is valid and passcode is enabled - go to enter passcode
-        print('✅ Valid wallet and passcode found, passcode enabled - going to enter-passcode');
-        return '/enter-passcode';
-      } else {
-        // Passcode is disabled - go directly to home
-        print('🔓 Valid wallet and passcode found, but passcode disabled - going to home');
-        return '/home';
-      }
+      // اگر passcode تنظیم شده، همیشه به enter-passcode برود
+      print('✅ Valid wallet and passcode found - going to enter-passcode');
+      return '/enter-passcode';
       
     } catch (e) {
       print('❌ Error determining initial screen: $e');
@@ -140,17 +129,14 @@ class WalletStateManager {
         if (keys.isNotEmpty) {
           print('⚠️ Error occurred but found ${keys.length} keys - checking passcode state...');
           
-          // حتی در fallback نیز passcode enabled را چک کنیم
+          // در fallback نیز اگر passcode تنظیم شده، به enter-passcode برود
           try {
-            final securityManager = SecuritySettingsManager.instance;
-            await securityManager.initialize();
-            final isPasscodeEnabled = await securityManager.isPasscodeEnabled();
-            
-            if (isPasscodeEnabled) {
-              print('⚠️ Fallback: passcode enabled - going to enter-passcode');
+            final hasPasscodeData = await hasPasscode();
+            if (hasPasscodeData) {
+              print('⚠️ Fallback: passcode exists - going to enter-passcode');
               return '/enter-passcode';
             } else {
-              print('⚠️ Fallback: passcode disabled - going to home');
+              print('⚠️ Fallback: no passcode - going to home');
               return '/home';
             }
           } catch (e2) {

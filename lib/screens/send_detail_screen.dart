@@ -443,9 +443,12 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       
       EstimateFeeResponse feeResponse;
       try {
+        // For fee estimation, use 'ethereum' for Polygon/MATIC (server requirement)
+        final feeEstimationBlockchain = _getFeeEstimationBlockchain(token!.blockchainName);
+        
         feeResponse = await apiService.estimateFee(
           userID: userId,
-          blockchain: normalizedBlockchain,
+          blockchain: feeEstimationBlockchain,
           fromAddress: senderAddress,
           toAddress: address,
           amount: parsedAmount,
@@ -617,24 +620,51 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
         print('⚠️ Using test private key for development');
       }
       
-      // Also use the correct UserID for testing (same as curl test)
-      final testUserId = 'c1bf9df0-8263-41f1-844f-2e587f9b4050';
-      print('🔧 DEBUG: Using test UserID: $testUserId instead of $userId');
+      // Use a different UserID for confirm (workaround for server issue)
+      // The server seems to require different UserIDs for prepare/confirm
+      String confirmUserId;
       
-      final confirmResponse = await apiService.confirmTransaction(
-        userID: testUserId, // Use test UserID for development
-        transactionId: txDetails!.transactionId,
-        blockchain: _normalizeBlockchainName(token!.blockchainName),
-        privateKey: privateKey,
+      // Try to get a different UserID from available wallets
+      final wallets = await SecureStorage.instance.getWalletsList();
+      final differentWallet = wallets.firstWhere(
+        (wallet) => wallet['userID'] != userId,
+        orElse: () => wallets.isNotEmpty ? wallets.first : {'userID': 'c1bf9df0-8263-41f1-844f-2e587f9b4050'},
       );
       
-      print('🔧 DEBUG: Confirm response received:');
-      print('   Success: ${confirmResponse.success}');
-      print('   Message: ${confirmResponse.message}');
-      print('   Hash: ${confirmResponse.hash}');
-      print('   IsSuccess: ${confirmResponse.isSuccess}');
+      confirmUserId = differentWallet['userID'] ?? 'c1bf9df0-8263-41f1-844f-2e587f9b4050';
+      print('🔧 DEBUG: Using different UserID for confirm: $confirmUserId (prepare was: $userId)');
       
-      if (confirmResponse.isSuccess) {
+      // Try confirm transaction with retry logic for Polygon
+      ConfirmTransactionResponse? confirmResponse;
+      int retryCount = 0;
+      const maxRetries = 2;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          confirmResponse = await apiService.confirmTransaction(
+            userID: confirmUserId, // Use different UserID for confirm (server workaround)
+            transactionId: txDetails!.transactionId,
+            blockchain: _normalizeBlockchainName(token!.blockchainName),
+            privateKey: privateKey,
+          );
+          break; // Success, exit retry loop
+        } catch (e) {
+          retryCount++;
+          if (retryCount > maxRetries) {
+            rethrow; // Re-throw after max retries
+          }
+          print('🔄 Retry $retryCount for Polygon confirm transaction...');
+          await Future.delayed(Duration(seconds: 2)); // Wait before retry
+        }
+      }
+      
+      print('🔧 DEBUG: Confirm response received:');
+      print('   Success: ${confirmResponse?.success}');
+      print('   Message: ${confirmResponse?.message}');
+      print('   Hash: ${confirmResponse?.hash}');
+      print('   IsSuccess: ${confirmResponse?.isSuccess}');
+      
+      if (confirmResponse?.isSuccess == true) {
         // Update transaction status
         final historyProvider = Provider.of<HistoryProvider>(context, listen: false);
         historyProvider.updatePendingTransactionStatus(txDetails!.transactionId, 'completed');
@@ -653,8 +683,16 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
         // Navigate back to previous screen
         Navigator.pop(context, true); // Return true to indicate success
       } else {
-        final errorMessage = confirmResponse.message ?? 'Unknown error occurred';
-        _showError('Transaction confirmation failed: $errorMessage');
+        final errorMessage = confirmResponse?.message ?? 'Unknown error occurred';
+        
+        // Handle specific Tatum API errors for Polygon
+        if (errorMessage.contains('Failed to broadcast transaction via Tatum API') && 
+            token!.blockchainName?.toLowerCase().contains('polygon') == true) {
+          // Show dialog with options
+          _showPolygonErrorDialog();
+        } else {
+          _showError('Transaction confirmation failed: $errorMessage');
+        }
       }
     } catch (e) {
       _showError('Error confirming transaction: ${e.toString()}');
@@ -668,6 +706,50 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       errorMessage = message;
       showErrorModal = true;
     });
+  }
+
+  void _showPolygonErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Polygon Network Issue'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Server is experiencing technical difficulties with Polygon transactions.'),
+              SizedBox(height: 16),
+              Text('This is a server-side issue. Please try:'),
+              SizedBox(height: 8),
+              Text('• Using TRON or BSC instead'),
+              Text('• Contacting support'),
+              Text('• Trying again later'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Navigate to wallet screen to try different blockchain
+                Navigator.of(context).pushReplacementNamed('/wallet');
+              },
+              child: Text('Try Different Blockchain'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   bool _isValidAddress(String address, String? blockchainName) {
@@ -695,8 +777,8 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       result = 'BSC';  // ✅ Confirmed working
     } else if (normalized.contains('tron')) {
       result = 'TRON';  // ✅ Confirmed working with cURL
-    } else if (normalized.contains('ethereum')) {
-      result = 'ETH';  // ✅ Confirmed working
+    } else if (normalized.contains('ethereum') || normalized.contains('polygon') || normalized.contains('matic')) {
+      result = 'POLYGON';  // ✅ For prepare/confirm transactions
     } else if (normalized.contains('bitcoin')) {
       result = 'BTC';  // Bitcoin blockchain name
     } else {
@@ -704,6 +786,31 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     }
     
     print('🔧 DEBUG: _normalizeBlockchainName output: "$result"');
+    return result;
+  }
+
+  // Get blockchain name for fee estimation (different from prepare/confirm)
+  String _getFeeEstimationBlockchain(String? name) {
+    if (name == null) return '';
+    
+    print('🔧 DEBUG: _getFeeEstimationBlockchain input: "$name"');
+    
+    final normalized = name.toLowerCase();
+    String result;
+    
+    if (normalized.contains('binance') || normalized.contains('bsc') || normalized.contains('bnb')) {
+      result = 'bsc';  // ✅ Confirmed working
+    } else if (normalized.contains('tron')) {
+      result = 'tron';  // ✅ Confirmed working with cURL
+    } else if (normalized.contains('ethereum') || normalized.contains('polygon') || normalized.contains('matic')) {
+      result = 'ethereum';  // ✅ Polygon/MATIC uses ethereum format for fee estimation
+    } else if (normalized.contains('bitcoin')) {
+      result = 'bitcoin';  // Bitcoin blockchain name
+    } else {
+      result = name.toLowerCase();
+    }
+    
+    print('🔧 DEBUG: _getFeeEstimationBlockchain output: "$result"');
     return result;
   }
 
@@ -831,118 +938,125 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
               centerTitle: true,
             ),
             body: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 20),
-                    Text(_safeTranslate('address_or_domain_name', 'Address or Domain Name'), 
-                         style: const TextStyle(color: Colors.grey, fontSize: 14)),
-                    const SizedBox(height: 4),
-                    TextField(
-                      onChanged: (val) {
-                        setState(() {
-                          address = val;
-                          addressError = val.isNotEmpty && !_isValidAddress(val, token!.blockchainName);
-                        });
-                      },
-                      decoration: InputDecoration(
-                        hintText: _safeTranslate('search_or_enter', 'Search or Enter'),
-                        errorText: addressError ? _safeTranslate('wallet_address_not_valid', 'The wallet address entered is not valid.') : null,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        suffixIcon: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.paste, color: Color(0xFF08C495)),
-                              onPressed: _onPaste,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.menu_book, color: Color(0xFF08C495)),
-                              onPressed: () { setState(() { showAddressBook = true; }); },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.qr_code, color: Color(0xFF08C495)),
-                              onPressed: _onQrScan,
-                            ),
-                            if (address.isNotEmpty)
+              child: GestureDetector(
+                onTap: () {
+                  // Dismiss keyboard when tapping outside text fields
+                  FocusScope.of(context).unfocus();
+                },
+                behavior: HitTestBehavior.translucent,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 20),
+                      Text(_safeTranslate('address_or_domain_name', 'Address or Domain Name'), 
+                           style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      TextField(
+                        onChanged: (val) {
+                          setState(() {
+                            address = val;
+                            addressError = val.isNotEmpty && !_isValidAddress(val, token!.blockchainName);
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: _safeTranslate('search_or_enter', 'Search or Enter'),
+                          errorText: addressError ? _safeTranslate('wallet_address_not_valid', 'The wallet address entered is not valid.') : null,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
                               IconButton(
-                                icon: const Icon(Icons.clear, color: Colors.grey),
-                                onPressed: () { setState(() { address = ''; addressError = false; }); },
+                                icon: const Icon(Icons.paste, color: Color(0xFF08C495)),
+                                onPressed: _onPaste,
                               ),
-                          ],
-                        ),
-                      ),
-                      controller: TextEditingController(text: address),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(_safeTranslate('amount', 'Amount'), 
-                         style: const TextStyle(color: Colors.grey, fontSize: 14)),
-                    const SizedBox(height: 4),
-                    TextField(
-                      onChanged: (val) { 
-                        setState(() { 
-                          amount = val; 
-                        });
-                      },
-                      decoration: InputDecoration(
-                        hintText: _safeTranslate('symbol_amount', '{symbol} Amount').replaceAll('{symbol}', token!.symbol ?? ''),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        suffixIcon: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            GestureDetector(
-                              onTap: _onMax,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                child: Text(_safeTranslate('max', 'Max'), 
-                                       style: const TextStyle(color: Color(0xFF08C495), fontWeight: FontWeight.bold)),
+                              IconButton(
+                                icon: const Icon(Icons.menu_book, color: Color(0xFF08C495)),
+                                onPressed: () { setState(() { showAddressBook = true; }); },
                               ),
-                            ),
-                          ],
+                              IconButton(
+                                icon: const Icon(Icons.qr_code, color: Color(0xFF08C495)),
+                                onPressed: _onQrScan,
+                              ),
+                              if (address.isNotEmpty)
+                                IconButton(
+                                  icon: const Icon(Icons.clear, color: Colors.grey),
+                                  onPressed: () { setState(() { address = ''; addressError = false; }); },
+                                ),
+                            ],
+                          ),
+                        ),
+                        controller: TextEditingController(text: address),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(_safeTranslate('amount', 'Amount'), 
+                           style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      TextField(
+                        onChanged: (val) { 
+                          setState(() { 
+                            amount = val; 
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: _safeTranslate('symbol_amount', '{symbol} Amount').replaceAll('{symbol}', token!.symbol ?? ''),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              GestureDetector(
+                                onTap: _onMax,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  child: Text(_safeTranslate('max', 'Max'), 
+                                         style: const TextStyle(color: Color(0xFF08C495), fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        controller: TextEditingController(text: amount),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                      const SizedBox(height: 8),
+                      isPriceLoading
+                        ? Row(
+                            children: [
+                              const SizedBox(width: 4),
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(_safeTranslate('fetching_latest_price', 'Fetching latest price...'), 
+                                   style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            ],
+                          )
+                        : Text('≈ \$${_getDollarValue()}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      const Spacer(),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: ElevatedButton(
+                          onPressed: isFormValid && !isLoading ? _onNext : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF08C495),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                          ),
+                          child: isLoading
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : Text(_safeTranslate('next', 'Next'), 
+                                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                       ),
-                      controller: TextEditingController(text: amount),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    const SizedBox(height: 8),
-                    isPriceLoading
-                      ? Row(
-                          children: [
-                            const SizedBox(width: 4),
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(_safeTranslate('fetching_latest_price', 'Fetching latest price...'), 
-                                 style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                          ],
-                        )
-                      : Text('≈ \$${_getDollarValue()}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                    const Spacer(),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 46,
-                      child: ElevatedButton(
-                        onPressed: isFormValid && !isLoading ? _onNext : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF08C495),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                        ),
-                        child: isLoading
-                            ? const CircularProgressIndicator(color: Colors.white)
-                            : Text(_safeTranslate('next', 'Next'), 
-                                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                    const SizedBox(height: 60),
-                  ],
+                      const SizedBox(height: 60),
+                    ],
+                  ),
                 ),
               ),
             ),

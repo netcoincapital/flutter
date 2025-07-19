@@ -102,14 +102,19 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTokens();
+    // Load tokens after the widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTokens();
+    });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // بررسی کن که آیا cache invalidate شده یا نه
-    _checkCacheInvalidation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkCacheInvalidation();
+    });
   }
 
   /// بررسی invalidation کش و refresh در صورت نیاز
@@ -129,8 +134,51 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           await _loadTokens(forceRefresh: true);
         }
       }
+      
+      // همیشه state توکن‌ها را از preferences به‌روزرسانی کن
+      if (mounted) {
+        final appProvider = Provider.of<AppProvider>(context, listen: false);
+        final tokenProvider = appProvider.tokenProvider;
+        if (tokenProvider != null) {
+          // Ensure TokenPreferences is initialized
+          await tokenProvider.tokenPreferences.initialize();
+          await tokenProvider.forceUpdateTokenStates();
+        }
+      }
     } catch (e) {
       print('❌ AddTokenScreen: Error checking cache invalidation: $e');
+    }
+  }
+
+  /// اعتبارسنجی حالت ماندگاری توکن‌ها
+  Future<void> _validateTokenPersistence() async {
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final tokenProvider = appProvider.tokenProvider;
+      
+      if (tokenProvider == null) {
+        print('❌ TokenProvider is null - cannot validate persistence');
+        return;
+      }
+      
+      // اطمینان از مقداردهی اولیه TokenPreferences
+      await tokenProvider.tokenPreferences.initialize();
+      
+      // بررسی اینکه آیا cache مقداردهی اولیه شده است
+      if (!tokenProvider.tokenPreferences.isCacheInitialized) {
+        print('⚠️ TokenPreferences cache not initialized - refreshing...');
+        await tokenProvider.tokenPreferences.refreshCache();
+      }
+      
+      // بررسی اینکه آیا state توکن‌ها از SharedPreferences load شده‌اند
+      final enabledTokenKeys = await tokenProvider.tokenPreferences.getAllEnabledTokenKeys();
+      print('✅ Persistence validation: Found ${enabledTokenKeys.length} enabled tokens in storage');
+      
+      // Force update token states from preferences
+      await tokenProvider.forceUpdateTokenStates();
+      
+    } catch (e) {
+      print('❌ Error validating token persistence: $e');
     }
   }
 
@@ -141,75 +189,70 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     return selectedNetwork;
   }
 
+  /// بارگذاری توکن‌ها - مشابه Kotlin
   Future<void> _loadTokens({bool forceRefresh = false}) async {
     setState(() {
       isLoading = true;
       errorMessage = null;
     });
 
-    // اگر کش وجود دارد و رفرش دستی نیست، از کش استفاده کن
-    if (!forceRefresh && _cachedTokens != null) {
-      setState(() {
-        allTokens = List<CryptoToken>.from(_cachedTokens!);
-        _filterTokens();
-        isLoading = false;
-      });
-      return;
-    }
-
     try {
-      final apiService = ServiceProvider.instance.apiService;
-      final response = await apiService.getAllCurrencies();
-      if (response.success) {
-        final appProvider = Provider.of<AppProvider>(context, listen: false);
-        final tokenProvider = appProvider.tokenProvider;
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final tokenProvider = appProvider.tokenProvider;
+      
+      if (tokenProvider == null) {
+        setState(() {
+          errorMessage = _safeTranslate('token_provider_not_available', 'Token provider not available');
+          isLoading = false;
+        });
+        return;
+      }
+
+      print('🔄 AddTokenScreen: Loading tokens for user: ${tokenProvider.getCurrentUserId()}');
+
+      // 1. اطمینان از مقداردهی اولیه TokenPreferences
+      await tokenProvider.tokenPreferences.initialize();
+      
+      // 2. همگام‌سازی tokens - مشابه Kotlin
+      await tokenProvider.ensureTokensSynchronized();
+      
+      // 3. اگر force refresh است یا cache معتبر نیست، از API بارگذاری کن
+      if (forceRefresh) {
+        print('🔄 AddTokenScreen: Force refresh requested, loading from API');
+        await tokenProvider.smartLoadTokens(forceRefresh: true);
+      }
+      
+      // 4. دریافت tokens از TokenProvider
+      final tokens = tokenProvider.currencies;
+      
+      if (tokens.isNotEmpty) {
+        print('✅ AddTokenScreen: Loaded ${tokens.length} tokens from TokenProvider');
         
-        if (tokenProvider == null) {
-          setState(() {
-            errorMessage = _safeTranslate('token_provider_not_available', 'Token provider not available');
-            isLoading = false;
-          });
-          return;
-        }
-        
-        final tokens = response.currencies.map((currency) {
-          final tempToken = CryptoToken(
-            name: currency.currencyName ?? '',
-            symbol: currency.symbol ?? '',
-            blockchainName: currency.blockchainName ?? '',
-            iconUrl: (currency.icon == null || currency.icon!.isEmpty)
-                ? "https://coinceeper.com/defualtIcons/coin.png"
-                : currency.icon,
-            isEnabled: false, // We'll set the correct value below
-            amount: 0.0,
-            isToken: currency.isToken ?? true,
-            smartContractAddress: currency.smartContractAddress ?? '',
-          );
-          
-          // Get the actual enabled state from TokenProvider
-          final isEnabled = tokenProvider.isTokenEnabled(tempToken);
-          
-          return tempToken.copyWith(isEnabled: isEnabled);
-        }).toList();
-        // کش را به‌روزرسانی کن
+        // به‌روزرسانی cache
         _cachedTokens = List<CryptoToken>.from(tokens);
+        
         setState(() {
           allTokens = tokens;
           _filterTokens();
           isLoading = false;
         });
-        tokenProvider.setAllTokens(tokens);
         
-        // ذخیره cache برای synchronization با home screen
+        // ذخیره cache key
         await _saveCacheKey();
         
-      } else {
-        setState(() {
-          errorMessage = _safeTranslate('failed_to_load_tokens', 'Failed to load tokens');
-          isLoading = false;
-        });
+        print('✅ AddTokenScreen: Tokens loaded and UI updated');
+        return;
       }
+      
+      // 5. اگر هیچ token وجود نداشت، خطا نمایش بده
+      print('⚠️ AddTokenScreen: No tokens found');
+      setState(() {
+        errorMessage = _safeTranslate('no_tokens_found', 'No tokens found');
+        isLoading = false;
+      });
+      
     } catch (e) {
+      print('❌ AddTokenScreen: Error loading tokens: $e');
       setState(() {
         errorMessage = _safeTranslate('error_loading_tokens', 'Error loading tokens') + ': $e';
         isLoading = false;
@@ -228,15 +271,96 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     }
   }
 
+  /// تازه‌سازی توکن‌ها - مشابه Kotlin
   Future<void> _refreshTokens() async {
     setState(() => refreshing = true);
-    // کش را پاک کن و درخواست جدید بزن
-    _cachedTokens = null;
-    await _loadTokens(forceRefresh: true);
-    setState(() => refreshing = false);
     
-    // ذخیره cache key بعد از refresh
-    await _saveCacheKey();
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final tokenProvider = appProvider.tokenProvider;
+      
+      if (tokenProvider == null) {
+        print('❌ AddTokenScreen: TokenProvider is null during refresh');
+        return;
+      }
+      
+      print('🔄 AddTokenScreen: Refreshing tokens for user: ${tokenProvider.getCurrentUserId()}');
+      
+      // 1. پاک کردن cache محلی
+      _cachedTokens = null;
+      
+      // 2. Force refresh از TokenProvider - مشابه Kotlin
+      await tokenProvider.forceRefresh();
+      
+      // 3. بارگذاری مجدد tokens
+      await _loadTokens(forceRefresh: true);
+      
+      // 4. ذخیره cache key
+      await _saveCacheKey();
+      
+      print('✅ AddTokenScreen: Tokens refreshed successfully');
+      
+    } catch (e) {
+      print('❌ AddTokenScreen: Error refreshing tokens: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطا در تازه‌سازی توکن‌ها: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => refreshing = false);
+    }
+  }
+
+  /// Debug: بررسی وضعیت persistence توکن‌ها
+  Future<void> _debugTokenPersistence() async {
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final tokenProvider = appProvider.tokenProvider;
+      
+      if (tokenProvider == null) {
+        print('❌ Debug: TokenProvider is null');
+        return;
+      }
+      
+      print('=== TOKEN PERSISTENCE DEBUG ===');
+      print('Cache initialized: ${tokenProvider.tokenPreferences.isCacheInitialized}');
+      
+      final enabledTokenKeys = await tokenProvider.tokenPreferences.getAllEnabledTokenKeys();
+      print('Enabled tokens in storage: ${enabledTokenKeys.length}');
+      
+      final enabledTokenNames = await tokenProvider.tokenPreferences.getAllEnabledTokenNames();
+      print('Enabled token names: $enabledTokenNames');
+      
+      final enabledTokens = tokenProvider.enabledTokens;
+      print('Enabled tokens in TokenProvider: ${enabledTokens.length}');
+      print('Enabled tokens list: ${enabledTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
+      
+      // Test a few tokens
+      if (allTokens.isNotEmpty) {
+        for (int i = 0; i < allTokens.take(3).length; i++) {
+          final token = allTokens[i];
+          final storedState = await tokenProvider.tokenPreferences.getTokenState(
+            token.symbol ?? '',
+            token.blockchainName ?? '',
+            token.smartContractAddress,
+          );
+          final syncState = tokenProvider.tokenPreferences.getTokenStateSync(
+            token.symbol ?? '',
+            token.blockchainName ?? '',
+            token.smartContractAddress,
+          );
+          print('Token ${token.symbol}: current=${token.isEnabled}, stored=$storedState, sync=$syncState');
+        }
+      }
+      
+      print('=== END DEBUG ===');
+    } catch (e) {
+      print('❌ Error in debug token persistence: $e');
+    }
   }
 
   void _filterTokens() {
@@ -270,6 +394,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     });
   }
 
+  /// Toggle کردن وضعیت توکن - مشابه Kotlin
   Future<void> _toggleToken(CryptoToken token) async {
     try {
       final appProvider = Provider.of<AppProvider>(context, listen: false);
@@ -277,19 +402,33 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       final priceProvider = Provider.of<PriceProvider>(context, listen: false);
       
       if (tokenProvider == null) {
-        // Remove error message - silent failure
+        print('❌ AddTokenScreen: TokenProvider is null');
         return;
       }
       
       final newState = !token.isEnabled;
-      print('🔄 Toggle token ${token.symbol}: ${token.isEnabled} -> $newState');
+      print('🔄 AddTokenScreen: Toggle token ${token.symbol}: ${token.isEnabled} -> $newState');
       
-      // Toggle the token state
+      // 1. مستقیماً از TokenProvider برای toggle استفاده کن
       await tokenProvider.toggleToken(token, newState);
       
-      // فوراً local state را به‌روزرسانی کن
+      // 2. یک کمی صبر کن تا state ذخیره شود
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // 3. تأیید اینکه state درست ذخیره شده است
+      final verifyState = tokenProvider.isTokenEnabled(token);
+      if (verifyState != newState) {
+        print('❌ AddTokenScreen: Token state verification failed for ${token.symbol}');
+        // تلاش مجدد برای ذخیره
+        await tokenProvider.saveTokenStateForUser(token, newState);
+        print('🔄 AddTokenScreen: Retried saving token state for ${token.symbol}');
+      } else {
+        print('✅ AddTokenScreen: Token state verified for ${token.symbol}: $newState');
+      }
+      
+      // 4. به‌روزرسانی local state
       setState(() {
-        // Update the token in allTokens
+        // Update token in allTokens
         final tokenIndex = allTokens.indexWhere((t) => 
           t.symbol == token.symbol && 
           t.blockchainName == token.blockchainName &&
@@ -300,7 +439,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           allTokens[tokenIndex] = allTokens[tokenIndex].copyWith(isEnabled: newState);
         }
         
-        // Update the token in filteredTokens
+        // Update token in filteredTokens
         final filteredIndex = filteredTokens.indexWhere((t) => 
           t.symbol == token.symbol && 
           t.blockchainName == token.blockchainName &&
@@ -311,7 +450,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           filteredTokens[filteredIndex] = filteredTokens[filteredIndex].copyWith(isEnabled: newState);
         }
         
-        // Update cache as well
+        // Update cache
         if (_cachedTokens != null) {
           final cacheIndex = _cachedTokens!.indexWhere((t) => 
             t.symbol == token.symbol && 
@@ -325,40 +464,29 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
         }
       });
       
-      // اگر توکن فعال شده، فوراً موجودی و قیمت آن را fetch کن
-      if (newState) {
-        print('✅ Token ${token.symbol} activated - fetching balance and price immediately');
-        
-        // موازی: دریافت موجودی و قیمت
-        await Future.wait<void>([
-          // دریافت موجودی فوری برای توکن جدید
-          _fetchSingleTokenBalance(token, tokenProvider),
-          // دریافت قیمت فوری برای توکن جدید
-          _fetchSingleTokenPrice(token, priceProvider),
-        ]);
-        
-        print('✅ Token ${token.symbol} balance and price fetched successfully');
-        
-        // Refresh قیمت‌های همه توکن‌های فعال در background
-        _refreshAllEnabledTokens(tokenProvider, priceProvider);
-      } else {
-        // اگر توکن غیرفعال شده، فقط قیمت‌های بقیه را refresh کن
-        final enabledSymbols = tokenProvider.enabledTokens
-            .map((t) => t.symbol ?? '')
-            .where((s) => s.isNotEmpty)
-            .toList();
-        
-        if (enabledSymbols.isNotEmpty) {
-          print('🔄 Refreshing prices for remaining ${enabledSymbols.length} tokens');
-          priceProvider.fetchPrices(enabledSymbols);
-        }
+      // 5. در صورت فعال بودن توکن، قیمت fetch کن
+      if (newState && priceProvider != null) {
+        print('✅ AddTokenScreen: Token ${token.symbol} activated - fetching price');
+        final symbols = [token.symbol ?? ''];
+        priceProvider.fetchPrices(symbols);
       }
       
-      print('✅ Token ${token.symbol} toggled successfully');
+      // 6. ذخیره cache key برای synchronization
+      await _saveCacheKey();
+      
+      print('✅ AddTokenScreen: Token ${token.symbol} toggled successfully');
       
     } catch (e) {
-      print('❌ Error toggling token ${token.symbol}: $e');
-      // Remove error message - silent failure
+      print('❌ AddTokenScreen: Error toggling token ${token.symbol}: $e');
+      // نمایش خطا به کاربر
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطا در تغییر وضعیت توکن: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

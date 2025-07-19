@@ -6,6 +6,7 @@ import '../services/permission_manager.dart';
 import '../models/crypto_token.dart';
 import '../services/api_service.dart';
 import 'token_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Provider اصلی اپلیکیشن
 class AppProvider extends ChangeNotifier {
@@ -74,14 +75,24 @@ class AppProvider extends ChangeNotifier {
     print('🚀 AppProvider initialized (TokenProvider loading in background)');
   }
   
-  /// مقداردهی اولیه TokenProvider در background
+  /// مقداردهی اولیه TokenProvider در background - مشابه Kotlin
   void _initializeTokenProviderInBackground() {
     if (_currentUserId != null) {
+      print('🔄 AppProvider: Starting TokenProvider initialization for user: $_currentUserId');
+      
       // Initialize TokenProvider in background without blocking UI
-      _getOrCreateTokenProvider(_currentUserId!).then((_) {
-        print('✅ TokenProvider initialized in background');
+      _getOrCreateTokenProvider(_currentUserId!).then((tokenProvider) {
+        print('✅ AppProvider: TokenProvider initialized in background');
+        
+        // اطمینان از synchronization فوری
+        tokenProvider.ensureTokensSynchronized().then((_) {
+          print('✅ AppProvider: TokenProvider synchronization completed');
+        }).catchError((error) {
+          print('❌ AppProvider: TokenProvider synchronization failed: $error');
+        });
+        
       }).catchError((error) {
-        print('❌ TokenProvider initialization failed: $error');
+        print('❌ AppProvider: TokenProvider initialization failed: $error');
       });
     }
   }
@@ -100,7 +111,7 @@ class AppProvider extends ChangeNotifier {
       return _currentTokenProvider!;
     }
     
-    print('🔄 Creating new TokenProvider for user: $userId');
+    print('🔄 AppProvider: Creating new TokenProvider for user: $userId');
     final tokenProvider = TokenProvider(
       userId: userId,
       apiService: _apiService,
@@ -113,15 +124,19 @@ class AppProvider extends ChangeNotifier {
     _tokenProviders[userId] = tokenProvider;
     _currentTokenProvider = tokenProvider;
     
-    // Make TokenProvider available immediately, then initialize in background
-    notifyListeners();
+    // Initialize TokenProvider completely BEFORE making it available
+    print('🔄 AppProvider: Initializing TokenProvider synchronously...');
+    await tokenProvider.initializeInBackground();
     
-    // Initialize TokenProvider in background
-    tokenProvider.initializeInBackground().then((_) {
-      print('✅ TokenProvider fully initialized for user: $userId');
-    }).catchError((error) {
-      print('❌ TokenProvider initialization failed for user $userId: $error');
-    });
+    // Additional synchronization to ensure tokens are loaded
+    await tokenProvider.ensureTokensSynchronized();
+    
+    print('✅ AppProvider: TokenProvider fully synchronized for user: $userId');
+    print('✅ AppProvider: Enabled tokens count: ${tokenProvider.enabledTokens.length}');
+    print('✅ AppProvider: Enabled tokens: ${tokenProvider.enabledTokens.map((t) => t.symbol).join(', ')}');
+    
+    // NOW notify listeners that TokenProvider is ready
+    notifyListeners();
     
     return tokenProvider;
   }
@@ -135,6 +150,10 @@ class AppProvider extends ChangeNotifier {
   /// بارگذاری وضعیت اپلیکیشن
   Future<void> _loadAppState() async {
     try {
+      // Debug: Print all keys in SecureStorage
+      final allKeys = await SecureStorage.instance.getAllKeys();
+      print('🔍 AppProvider: All SecureStorage keys: $allKeys');
+      
       // بارگذاری تنظیمات امنیتی
       final securitySettings = await SecureStorage.instance.getSecuritySettings();
       if (securitySettings != null) {
@@ -151,12 +170,46 @@ class AppProvider extends ChangeNotifier {
       
       // بارگذاری کیف پول انتخاب شده
       _currentWalletName = await SecureStorage.instance.getSelectedWallet();
+      print('🔍 AppProvider: Selected wallet name: $_currentWalletName');
+      
       if (_currentWalletName != null) {
         _currentUserId = await SecureStorage.instance.getUserIdForWallet(_currentWalletName!);
+        print('🔍 AppProvider: User ID for wallet $_currentWalletName: $_currentUserId');
       }
       
+      // Alternative: Check selected user ID directly
+      final selectedUserId = await SecureStorage.instance.getSelectedUserId();
+      print('🔍 AppProvider: Selected user ID directly: $selectedUserId');
+      
+      // Alternative: Check SharedPreferences UserID (used by ApiService)
+      final prefs = await SharedPreferences.getInstance();
+      final sharedPrefsUserId = prefs.getString('UserID');
+      print('🔍 AppProvider: SharedPreferences UserID: $sharedPrefsUserId');
+      
+      // If no user ID found, try to find from wallet list
+      if (_currentUserId == null || _currentUserId!.isEmpty) {
+        print('⚠️ AppProvider: No user ID found, checking wallet list...');
+        final wallets = await SecureStorage.instance.getWalletsList();
+        print('🔍 AppProvider: Available wallets: $wallets');
+        
+        if (wallets.isNotEmpty) {
+          final firstWallet = wallets.first;
+          _currentWalletName = firstWallet['walletName'];
+          _currentUserId = firstWallet['userID'];
+          print('🔧 AppProvider: Using first wallet: $_currentWalletName, userId: $_currentUserId');
+          
+          // Save as selected wallet
+          if (_currentWalletName != null && _currentUserId != null) {
+            await SecureStorage.instance.saveSelectedWallet(_currentWalletName!, _currentUserId!);
+            print('💾 AppProvider: Saved $_currentWalletName as selected wallet');
+          }
+        }
+      }
+      
+      print('✅ AppProvider: Final state - Wallet: $_currentWalletName, User ID: $_currentUserId');
+      
     } catch (e) {
-      print('Error loading app state: $e');
+      print('❌ AppProvider: Error loading app state: $e');
     }
   }
   
@@ -209,12 +262,14 @@ class AppProvider extends ChangeNotifier {
   
   // ==================== WALLET MANAGEMENT ====================
   
-  /// انتخاب کیف پول (مطابق با Kotlin)
+  /// انتخاب کیف پول - مشابه Kotlin
   Future<void> selectWallet(String walletName) async {
     _currentWalletName = walletName;
     _currentUserId = await SecureStorage.instance.getUserIdForWallet(walletName);
     
     if (_currentUserId != null) {
+      print('💰 AppProvider: Selecting wallet: $walletName with userId: $_currentUserId');
+      
       await SecureStorage.instance.saveSelectedWallet(walletName, _currentUserId!);
       
       // Remove listener from previous TokenProvider
@@ -222,15 +277,19 @@ class AppProvider extends ChangeNotifier {
         _currentTokenProvider!.removeListener(_onTokenProviderChanged);
       }
       
-      // Switch to the appropriate TokenProvider (non-blocking)
-      await _getOrCreateTokenProvider(_currentUserId!);
+      // Switch to the appropriate TokenProvider
+      final tokenProvider = await _getOrCreateTokenProvider(_currentUserId!);
+      
+      // اطمینان از synchronization فوری برای کاربر جدید
+      await tokenProvider.ensureTokensSynchronized();
       
       // Update other providers that depend on wallet selection
       await _notifyWalletChange(walletName, _currentUserId!);
+      
+      print('✅ AppProvider: Wallet selected and TokenProvider synchronized');
     }
-    notifyListeners();
     
-    print('💰 Selected wallet: $walletName with userId: $_currentUserId');
+    notifyListeners();
   }
 
   /// اطلاع‌رسانی تغییر کیف پول به سایر Provider ها

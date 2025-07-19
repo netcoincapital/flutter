@@ -310,6 +310,17 @@ class _CreateNewWalletScreenState extends State<CreateNewWalletScreen> {
                 // Header - مطابق با Kotlin
                 Row(
                   children: [
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                      },
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.black,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
                     Text(
                       _safeTranslate('generate_new_wallet', 'Generate new wallet'),
                       style: const TextStyle(

@@ -683,6 +683,12 @@ class ApiService {
               print('✅ Found success response in 400 error! Parsing as success...');
               return ConfirmTransactionResponse.fromJson(responseData);
             }
+            
+            // Handle specific Tatum API errors
+            if (message != null && message.contains('Failed to broadcast transaction via Tatum API')) {
+              print('❌ Tatum API broadcast failed - this is a server-side issue');
+              throw Exception('Network broadcast failed. Please try again later.');
+            }
           }
         } catch (parseError) {
           print('❌ Error parsing 400 response: $parseError');

@@ -277,12 +277,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       print('🔍 hasWallet: $hasWallet');
       print('🔍 hasPasscode: $hasPasscode');
       print('🔍 isPasscodeEnabled: $isPasscodeEnabled');
-      print('🔍 All three conditions (hasWallet && hasPasscode && isPasscodeEnabled): ${hasWallet && hasPasscode && isPasscodeEnabled}');
       
-      if (hasWallet && hasPasscode && isPasscodeEnabled) {
-        // اگر کیف پول و پسکد وجود دارد و passcode فعال است، به enter-passcode برود
+      // اگر کیف پول وجود دارد و passcode تنظیم شده است
+      if (hasWallet && hasPasscode) {
+        // اگر passcode تنظیم شده، همیشه به enter-passcode برود (صرف نظر از toggle)
         initialRoute = '/enter-passcode';
-        print('🎯 ✅ All conditions met -> going to enter-passcode');
+        print('🎯 ✅ Wallet and passcode exist -> going to enter-passcode');
       } else {
         // در غیر این صورت از WalletStateManager استفاده کن
         initialRoute = await WalletStateManager.instance.getInitialScreen();
@@ -294,9 +294,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         }
         if (!hasPasscode) {
           print('🔍 → Reason: No passcode set');
-        }
-        if (!isPasscodeEnabled) {
-          print('🔍 → Reason: Passcode is disabled (toggle OFF)');
         }
       }
       
