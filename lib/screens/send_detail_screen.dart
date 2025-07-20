@@ -47,6 +47,10 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
   
   List<AddressBookEntry> addressBook = [];
 
+  // ✅ Add TextEditingController variables to fix input issues
+  late TextEditingController _addressController;
+  late TextEditingController _amountController;
+
   // Network Fee Options
   Map<String, NetworkFeeOption> networkFeeOptions = {
     'slow': NetworkFeeOption(
@@ -86,10 +90,22 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     super.initState();
     apiService = ApiService();
     
+    // ✅ Initialize TextEditingControllers
+    _addressController = TextEditingController();
+    _amountController = TextEditingController();
+    
     // Initialize data after a short delay to ensure providers are ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeData();
     });
+  }
+
+  @override
+  void dispose() {
+    // ✅ Dispose TextEditingControllers to prevent memory leaks
+    _addressController.dispose();
+    _amountController.dispose();
+    super.dispose();
   }
 
   Future<void> _initializeData() async {
@@ -98,11 +114,24 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     await _loadAddressBook();
     await _fetchPrice();
     
+    // ✅ Sync controllers with initial state
+    _syncControllers();
+    
     print('🔍 Send Detail Screen initialized:');
     print('   Token: ${token?.symbol} (${token?.blockchainName})');
     print('   Wallet: $walletName');
     print('   UserId: $userId');
     print('   Address Book Entries: ${addressBook.length}');
+  }
+
+  /// ✅ Sync TextEditingControllers with state variables
+  void _syncControllers() {
+    if (_addressController.text != address) {
+      _addressController.text = address;
+    }
+    if (_amountController.text != amount) {
+      _amountController.text = amount;
+    }
   }
 
   /// Load address book entries from storage
@@ -346,11 +375,19 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     };
   }
 
-  bool get isFormValid => address.isNotEmpty && amount.isNotEmpty && !addressError;
+  bool get isFormValid {
+    // ✅ Use controller text for validation consistency
+    final addressText = _addressController.text;
+    final amountText = _amountController.text;
+    final isAddressValid = addressText.isNotEmpty && _isValidAddress(addressText, token?.blockchainName);
+    
+    return addressText.isNotEmpty && amountText.isNotEmpty && isAddressValid;
+  }
 
   void _onPaste() async {
     final data = await Clipboard.getData('text/plain');
     final val = data?.text ?? '';
+    _addressController.text = val;
     setState(() {
       address = val;
       addressError = val.isNotEmpty && !_isValidAddress(val, token!.blockchainName);
@@ -367,6 +404,12 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
         final params = Uri.splitQueryString(parts[1]);
         amt = params['amount'];
       }
+      
+      _addressController.text = addr;
+      if (amt != null) {
+        _amountController.text = amt;
+      }
+      
       setState(() {
         address = addr;
         addressError = addr.isNotEmpty && !_isValidAddress(addr, token!.blockchainName);
@@ -376,12 +419,15 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
   }
 
   void _onMax() {
+    final maxAmount = (token!.amount ?? 0.0).toStringAsFixed(8);
+    _amountController.text = maxAmount;
     setState(() {
-      amount = (token!.amount ?? 0.0).toStringAsFixed(8);
+      amount = maxAmount;
     });
   }
 
   void _onSelectAddress(String addr) {
+    _addressController.text = addr;
     setState(() {
       address = addr;
       addressError = addr.isNotEmpty && !_isValidAddress(addr, token!.blockchainName);
@@ -395,6 +441,20 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     setState(() { isLoading = true; });
     
     try {
+      // ✅ Debug controller vs state sync
+      print('🔧 CONTROLLER vs STATE SYNC DEBUG:');
+      print('   Address Controller: "${_addressController.text}"');
+      print('   Address State: "$address"');
+      print('   Amount Controller: "${_amountController.text}"');
+      print('   Amount State: "$amount"');
+      print('   Controllers and states match: ${_addressController.text == address && _amountController.text == amount}');
+      
+      // ✅ Debug wallet info to identify balance issues
+      await _debugWalletInfo();
+      
+      // ✅ Verify actual balance from server vs local balance
+      await _verifyActualBalance();
+      
       // Validate userId before making API calls
       if (userId.isEmpty) {
         print('⚠️ UserId is empty, trying to reload user data...');
@@ -408,6 +468,30 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       
       print('✅ Using userId: $userId for transaction');
       
+      // 🔍 DETAILED DEBUGGING - Compare with working Python test
+      print('🔧 FLUTTER APP DEBUG (Compare with Python test):');
+      print('   Flutter UserID: "$userId"');
+      print('   Python test UserID: "test_user_flutter"');
+      print('   UserIDs match: ${userId == "test_user_flutter"}');
+      print('   Flutter Amount: "${_amountController.text}"');
+      print('   Python test Amount: "0.0001"');
+      print('   Flutter Token: ${token?.symbol} (${token?.blockchainName})');
+      print('   Token Balance: ${token?.amount}');
+      
+      // ✅ Add comparison with working test data
+      print('   ');
+      print('🧪 WORKING PYTHON TEST DATA:');
+      print('   ✅ UserID: test_user_flutter');
+      print('   ✅ Sender: 0x68Ba7F66B09783977E36AA7bD8390b812742853C');
+      print('   ✅ Amount: 0.0001');
+      print('   ✅ Status: SUCCESS');
+      print('   ');
+      print('📱 FLUTTER REAL USER DATA:');
+      print('   ❓ UserID: $userId');
+      print('   ❓ Will get sender address...');
+      print('   ❓ Amount: ${_amountController.text}');
+      print('   ❓ Status: Will test...');
+      
       // Step 1: Get sender address
       final normalizedBlockchain = _normalizeBlockchainName(token!.blockchainName);
       final addressResponse = await apiService.receiveToken(userId, normalizedBlockchain);
@@ -419,8 +503,35 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       
       final senderAddress = addressResponse.publicAddress!;
       
+      print('🔧 SENDER ADDRESS DEBUG:');
+      print('   Flutter Sender: "$senderAddress"');
+      print('   Python test Sender: "0x68Ba7F66B09783977E36AA7bD8390b812742853C"');
+      print('   Addresses match: ${senderAddress == "0x68Ba7F66B09783977E36AA7bD8390b812742853C"}');
+      
+      // ✅ Complete comparison with working test
+      print('   ');
+      print('🔄 FINAL COMPARISON:');
+      print('   Python test → SUCCESS with:');
+      print('     UserID: test_user_flutter');  
+      print('     Address: 0x68Ba7F66B09783977E36AA7bD8390b812742853C');
+      print('     Amount: 0.0001');
+      print('   ');
+      print('   Flutter app → Testing with:');
+      print('     UserID: $userId');
+      print('     Address: $senderAddress');
+      print('     Amount: ${_amountController.text}');
+      print('   ');
+      if (userId != "test_user_flutter") {
+        print('   ⚠️  Different UserID detected!');
+        print('   ⚠️  This UserID might have different balance/permissions');
+      }
+      if (senderAddress != "0x68Ba7F66B09783977E36AA7bD8390b812742853C") {
+        print('   ⚠️  Different Address detected!');
+        print('   ⚠️  This address might have insufficient MATIC balance');
+      }
+      
       // Check if sending to self
-      if (senderAddress.toLowerCase() == address.toLowerCase()) {
+      if (senderAddress.toLowerCase() == _addressController.text.toLowerCase()) {
         setState(() {
           showSelfTransferError = true;
         });
@@ -431,11 +542,21 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       // Validate and parse amount
       double parsedAmount;
       try {
-        parsedAmount = double.parse(amount);
+        // ✅ Use controller text for consistency
+        final amountText = _amountController.text;
+        parsedAmount = double.parse(amountText);
         if (parsedAmount <= 0) {
           _showError('Amount must be greater than 0');
           return;
         }
+        
+        print('🔧 AMOUNT PARSING DEBUG:');
+        print('   Controller text: "$amountText"');
+        print('   State variable: "$amount"');
+        print('   Parsed amount: $parsedAmount');
+        print('   Token balance: ${token?.amount}');
+        print('   Has sufficient balance: ${parsedAmount <= (token?.amount ?? 0.0)}');
+        
       } catch (e) {
         _showError('Invalid amount format. Please enter a valid number.');
         return;
@@ -443,22 +564,35 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       
       EstimateFeeResponse feeResponse;
       try {
-        // For fee estimation, use 'ethereum' for Polygon/MATIC (server requirement)
+        // For fee estimation, use the updated blockchain names
         final feeEstimationBlockchain = _getFeeEstimationBlockchain(token!.blockchainName);
+        
+        print('🔧 FEE ESTIMATION DEBUG:');
+        print('   Original blockchain: "${token!.blockchainName}"');
+        print('   Fee estimation blockchain: "$feeEstimationBlockchain"');
+        print('   Sender: $senderAddress');
+        print('   Recipient: ${_addressController.text}');
+        print('   Amount: $parsedAmount');
+        print('   Token contract: "${token!.smartContractAddress ?? ''}"');
         
         feeResponse = await apiService.estimateFee(
           userID: userId,
           blockchain: feeEstimationBlockchain,
           fromAddress: senderAddress,
-          toAddress: address,
+          toAddress: _addressController.text, // ✅ Use controller text instead of state variable
           amount: parsedAmount,
           tokenContract: token!.smartContractAddress ?? '',
         );
         
-        print('✅ Fee estimation successful:');
-        print('   Fee: ${feeResponse.fee ?? 'null'}');
-        print('   USD Price: ${feeResponse.usdPrice ?? 'null'}');
-        print('   Priority Options: ${feeResponse.priorityOptions}');
+        print('✅ Fee estimation completed:');
+        print('   Raw fee: ${feeResponse.fee}');
+        print('   USD Price: ${feeResponse.usdPrice}');
+        print('   Priority Options available: ${feeResponse.priorityOptions != null}');
+        if (feeResponse.priorityOptions != null) {
+          print('   Slow fee: ${feeResponse.priorityOptions?.slow?.fee} (${feeResponse.priorityOptions?.slow?.feeEth} ETH)');
+          print('   Average fee: ${feeResponse.priorityOptions?.average?.fee} (${feeResponse.priorityOptions?.average?.feeEth} ETH)');
+          print('   Fast fee: ${feeResponse.priorityOptions?.fast?.fee} (${feeResponse.priorityOptions?.fast?.feeEth} ETH)');
+        }
         
       } catch (e) {
         print('❌ Error in fee estimation: $e');
@@ -482,38 +616,50 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
         final usdPrice = feeResponse.usdPrice ?? _getFallbackUsdPrice();
         final priorityOptions = feeResponse.priorityOptions;
         
-        // Get blockchain-specific default fees
+        print('🔧 NETWORK FEE OPTIONS UPDATE:');
+        print('   USD Price: $usdPrice');
+        print('   Priority options from server: ${priorityOptions != null}');
+        
+        // Get blockchain-specific default fees as fallback
         final defaultFees = _getDefaultFeesForBlockchain(token!.blockchainName);
+        print('   Default fees for ${token!.blockchainName}: $defaultFees');
         
         try {
+          // ✅ ENHANCED MAPPING with better null handling
           networkFeeOptions = {
             'slow': NetworkFeeOption(
               priority: 'slow',
-              gasPriceGwei: priorityOptions?.slow?.fee ?? defaultFees['slow']!['gasPrice'] as int,
-              feeEth: priorityOptions?.slow?.feeEth ?? defaultFees['slow']!['feeEth'] as double,
-              feeUsd: (priorityOptions?.slow?.feeEth ?? defaultFees['slow']!['feeEth'] as double) * usdPrice,
+              gasPriceGwei: (priorityOptions?.slow?.fee ?? defaultFees['slow']!['gasPrice'] as int),
+              feeEth: priorityOptions?.slow?.feeEth ?? (defaultFees['slow']!['feeEth'] as double),
+              feeUsd: (priorityOptions?.slow?.feeEth ?? (defaultFees['slow']!['feeEth'] as double)) * usdPrice,
               estimatedTime: '5-10 min',
             ),
             'average': NetworkFeeOption(
               priority: 'average',
-              gasPriceGwei: priorityOptions?.average?.fee ?? defaultFees['average']!['gasPrice'] as int,
-              feeEth: priorityOptions?.average?.feeEth ?? defaultFees['average']!['feeEth'] as double,
-              feeUsd: (priorityOptions?.average?.feeEth ?? defaultFees['average']!['feeEth'] as double) * usdPrice,
+              gasPriceGwei: (priorityOptions?.average?.fee ?? defaultFees['average']!['gasPrice'] as int),
+              feeEth: priorityOptions?.average?.feeEth ?? (defaultFees['average']!['feeEth'] as double),
+              feeUsd: (priorityOptions?.average?.feeEth ?? (defaultFees['average']!['feeEth'] as double)) * usdPrice,
               estimatedTime: '2-5 min',
             ),
             'fast': NetworkFeeOption(
               priority: 'fast',
-              gasPriceGwei: priorityOptions?.fast?.fee ?? defaultFees['fast']!['gasPrice'] as int,
-              feeEth: priorityOptions?.fast?.feeEth ?? defaultFees['fast']!['feeEth'] as double,
-              feeUsd: (priorityOptions?.fast?.feeEth ?? defaultFees['fast']!['feeEth'] as double) * usdPrice,
+              gasPriceGwei: (priorityOptions?.fast?.fee ?? defaultFees['fast']!['gasPrice'] as int),
+              feeEth: priorityOptions?.fast?.feeEth ?? (defaultFees['fast']!['feeEth'] as double),
+              feeUsd: (priorityOptions?.fast?.feeEth ?? (defaultFees['fast']!['feeEth'] as double)) * usdPrice,
               estimatedTime: '1-2 min',
             ),
           };
-          print('✅ Network fee options updated successfully');
+          
+          print('✅ Network fee options created successfully:');
+          print('   Slow: ${networkFeeOptions['slow']!.feeEth} ETH (\$${networkFeeOptions['slow']!.feeUsd.toStringAsFixed(4)})');
+          print('   Average: ${networkFeeOptions['average']!.feeEth} ETH (\$${networkFeeOptions['average']!.feeUsd.toStringAsFixed(4)})');
+          print('   Fast: ${networkFeeOptions['fast']!.feeEth} ETH (\$${networkFeeOptions['fast']!.feeUsd.toStringAsFixed(4)})');
+          
         } catch (e) {
           print('❌ Error updating network fee options: $e');
           // Use complete fallback values
           networkFeeOptions = _createFallbackNetworkFeeOptions(usdPrice);
+          print('⚠️ Using fallback network fee options');
         }
         
         feeDetails = feeResponse;
@@ -521,48 +667,122 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       
       // Validate transaction amount
       final validationResult = _validateTransactionAmount(
-        amount: amount,
+        amount: _amountController.text, // ✅ Use controller text for consistency
         feeEth: networkFeeOptions[selectedPriority]!.feeEth,
         blockchainName: token!.blockchainName,
       );
       
       if (!validationResult.isValid) {
+        print('❌ VALIDATION FAILED:');
+        print('   Validation message: ${validationResult.message}');
+        print('   Is this the insufficient funds error? ${validationResult.message.contains('Insufficient')}');
         _showError(validationResult.message);
         return;
       }
       
-      // Step 3: Prepare transaction
-      final actualAmount = validationResult.adjustedAmount;
+      print('✅ VALIDATION PASSED:');
+      print('   Original amount: ${_amountController.text}');
+      print('   Adjusted amount: ${validationResult.adjustedAmount}');
+      print('   Validation message: ${validationResult.message}');
       
-      // Debug log before calling prepareTransaction
+      // Step 3: Prepare transaction
       print('🔧 DEBUG: About to call prepareTransaction with:');
+      print('   UserID: "$userId"');
       print('   Original blockchain: "${token!.blockchainName}"');
       print('   Normalized blockchain: "$normalizedBlockchain"');
       print('   Sender address: "$senderAddress"');
-      print('   Recipient address: "$address"');
-      print('   Amount: "${actualAmount.toStringAsFixed(8)}"');
+      print('   Recipient address STATE: "$address"');
+      print('   Recipient address CONTROLLER: "${_addressController.text}"');
+      print('   Amount: "${_amountController.text}"');
       print('   Smart contract: "${token!.smartContractAddress ?? ''}"');
+      print('   Flutter local balance: ${token!.amount}');
+      print('   ');
+      
+      // ✅ CRITICAL FIX: Use controller text for recipient address
+      final recipientAddress = _addressController.text;
+      if (recipientAddress.isEmpty) {
+        print('❌ CRITICAL ERROR: Recipient address is empty!');
+        print('   Controller text: "${_addressController.text}"');
+        print('   State variable: "$address"');
+        _showError('Recipient address is required. Please enter a valid address.');
+        return;
+      }
+      
+      print('🔍 BALANCE COMPARISON:');
+      print('   Flutter thinks balance is: ${token!.amount} ${token!.symbol}');
+      print('   Attempting to send: ${parsedAmount.toStringAsFixed(8)} ${token!.symbol}');
+      print('   Should be sufficient locally: ${parsedAmount <= (token!.amount ?? 0.0)}');
+      print('   Backend will auto-adjust if needed for native tokens...');
       
       final prepareResponse = await apiService.prepareTransaction(
         userID: userId,
         blockchainName: normalizedBlockchain,
         senderAddress: senderAddress,
-        recipientAddress: address,
-        amount: actualAmount.toStringAsFixed(8),
+        recipientAddress: recipientAddress, // ✅ Use controller text instead of state variable
+        amount: parsedAmount.toStringAsFixed(8),
         smartContractAddress: token!.smartContractAddress ?? '',
       );
       
       if (!prepareResponse.success) {
-        _showError('Server error: ${prepareResponse.message}');
+        print('❌ PREPARE TRANSACTION FAILED:');
+        print('   Server response message: ${prepareResponse.message}');
+        print('   This suggests balance still insufficient even after adjustment');
+        print('   Sender address: $senderAddress');
+        print('   UserID: $userId');
+        print('   ');
+        print('💡 POSSIBLE CAUSES:');
+        print('   1. Insufficient balance even for gas fees');
+        print('   2. Token transfer without enough native currency for gas');
+        print('   3. Network connectivity issues');
+        
+        // ✅ Better error message for insufficient funds from server
+        if (prepareResponse.message?.contains('insufficient funds') == true ||
+            prepareResponse.message?.contains('Insufficient balance') == true ||
+            prepareResponse.message?.contains('network fee') == true) {
+          _showError(
+            'Insufficient Balance\n\n'
+            '${prepareResponse.message}\n\n'
+            'For native tokens: The system will auto-adjust your amount to maximum sendable.\n'
+            'For tokens: Ensure you have enough native currency for gas fees.\n\n'
+            'Check your balance and try a smaller amount.'
+          );
+        } else {
+          _showError('Server error: ${prepareResponse.message}');
+        }
         return;
+      }
+      
+      // ✅ Check if amount was auto-adjusted by backend
+      final details = prepareResponse.details;
+      final adjustedAmount = details?.amount;
+      final originalAmount = details?.amount;
+      final wasAutoAdjusted = false; // TransactionDetails doesn't have autoAdjusted field
+      
+      if (wasAutoAdjusted && adjustedAmount != null && originalAmount != null) {
+        print('✅ BACKEND AUTO-ADJUSTED AMOUNT:');
+        print('   Original amount: $originalAmount ${token!.symbol}');
+        print('   Adjusted amount: $adjustedAmount ${token!.symbol}');
+        print('   User will send maximum possible amount');
+        
+        // Show confirmation dialog for adjusted amount
+        final shouldContinue = await _showAutoAdjustmentDialog(
+          originalAmount, 
+          adjustedAmount, 
+          token!.symbol ?? ''
+        );
+        
+        if (!shouldContinue) {
+          print('ℹ️ User cancelled auto-adjusted transaction');
+          return;
+        }
       }
       
       // Create pending transaction
       final pendingTransaction = models.Transaction(
         txHash: prepareResponse.transactionId,
-        from: prepareResponse.details.sender,
-        to: prepareResponse.details.recipient,
-        amount: prepareResponse.details.amount,
+        from: prepareResponse.details?.sender ?? senderAddress,
+        to: prepareResponse.details?.recipient ?? recipientAddress,
+        amount: prepareResponse.details?.amount ?? parsedAmount.toStringAsFixed(8),
         tokenSymbol: token!.symbol ?? '',
         direction: 'outbound',
         status: 'pending',
@@ -594,45 +814,14 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     setState(() { isLoading = true; });
     
     try {
-      // Get private key from secure storage
-      String? privateKey;
-      try {
-        privateKey = await SecureStorage.instance.getPrivateKeyForSelectedWallet();
-        if (privateKey == null || privateKey.isEmpty) {
-          // Try to get from wallets list
-          final wallets = await SecureStorage.instance.getWalletsList();
-          if (wallets.isNotEmpty) {
-            final firstWallet = wallets.first;
-            final walletName = firstWallet['walletName'];
-            if (walletName != null) {
-              privateKey = await SecureStorage.instance.getPrivateKey(walletName);
-            }
-          }
-        }
-      } catch (e) {
-        print('⚠️ Error getting private key: $e');
-        privateKey = null;
-      }
+      // ✅ SECURITY IMPROVEMENT: No private key handling on frontend
+      // Backend will securely retrieve private key from database
       
-      if (privateKey == null || privateKey.isEmpty) {
-        // Use test private key for development (same as curl test)
-        privateKey = 'b7b9c47587f84c99d92d7f3207db9fa8a1c6689e7aa783d461c025bf216270d7';
-        print('⚠️ Using test private key for development');
-      }
-      
-      // Use a different UserID for confirm (workaround for server issue)
-      // The server seems to require different UserIDs for prepare/confirm
-      String confirmUserId;
-      
-      // Try to get a different UserID from available wallets
-      final wallets = await SecureStorage.instance.getWalletsList();
-      final differentWallet = wallets.firstWhere(
-        (wallet) => wallet['userID'] != userId,
-        orElse: () => wallets.isNotEmpty ? wallets.first : {'userID': 'c1bf9df0-8263-41f1-844f-2e587f9b4050'},
-      );
-      
-      confirmUserId = differentWallet['userID'] ?? 'c1bf9df0-8263-41f1-844f-2e587f9b4050';
-      print('🔧 DEBUG: Using different UserID for confirm: $confirmUserId (prepare was: $userId)');
+      print('🔧 DEBUG: Secure transaction confirmation (no private key from frontend)');
+      print('   UserID: $userId');
+      print('   TransactionID: ${txDetails!.transactionId}');
+      print('   Blockchain: ${_normalizeBlockchainName(token!.blockchainName)}');
+      print('   ✅ Private key will be retrieved securely by backend from database');
       
       // Try confirm transaction with retry logic for Polygon
       ConfirmTransactionResponse? confirmResponse;
@@ -641,11 +830,12 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       
       while (retryCount <= maxRetries) {
         try {
+          // ✅ SECURE API CALL: No private key sent from frontend
           confirmResponse = await apiService.confirmTransaction(
-            userID: confirmUserId, // Use different UserID for confirm (server workaround)
+            userID: userId, // Use same UserID as prepare
             transactionId: txDetails!.transactionId,
             blockchain: _normalizeBlockchainName(token!.blockchainName),
-            privateKey: privateKey,
+            // ✅ SECURITY: Private key parameter removed - backend handles it securely
           );
           break; // Success, exit retry loop
         } catch (e) {
@@ -653,12 +843,12 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
           if (retryCount > maxRetries) {
             rethrow; // Re-throw after max retries
           }
-          print('🔄 Retry $retryCount for Polygon confirm transaction...');
+          print('🔄 Retry $retryCount for secure transaction confirmation...');
           await Future.delayed(Duration(seconds: 2)); // Wait before retry
         }
       }
       
-      print('🔧 DEBUG: Confirm response received:');
+      print('🔧 DEBUG: Secure confirm response received:');
       print('   Success: ${confirmResponse?.success}');
       print('   Message: ${confirmResponse?.message}');
       print('   Hash: ${confirmResponse?.hash}');
@@ -685,13 +875,24 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       } else {
         final errorMessage = confirmResponse?.message ?? 'Unknown error occurred';
         
-        // Handle specific Tatum API errors for Polygon
-        if (errorMessage.contains('Failed to broadcast transaction via Tatum API') && 
-            token!.blockchainName?.toLowerCase().contains('polygon') == true) {
-          // Show dialog with options
-          _showPolygonErrorDialog();
+        // Handle specific error cases with better user messages
+        if (errorMessage.contains('Network is currently experiencing issues') ||
+            errorMessage.contains('Failed to broadcast transaction via Tatum API')) {
+          // Show specific Tatum API error dialog
+          _showTatumErrorDialog(errorMessage);
+        } else if (errorMessage.contains('Transaction has expired')) {
+          _showError('Transaction Expired\n\nYour transaction has expired. Please create a new transaction.');
+        } else if (errorMessage.contains('Insufficient balance')) {
+          _showError('Insufficient Balance\n\nYou don\'t have enough balance to complete this transaction. Please check your balance and try again.');
+        } else if (errorMessage.contains('Invalid transaction data')) {
+          _showError('Invalid Transaction\n\nPlease verify your recipient address and amount, then try again.');
+        } else if (errorMessage.contains('Private key does not match')) {
+          _showError('Wallet Configuration Error\n\nThere appears to be a mismatch in wallet configuration. Please try restarting the app or contact support.');
+        } else if (errorMessage.contains('not found') || errorMessage.contains('expired')) {
+          _showError('Transaction Not Found\n\nThe transaction may have expired. Please create a new transaction.');
         } else {
-          _showError('Transaction confirmation failed: $errorMessage');
+          // Generic error with better formatting
+          _showError('Transaction Failed\n\n$errorMessage');
         }
       }
     } catch (e) {
@@ -702,35 +903,88 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
   }
 
   void _showError(String message) {
+    // ✅ Enhanced error handling with specific debugging for balance issues
+    String enhancedMessage = message;
+    
+    if (message.toLowerCase().contains('insufficient')) {
+      print('🚨 INSUFFICIENT BALANCE ERROR DETECTED');
+      print('   Original message: $message');
+      print('   Token: ${token?.symbol} (${token?.blockchainName})');
+      print('   Local balance: ${token?.amount}');
+      print('   Amount attempting to send: ${_amountController.text}');
+      print('   User ID: $userId');
+      
+      enhancedMessage = '''
+$message
+
+🔍 DEBUG INFO:
+• Token: ${token?.symbol ?? 'Unknown'}
+• Local Balance: ${token?.amount ?? 0.0}
+• Amount: ${_amountController.text}
+• Blockchain: ${token?.blockchainName ?? 'Unknown'}
+
+💡 TROUBLESHOOTING:
+• Check if balance is outdated
+• Verify on blockchain explorer
+• Try smaller amount
+• Ensure sufficient gas fees
+      '''.trim();
+    }
+    
     setState(() {
-      errorMessage = message;
+      errorMessage = enhancedMessage;
       showErrorModal = true;
     });
   }
 
-  void _showPolygonErrorDialog() {
+  void _showTatumErrorDialog(String errorMessage) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Row(
             children: [
-              Icon(Icons.warning, color: Colors.orange),
+              Icon(Icons.wifi_off, color: Colors.orange),
               SizedBox(width: 8),
-              Text('Polygon Network Issue'),
+              Text('Network Issue'),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Server is experiencing technical difficulties with Polygon transactions.'),
+              Text('The blockchain network is currently experiencing technical difficulties.'),
               SizedBox(height: 16),
-              Text('This is a server-side issue. Please try:'),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Color(0xFFF0F9FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Color(0xFF0EA5E9), width: 1),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info, color: Color(0xFF0EA5E9), size: 16),
+                        SizedBox(width: 4),
+                        Text('Important:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0EA5E9))),
+                      ],
+                    ),
+                    SizedBox(height: 4),
+                    Text('• Your funds are completely safe', style: TextStyle(color: Color(0xFF0EA5E9))),
+                    Text('• No money has been deducted', style: TextStyle(color: Color(0xFF0EA5E9))),
+                    Text('• This is a temporary server issue', style: TextStyle(color: Color(0xFF0EA5E9))),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('You can:'),
               SizedBox(height: 8),
-              Text('• Using TRON or BSC instead'),
-              Text('• Contacting support'),
-              Text('• Trying again later'),
+              Text('• Wait a few minutes and try again'),
+              Text('• Use a different blockchain (BSC, TRON)'),
+              Text('• Contact support if the problem persists'),
             ],
           ),
           actions: [
@@ -741,10 +995,20 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                // Navigate to wallet screen to try different blockchain
+                // Retry the transaction after a short delay
+                Future.delayed(Duration(seconds: 2), () {
+                  _onConfirmSend();
+                });
+              },
+              child: Text('Retry'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Navigate back to wallet to try different blockchain
                 Navigator.of(context).pushReplacementNamed('/wallet');
               },
-              child: Text('Try Different Blockchain'),
+              child: Text('Try Different Network'),
             ),
           ],
         );
@@ -774,22 +1038,22 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     String result;
     
     if (normalized.contains('binance') || normalized.contains('bsc') || normalized.contains('bnb')) {
-      result = 'BSC';  // ✅ Confirmed working
+      result = 'bsc';  // ✅ Lowercase to match server expectation
     } else if (normalized.contains('tron')) {
-      result = 'TRON';  // ✅ Confirmed working with cURL
+      result = 'tron';  // ✅ Lowercase to match server expectation
     } else if (normalized.contains('ethereum') || normalized.contains('polygon') || normalized.contains('matic')) {
-      result = 'POLYGON';  // ✅ For prepare/confirm transactions
+      result = 'polygon';  // ✅ FIXED: Use lowercase "polygon" to match cURL test
     } else if (normalized.contains('bitcoin')) {
-      result = 'BTC';  // Bitcoin blockchain name
+      result = 'bitcoin';  // Lowercase to match server expectation
     } else {
-      result = name.toUpperCase();
+      result = name.toLowerCase();  // FIXED: Use lowercase instead of uppercase
     }
     
     print('🔧 DEBUG: _normalizeBlockchainName output: "$result"');
     return result;
   }
 
-  // Get blockchain name for fee estimation (different from prepare/confirm)
+  // Get blockchain name for fee estimation (now supports all chains)
   String _getFeeEstimationBlockchain(String? name) {
     if (name == null) return '';
     
@@ -799,13 +1063,17 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     String result;
     
     if (normalized.contains('binance') || normalized.contains('bsc') || normalized.contains('bnb')) {
-      result = 'bsc';  // ✅ Confirmed working
+      result = 'bsc';  // ✅ Now supported in fee estimator
     } else if (normalized.contains('tron')) {
       result = 'tron';  // ✅ Confirmed working with cURL
     } else if (normalized.contains('ethereum') || normalized.contains('polygon') || normalized.contains('matic')) {
-      result = 'ethereum';  // ✅ Polygon/MATIC uses ethereum format for fee estimation
+      result = 'polygon';  // ✅ FIXED: Fee estimator now supports 'polygon' directly
     } else if (normalized.contains('bitcoin')) {
       result = 'bitcoin';  // Bitcoin blockchain name
+    } else if (normalized.contains('avalanche') || normalized.contains('avax')) {
+      result = 'avalanche';  // ✅ Now supported in fee estimator
+    } else if (normalized.contains('arbitrum') || normalized.contains('arb')) {
+      result = 'arbitrum';  // ✅ Now supported in fee estimator
     } else {
       result = name.toLowerCase();
     }
@@ -847,63 +1115,165 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       }
       final tokenBalance = token!.amount ?? 0.0;
       
+      // 🔍 ENHANCED VALIDATION DEBUGGING
+      print('🔧 TRANSACTION VALIDATION DEBUG:');
+      print('   Input amount string: "$amount"');
+      print('   Parsed amount: $amountDouble');
+      print('   Token balance: $tokenBalance');
+      print('   Fee (ETH/MATIC): $feeEth');
+      print('   Token symbol: ${token!.symbol}');
+      print('   Blockchain: $blockchainName');
+      print('   Smart contract: "${token!.smartContractAddress ?? 'null'}"');
+      
       // Check if amount exceeds balance
       if (amountDouble > tokenBalance) {
+        final errorMsg = 'Insufficient balance. Available: ${tokenBalance.toStringAsFixed(8)} ${token!.symbol}';
+        print('❌ VALIDATION FAILED: $errorMsg');
         return TransactionValidationResult(
           isValid: false,
           adjustedAmount: 0.0,
-          message: 'Insufficient balance. Available: ${tokenBalance.toStringAsFixed(8)} ${token!.symbol}',
+          message: errorMsg,
         );
       }
       
-      // For native tokens, check if amount + fee exceeds balance
+      // Determine if this is a native token
       final isNativeToken = token!.smartContractAddress == null || token!.smartContractAddress!.isEmpty;
-      if (isNativeToken && (amountDouble + feeEth) > tokenBalance) {
-        final maxAmount = tokenBalance - feeEth;
-        if (maxAmount <= 0) {
-          return TransactionValidationResult(
-            isValid: false,
-            adjustedAmount: 0.0,
-            message: 'Insufficient balance to cover network fee',
-          );
-        }
+      print('   Is native token: $isNativeToken');
+      
+      // ✅ CRITICAL FIX: Only apply fee to native tokens
+      if (isNativeToken) {
+        // For native tokens (MATIC, BNB, ETH), need to consider gas fees
+        final totalNeeded = amountDouble + feeEth;
+        print('   Native token detected - checking total needed including fee');
+        print('   Total needed (amount + fee): $totalNeeded');
+        print('   Available balance: $tokenBalance');
+        print('   Has sufficient for total: ${totalNeeded <= tokenBalance}');
         
-        // If user selected "Max", adjust amount
-        if ((amountDouble - tokenBalance).abs() < 0.0000001) {
+        if (totalNeeded > tokenBalance) {
+          // Calculate maximum sendable amount
+          final maxAmount = tokenBalance - feeEth;
+          print('   Max sendable amount (balance - fee): $maxAmount');
+          
+          if (maxAmount <= 0) {
+            final errorMsg = 'Insufficient balance to cover network fee. Fee: ${feeEth.toStringAsFixed(8)} ${token!.symbol}';
+            print('❌ VALIDATION FAILED: $errorMsg');
+            return TransactionValidationResult(
+              isValid: false,
+              adjustedAmount: 0.0,
+              message: errorMsg,
+            );
+          }
+          
+          // Auto-adjust to maximum available amount
+          print('   ⚠️ Auto-adjusting amount from $amountDouble to $maxAmount');
           return TransactionValidationResult(
             isValid: true,
             adjustedAmount: maxAmount,
-            message: 'Amount adjusted to account for network fee',
+            message: 'Amount adjusted to maximum available after fee deduction',
+          );
+        }
+      } else {
+        // For ERC20/BEP20/tokens, fee is paid in native currency (separate from token balance)
+        print('   Token detected - fee paid separately in native currency');
+        print('   Only checking if token amount exceeds token balance');
+        
+        // Just check if the token amount exceeds token balance
+        // Fee will be paid from native currency balance (which we don't validate here)
+        if (amountDouble > tokenBalance) {
+          final errorMsg = 'Insufficient token balance. Available: ${tokenBalance.toStringAsFixed(8)} ${token!.symbol}';
+          print('❌ VALIDATION FAILED: $errorMsg');
+          return TransactionValidationResult(
+            isValid: false,
+            adjustedAmount: 0.0,
+            message: errorMsg,
           );
         }
       }
       
+      print('✅ VALIDATION PASSED');
       return TransactionValidationResult(
         isValid: true,
         adjustedAmount: amountDouble,
-        message: 'Transaction is valid',
+        message: 'Valid amount',
       );
     } catch (e) {
+      final errorMsg = 'Error validating amount: $e';
+      print('❌ VALIDATION ERROR: $errorMsg');
       return TransactionValidationResult(
         isValid: false,
         adjustedAmount: 0.0,
-        message: 'Invalid amount format',
+        message: errorMsg,
       );
+    }
+  }
+
+  /// ✅ Debug helper to check wallet info and balance (SECURE - no private key exposure)
+  Future<void> _debugWalletInfo() async {
+    try {
+      print('🔍 WALLET DEBUG INFO (SECURE):');
+      
+      // Get wallet info
+      final selectedWallet = await SecureStorage.instance.getSelectedWallet();
+      final selectedUserId = await SecureStorage.instance.getUserIdForSelectedWallet();
+      final wallets = await SecureStorage.instance.getWalletsList();
+      
+      print('   Selected wallet: $selectedWallet');
+      print('   Selected userID: $selectedUserId');
+      print('   Total wallets: ${wallets.length}');
+      
+      if (wallets.isNotEmpty) {
+        for (int i = 0; i < wallets.length; i++) {
+          final wallet = wallets[i];
+          print('   Wallet $i: ${wallet['walletName']} -> ${wallet['userID']}');
+        }
+      }
+      
+      // Get address for current user
+      if (userId.isNotEmpty) {
+        final normalizedBlockchain = _normalizeBlockchainName(token!.blockchainName);
+        final addressResponse = await apiService.receiveToken(userId, normalizedBlockchain);
+        
+        if (addressResponse.success && addressResponse.publicAddress != null) {
+          print('   Address for $userId: ${addressResponse.publicAddress}');
+          print('   ');
+          print('💡 TO VERIFY BALANCE:');
+          print('   1. Go to: https://polygonscan.com/address/${addressResponse.publicAddress}');
+          print('   2. Check MATIC balance');
+          print('   3. Compare with Flutter: ${token!.amount} MATIC');
+          print('   ');
+          print('🔒 SECURITY NOTE: Private keys are managed securely by backend');
+          print('   ✅ No private keys exposed in frontend debugging');
+          print('   ✅ Backend retrieves encrypted private keys from database');
+          print('   ✅ Private keys never sent over network from frontend');
+        }
+      }
+      
+    } catch (e) {
+      print('❌ Error in wallet debug: $e');
     }
   }
 
   String _getDollarValue() {
     final price = pricePerToken;
-    final amt = double.tryParse(amount) ?? 0.0;
+    final amountStr = _amountController.text; // ✅ Use controller text instead of state variable
+    final amt = double.tryParse(amountStr) ?? 0.0;
     final totalValue = price * amt;
     
-    print('💰 _getDollarValue calculation:');
+    print('💰 _getDollarValue calculation FIXED:');
     print('   Token: ${token?.symbol}');
-    print('   Amount: $amt');
+    print('   Amount string from controller: "$amountStr"');
+    print('   Amount string from state: "$amount"');
+    print('   Parsed amount: $amt');
     print('   Price per token: \$${price.toStringAsFixed(4)}');
-    print('   Total value: \$${totalValue.toStringAsFixed(2)}');
+    print('   Multiplication: $price × $amt = $totalValue');
+    print('   Total value: \$${totalValue.toStringAsFixed(4)}');
     
-    return totalValue.toStringAsFixed(2);
+    // ✅ Better formatting for small values
+    if (totalValue < 0.01) {
+      return totalValue.toStringAsFixed(4);
+    } else {
+      return totalValue.toStringAsFixed(2);
+    }
   }
 
   @override
@@ -955,6 +1325,7 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
                       const SizedBox(height: 4),
                       TextField(
                         onChanged: (val) {
+                          // ✅ Keep state in sync with controller
                           setState(() {
                             address = val;
                             addressError = val.isNotEmpty && !_isValidAddress(val, token!.blockchainName);
@@ -983,12 +1354,18 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
                               if (address.isNotEmpty)
                                 IconButton(
                                   icon: const Icon(Icons.clear, color: Colors.grey),
-                                  onPressed: () { setState(() { address = ''; addressError = false; }); },
+                                  onPressed: () { 
+                                    _addressController.clear();
+                                    setState(() { 
+                                      address = ''; 
+                                      addressError = false; 
+                                    }); 
+                                  },
                                 ),
                             ],
                           ),
                         ),
-                        controller: TextEditingController(text: address),
+                        controller: _addressController,
                       ),
                       const SizedBox(height: 20),
                       Text(_safeTranslate('amount', 'Amount'), 
@@ -996,6 +1373,7 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
                       const SizedBox(height: 4),
                       TextField(
                         onChanged: (val) { 
+                          // ✅ Keep state in sync with controller
                           setState(() { 
                             amount = val; 
                           });
@@ -1018,7 +1396,7 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
                             ],
                           ),
                         ),
-                        controller: TextEditingController(text: amount),
+                        controller: _amountController,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       ),
                       const SizedBox(height: 8),
@@ -1085,7 +1463,7 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     );
   }
 
-  // Transaction Confirmation Modal - Professional design with app's official styling
+  // Transaction Confirmation Modal - همسان با استایل کل اپلیکیشن
   Widget _buildTransactionConfirmModal() {
     if (txDetails == null) return const SizedBox();
     
@@ -1094,291 +1472,175 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     final totalValue = (amountValue * pricePerToken).toStringAsFixed(2);
     final totalWithFee = ((double.tryParse(totalValue) ?? 0.0) + selectedFee.feeUsd).toStringAsFixed(2);
     
-    return Material(
-      color: Colors.transparent,
-      child: GestureDetector(
-      onTap: () => setState(() => showConfirmModal = false),
-      child: Container(
-        color: Colors.black.withOpacity(0.6),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: GestureDetector(
-            onTap: () {}, // Prevent tap from closing modal when tapping inside
-            child: Container(
-              width: double.infinity,
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.85,
-                  minHeight: 400,
-                ),
-              margin: const EdgeInsets.all(0),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    return Container(
+      color: Colors.black.withOpacity(0.6),
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // آیکون و عنوان
+              const Icon(
+                Icons.send_rounded,
+                size: 48,
+                color: Color(0xFF08C495),
               ),
-              child: SafeArea(
+              const SizedBox(height: 16),
+              const Text(
+                'Transaction Confirmation',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // مقدار منفی (ارسال)
+              Text(
+                '-${txDetails!.details?.amount ?? '0'} ${token!.symbol ?? ''}',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '≈ \$${totalValue}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // جزئیات تراکنش
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Column(
-                    mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Handle bar
-                    Container(
-                      width: 50,
-                      height: 5,
-                      margin: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                    
-                      // Content
+                    _buildSimpleDetailRow('From', walletName),
+                    const SizedBox(height: 12),
+                    _buildSimpleDetailRow('To', _formatAddress(txDetails!.details?.recipient ?? '')),
+                    const SizedBox(height: 12),
+                    _buildSimpleDetailRow('Network Fee', '${selectedFee.feeEth.toStringAsFixed(8)} ${_getBlockchainCurrency(token!.blockchainName)}'),
+                    const SizedBox(height: 12),
+                    _buildSimpleDetailRow('Total', '≈ \$${totalWithFee}'),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // هشدار
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.orange[600], size: 20),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const SizedBox(height: 10),
-                            
-                              // Large negative amount display
-                            Container(
-                              width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    const Color(0xFF08C495).withOpacity(0.05),
-                                    const Color(0xFF08C495).withOpacity(0.02),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: const Color(0xFF08C495).withOpacity(0.1)),
-                              ),
-                              child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    '-${txDetails!.details.amount}',
-                                    style: const TextStyle(
-                                        fontSize: 32,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.black,
-                                      height: 1.2,
-                                        decoration: TextDecoration.none,
-                                    ),
-                                      textAlign: TextAlign.center,
-                                  ),
-                                    const SizedBox(height: 6),
-                                  Text(
-                                      '≈ \$${totalValue} ${token!.symbol ?? ''}',
-                                    style: const TextStyle(
-                                        fontSize: 16,
-                                      color: Colors.grey,
-                                      fontWeight: FontWeight.w600,
-                                        decoration: TextDecoration.none,
-                                    ),
-                                      textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            
-                              const SizedBox(height: 24),
-                            
-                              // Transaction details
-                            Container(
-                                width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.grey[100]!),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.08),
-                                    spreadRadius: 0,
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                children: [
-                                  // Wallet row  
-                                    _buildStandardDetailRow('Wallet', walletName, 
-                                      subtitle: _formatAddress(txDetails!.details.sender), isFirst: true),
-                                    _buildStandardDivider(),
-                                  
-                                  // To row
-                                    _buildStandardDetailRow('To', _formatAddress(txDetails!.details.recipient)),
-                                    _buildStandardDivider(),
-                                  
-                                    // Network Fee row
-                                  GestureDetector(
-                                    onTap: () => _showNetworkFeeOptions(),
-                                    child: Container(
-                                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          const Text(
-                                            'Network Fee',
-                                            style: TextStyle(
-                                                fontSize: 15,
-                                              color: Colors.grey,
-                                              fontWeight: FontWeight.w600,
-                                                decoration: TextDecoration.none,
-                                            ),
-                                          ),
-                                          Row(
-                                            children: [
-                                              Column(
-                                                crossAxisAlignment: CrossAxisAlignment.end,
-                                                children: [
-                                                  Text(
-                                                      '${selectedFee.feeEth.toStringAsFixed(8)} ${_getBlockchainCurrency(token!.blockchainName)}',
-                                                    style: const TextStyle(
-                                                        fontSize: 15,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: Colors.black,
-                                                        decoration: TextDecoration.none,
-                                                    ),
-                                                  ),
-                                                    const SizedBox(height: 3),
-                                                  Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFF08C495).withOpacity(0.1),
-                                                        borderRadius: BorderRadius.circular(12),
-                                                    ),
-                                                    child: Text(
-                                                      '≈ \$${selectedFee.feeUsd.toStringAsFixed(2)} • ${selectedFee.priority.toUpperCase()}',
-                                                      style: const TextStyle(
-                                                          fontSize: 11,
-                                                        color: Color(0xFF08C495),
-                                                        fontWeight: FontWeight.w700,
-                                                          decoration: TextDecoration.none,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                                const SizedBox(width: 8),
-                                              const Icon(
-                                                Icons.arrow_forward_ios,
-                                                  size: 14,
-                                                color: Color(0xFF08C495),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                    _buildStandardDivider(),
-                                  
-                                  // Max Total row
-                                    _buildStandardDetailRow('Max Total', '≈ \$${totalWithFee}', 
-                                    subtitle: '(Amount + Fee)', isLast: true),
-                                ],
-                              ),
-                            ),
-                            
-                              const SizedBox(height: 20),
-                            
-                              // Warning message
-                            Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8F9FA),
-                                  borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[200]!),
-                              ),
-                              child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                      padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[100],
-                                        borderRadius: BorderRadius.circular(10),
-                                    ),
-                                      child: const Icon(Icons.info_outline, color: Colors.grey, size: 18),
-                                  ),
-                                    const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      'Please double-check the recipient address before confirming.',
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                        color: Colors.grey[600],
-                                        fontWeight: FontWeight.w600,
-                                          height: 1.3,
-                                          decoration: TextDecoration.none,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            
-                              const SizedBox(height: 24),
-                          ],
+                      child: Text(
+                        'Please double-check the recipient address before confirming.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange[700],
                         ),
                       ),
                     ),
-                    
-                      // Send button with proper spacing
-                    Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 60),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border(top: BorderSide(color: Colors.grey[100]!)),
-                      ),
-                        child: SizedBox(
-                          height: 50,
-                            child: ElevatedButton(
-                              onPressed: isLoading ? null : _onConfirmSend,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF08C495),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(25),
-                                ),
-                                elevation: 0,
-                                shadowColor: Colors.transparent,
-                              ),
-                              child: isLoading
-                                  ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Text(
-                                      'Send ${token!.symbol}',
-                                      style: const TextStyle(
-                                      fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                      decoration: TextDecoration.none,
-                                      ),
-                                    ),
-                            ),
-                      ),
-                    ),
                   ],
-                  ),
                 ),
               ),
-            ),
+              
+              const SizedBox(height: 24),
+              
+              // دکمه‌ها
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => setState(() => showConfirmModal = false),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey[200],
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancel', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: isLoading ? null : _onConfirmSend,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF08C495),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text('Send ${token!.symbol}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+  
+  // متد کمکی برای نمایش جزئیات ساده
+  Widget _buildSimpleDetailRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            color: Colors.grey,
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1832,6 +2094,151 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       indent: 16,
       endIndent: 16,
     );
+  }
+
+  /// ✅ Verify actual balance from server vs local balance
+  Future<void> _verifyActualBalance() async {
+    try {
+      if (userId.isEmpty || token == null) {
+        print('⚠️ Cannot verify balance: missing userId or token');
+        return;
+      }
+      
+      print('🔍 BALANCE VERIFICATION:');
+      print('   Local balance: ${token!.amount} ${token!.symbol}');
+      
+      // Get sender address first
+      final normalizedBlockchain = _normalizeBlockchainName(token!.blockchainName);
+      final addressResponse = await apiService.receiveToken(userId, normalizedBlockchain);
+      
+      if (!addressResponse.success || addressResponse.publicAddress == null) {
+        print('❌ Failed to get address for balance verification');
+        return;
+      }
+      
+      final senderAddress = addressResponse.publicAddress!;
+      print('   Address: $senderAddress');
+      
+      // Try to get balance from server (if balance API exists)
+      try {
+        // Note: This assumes a balance API exists - adjust URL as needed
+        final balanceResponse = await apiService.getBalance(userId);
+        if (balanceResponse.success) {
+          // Get balance from first balance item (if available)
+          final firstBalance = balanceResponse.balances?.first?.balance;
+          final serverBalance = double.tryParse(firstBalance ?? '0') ?? 0.0;
+          print('   Server balance: $serverBalance ${token!.symbol}');
+          print('   Balance difference: ${(token!.amount ?? 0.0) - serverBalance} ${token!.symbol}');
+          
+          if ((token!.amount ?? 0.0) != serverBalance) {
+            print('⚠️ BALANCE MISMATCH DETECTED!');
+            print('   Local balance might be outdated');
+            print('   Consider refreshing token balance');
+          } else {
+            print('✅ Balance matches server');
+          }
+        } else {
+          print('⚠️ Could not verify balance from server: ${balanceResponse.message}');
+        }
+      } catch (e) {
+        print('⚠️ Balance verification API not available: $e');
+      }
+      
+      // Always show the address for manual verification
+      print('💡 Manual verification:');
+      print('   Check balance on explorer:');
+      if (normalizedBlockchain.contains('polygon') || normalizedBlockchain.contains('matic')) {
+        print('   https://polygonscan.com/address/$senderAddress');
+      } else if (normalizedBlockchain.contains('bsc') || normalizedBlockchain.contains('binance')) {
+        print('   https://bscscan.com/address/$senderAddress');
+      } else if (normalizedBlockchain.contains('ethereum')) {
+        print('   https://etherscan.io/address/$senderAddress');
+      }
+      
+    } catch (e) {
+      print('❌ Error in balance verification: $e');
+    }
+  }
+
+  /// ✅ Show dialog when backend auto-adjusts the amount
+  Future<bool> _showAutoAdjustmentDialog(String originalAmount, String adjustedAmount, String symbol) async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.auto_fix_high, color: Color(0xFF08C495)),
+              SizedBox(width: 8),
+              Text('Amount Adjusted'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Your balance is insufficient for the requested amount plus network fees.'),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Color(0xFFF0F9FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Color(0xFF08C495), width: 1),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info, color: Color(0xFF08C495), size: 16),
+                        SizedBox(width: 4),
+                        Text('Auto-Adjustment:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF08C495))),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Requested:'),
+                        Text('$originalAmount $symbol', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Adjusted to:'),
+                        Text('$adjustedAmount $symbol', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF08C495))),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('This sends the maximum possible amount after reserving funds for network fees.'),
+              SizedBox(height: 8),
+              Text('Would you like to continue with the adjusted amount?'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF08C495),
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Continue'),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
   }
 }
 

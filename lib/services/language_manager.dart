@@ -12,6 +12,8 @@ class LanguageManager {
     'fa': Locale('fa'),
     'tr': Locale('tr'),
     'ar': Locale('ar'),
+    'zh': Locale('zh'),
+    'es': Locale('es'),
   };
 
   /// Get current language code
@@ -31,6 +33,10 @@ class LanguageManager {
         return 'Türkçe';
       case 'ar':
         return 'العربية';
+      case 'zh':
+        return '中文';
+      case 'es':
+        return 'Español';
       default:
         return 'English';
     }
@@ -43,6 +49,8 @@ class LanguageManager {
       'fa': 'فارسی',
       'tr': 'Türkçe',
       'ar': 'العربية',
+      'zh': '中文',
+      'es': 'Español',
     };
   }
 

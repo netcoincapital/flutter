@@ -658,9 +658,21 @@ class _TransactionItem extends StatelessWidget {
     final amountPrefix = isReceived ? "+" : "-";
     final amountValue = "$amountPrefix${_formatAmount(tx.amount)}";
     final isPending = !isReceived && (tx.status ?? '').toLowerCase() == "pending";
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-      child: Row(
+    
+    return GestureDetector(
+      onTap: () {
+        // Navigate to transaction detail screen with txHash
+        Navigator.pushNamed(
+          context,
+          '/transaction_detail',
+          arguments: {
+            'transactionId': tx.txHash, // ارسال txHash برای دریافت جزئیات از API
+          },
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(
         children: [
           Container(
             width: 24,
@@ -742,6 +754,7 @@ class _TransactionItem extends StatelessWidget {
             ],
           ),
         ],
+        ),
       ),
     );
   }

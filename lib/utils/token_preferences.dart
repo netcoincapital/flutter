@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import '../services/secure_storage.dart';
+import '../services/platform_storage_manager.dart';
 
 /// کلاس مدیریت تنظیمات توکن‌ها
 class TokenPreferences {
@@ -59,37 +60,115 @@ class TokenPreferences {
     }
   }
 
-  /// iOS-specific: Load token states from SecureStorage and merge with SharedPreferences
+  /// iOS-specific: Load ALL token states from SecureStorage and merge with SharedPreferences
   Future<void> _loadFromSecureStorageOnIOS(SharedPreferences prefs) async {
     try {
-      // Get all keys from SecureStorage (this is a simplified approach)
-      // In reality, we need to iterate through possible keys since SecureStorage doesn't provide getAllKeys()
-      final defaultTokens = ['BTC', 'ETH', 'TRX'];
-      final blockchains = ['Bitcoin', 'Ethereum', 'Tron'];
+      print('🍎 TokenPreferences: Starting comprehensive iOS SecureStorage recovery for user $userId...');
       
-      for (int i = 0; i < defaultTokens.length; i++) {
-        final symbol = defaultTokens[i];
-        final blockchain = blockchains[i];
-        final key = _getTokenKey(symbol, blockchain, null);
+      // استراتژی جامع: بازیابی همه توکن‌های ممکن از SecureStorage
+      // لیست کامل توکن‌هایی که ممکنه کاربر فعال کرده باشه
+      final allPossibleTokens = {
+        'BTC': {'blockchain': 'Bitcoin', 'contract': null},
+        'ETH': {'blockchain': 'Ethereum', 'contract': null},
+        'TRX': {'blockchain': 'Tron', 'contract': null},
+        'BNB': {'blockchain': 'Binance', 'contract': null},
+        'USDT': {'blockchain': 'Ethereum', 'contract': '0xdAC17F958D2ee523a2206206994597C13D831ec7'},
+        'USDT': {'blockchain': 'Tron', 'contract': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'},
+        'USDT': {'blockchain': 'Binance', 'contract': '0x55d398326f99059fF775485246999027B3197955'},
+        'USDC': {'blockchain': 'Ethereum', 'contract': '0xA0b86a33E6441b15bCC36C0d8a5c7B5e8b1b0e1f'},
+        'USDC': {'blockchain': 'Binance', 'contract': '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'},
+        'SHIB': {'blockchain': 'Ethereum', 'contract': '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE'},
+        'ADA': {'blockchain': 'Cardano', 'contract': null},
+        'DOT': {'blockchain': 'Polkadot', 'contract': null},
+        'SOL': {'blockchain': 'Solana', 'contract': null},
+        'AVAX': {'blockchain': 'Avalanche', 'contract': null},
+        'MATIC': {'blockchain': 'Polygon', 'contract': null},
+        'XRP': {'blockchain': 'XRP', 'contract': null},
+        'LINK': {'blockchain': 'Ethereum', 'contract': '0x514910771AF9Ca656af840dff83E8264EcF986CA'},
+        'UNI': {'blockchain': 'Ethereum', 'contract': '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984'},
+        'LTC': {'blockchain': 'Litecoin', 'contract': null},
+        'DOGE': {'blockchain': 'Dogecoin', 'contract': null},
+        'NCC': {'blockchain': 'Netcoincapital', 'contract': null},
+      };
+      
+      int recoveredCount = 0;
+      
+      // بازیابی همه توکن‌های ممکن از SecureStorage
+      for (final entry in allPossibleTokens.entries) {
+        final symbol = entry.key;
+        final tokenInfo = entry.value;
+        final blockchain = tokenInfo['blockchain'] as String;
+        final contract = tokenInfo['contract'] as String?;
         
-        // Check if we already have this from SharedPreferences
+        final key = _getTokenKey(symbol, blockchain, contract);
+        
+        // فقط اگر در SharedPreferences نداریم، از SecureStorage بگیر
         if (!_tokenStateCache.containsKey(key)) {
-          final secureValue = await SecureStorage.instance.getSecureData(key);
-          if (secureValue != null) {
-            final boolValue = secureValue.toLowerCase() == 'true';
-            _tokenStateCache[key] = boolValue;
-            
-            // Sync back to SharedPreferences
-            await prefs.setBool(key, boolValue);
-            
-            print('🍎 TokenPreferences: Recovered from SecureStorage (iOS): $key = $boolValue');
+          try {
+            final secureValue = await SecureStorage.instance.getSecureData(key);
+            if (secureValue != null) {
+              final boolValue = secureValue.toLowerCase() == 'true';
+              
+              // فقط اگر true باشه، اضافه کن (توکن‌های غیرفعال رو نادیده بگیر)
+              if (boolValue) {
+                _tokenStateCache[key] = boolValue;
+                
+                // همگام‌سازی با SharedPreferences برای دفعات بعد
+                await prefs.setBool(key, boolValue);
+                
+                recoveredCount++;
+                print('🍎 TokenPreferences: Recovered enabled token from SecureStorage: $symbol ($blockchain) = $boolValue');
+              }
+            }
+          } catch (e) {
+            // اگر خطا داشت، ادامه بده (ممکنه توکن موجود نباشه)
+            print('🔍 TokenPreferences: Token $symbol ($blockchain) not found in SecureStorage (normal)');
           }
         }
       }
       
-      print('🍎 TokenPreferences: iOS SecureStorage recovery completed. Total cache: ${_tokenStateCache.length}');
+      // همچنین بررسی کن که آیا کلیدهای user-specific دیگری هم هست
+      await _recoverCustomUserTokens(prefs);
+      
+      print('🍎 TokenPreferences: iOS SecureStorage recovery completed!');
+      print('🍎 TokenPreferences: Recovered $recoveredCount enabled tokens from SecureStorage');
+      print('🍎 TokenPreferences: Total cache size: ${_tokenStateCache.length}');
+      
     } catch (e) {
-      print('❌ TokenPreferences: Error loading from SecureStorage on iOS: $e');
+      print('❌ TokenPreferences: Error in comprehensive iOS SecureStorage recovery: $e');
+    }
+  }
+  
+  /// بازیابی توکن‌های سفارشی کاربر از SecureStorage  
+  Future<void> _recoverCustomUserTokens(SharedPreferences prefs) async {
+    try {
+      // استفاده از pattern matching برای یافتن کلیدهای مربوط به این کاربر
+      final userKeyPatterns = [
+        '${_tokenStatePrefix}${userId}_',
+        '_${userId}_',
+        '${userId}_'
+      ];
+      
+      // بررسی key های احتمالی با userId
+      for (int i = 0; i < 1000; i++) { // محدودیت برای جلوگیری از loop بی‌نهایت
+        final testKey = '${_tokenStatePrefix}${userId}_token_$i';
+        try {
+          final secureValue = await SecureStorage.instance.getSecureData(testKey);
+          if (secureValue != null) {
+            final boolValue = secureValue.toLowerCase() == 'true';
+            if (boolValue && !_tokenStateCache.containsKey(testKey)) {
+              _tokenStateCache[testKey] = boolValue;
+              await prefs.setBool(testKey, boolValue);
+              print('🍎 TokenPreferences: Recovered custom user token: $testKey = $boolValue');
+            }
+          }
+        } catch (e) {
+          // اگر کلید وجود نداشت، break کن (طبیعیه)
+          break;
+        }
+      }
+    } catch (e) {
+      print('❌ TokenPreferences: Error recovering custom user tokens: $e');
     }
   }
   
@@ -122,29 +201,69 @@ class TokenPreferences {
     }
   }
 
-  /// Save token state with iOS dual storage support
+  /// Save token state with enhanced iOS persistence strategy
   Future<void> saveTokenState(String symbol, String blockchainName, String? smartContractAddress, bool isEnabled) async {
     try {
       final key = _getTokenKey(symbol, blockchainName, smartContractAddress);
       
-      // Always save to SharedPreferences
+      print('💾 TokenPreferences: Saving token state for $symbol ($blockchainName): $isEnabled');
+      
+      // Always save to SharedPreferences first
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(key, isEnabled);
       
-      // iOS: Also save to SecureStorage for better persistence
+      // iOS: Enhanced persistence with double confirmation
       if (Platform.isIOS) {
+        // اول ذخیره کن
         await SecureStorage.instance.saveSecureData(key, isEnabled.toString());
-        print('🍎 TokenPreferences: Saved to both SharedPreferences and SecureStorage (iOS): $key = $isEnabled');
+        
+        // سپس تأیید کن که درست ذخیره شده
+        final verification = await SecureStorage.instance.getSecureData(key);
+        final isVerified = verification?.toLowerCase() == isEnabled.toString().toLowerCase();
+        
+        if (isVerified) {
+          print('🍎✅ TokenPreferences: iOS SecureStorage save verified: $key = $isEnabled');
+        } else {
+          print('🍎⚠️ TokenPreferences: iOS SecureStorage save verification failed, retrying...');
+          
+          // تلاش مجدد با PlatformStorageManager
+          try {
+            await _saveWithPlatformManager(key, isEnabled);
+            print('🍎🔄 TokenPreferences: Retry with PlatformStorageManager succeeded');
+          } catch (retryError) {
+            print('🍎❌ TokenPreferences: Retry failed: $retryError');
+          }
+        }
+        
+        // اضافه کردن backup key برای اطمینان بیشتر
+        final backupKey = '${key}_backup_${DateTime.now().millisecondsSinceEpoch}';
+        await SecureStorage.instance.saveSecureData(backupKey, isEnabled.toString());
+        
+      } else {
+        // Android: فقط SharedPreferences کافیه
+        print('🤖 TokenPreferences: Android save completed');
       }
       
       // Update cache
       _tokenStateCache[key] = isEnabled;
       
-      print('✅ TokenPreferences: Token state saved for user $userId: ${symbol}_${blockchainName} = $isEnabled');
+      print('✅ TokenPreferences: Token state saved successfully: ${symbol}_${blockchainName} = $isEnabled');
     } catch (e) {
       print('❌ TokenPreferences: Error saving token state for user $userId: $e');
+      
+      // Fallback: حداقل در cache ذخیره کن
+      final key = _getTokenKey(symbol, blockchainName, smartContractAddress);
+      _tokenStateCache[key] = isEnabled;
+      
       rethrow;
     }
+  }
+  
+  /// Fallback save method using PlatformStorageManager
+  Future<void> _saveWithPlatformManager(String key, bool isEnabled) async {
+    // استفاده از PlatformStorageManager به عنوان backup
+    final platformManager = PlatformStorageManager.instance;
+    await platformManager.saveData(key, isEnabled.toString(), isCritical: true);
   }
 
   /// Get token state with iOS dual storage support
@@ -359,4 +478,99 @@ class TokenPreferences {
   
   /// بررسی اینکه آیا cache مقداردهی اولیه شده است
   bool get isCacheInitialized => _cacheInitialized;
+  
+  /// Debug method برای نمایش وضعیت فعلی tokens در iOS
+  Future<void> debugTokenRecoveryStatus() async {
+    if (!Platform.isIOS) {
+      print('🤖 Debug: Not iOS, skipping recovery status check');
+      return;
+    }
+    
+    print('🍎 === iOS TOKEN RECOVERY DEBUG STATUS ===');
+    print('🍎 User ID: $userId');
+    print('🍎 Cache Initialized: $_cacheInitialized');
+    print('🍎 Cache Size: ${_tokenStateCache.length}');
+    
+    if (_tokenStateCache.isNotEmpty) {
+      print('🍎 Cached Tokens:');
+      _tokenStateCache.forEach((key, value) {
+        if (value) { // فقط توکن‌های فعال نمایش بده
+          print('🍎   ✅ $key = $value');
+        }
+      });
+    } else {
+      print('🍎 ⚠️ No tokens in cache!');
+    }
+    
+    // تست direct access به SecureStorage
+    print('🍎 === TESTING DIRECT SECURESTORAGE ACCESS ===');
+    final testTokens = ['BTC_Bitcoin_', 'ETH_Ethereum_', 'TRX_Tron_'];
+    
+    for (final tokenKey in testTokens) {
+      final key = '${_tokenStatePrefix}${userId}_$tokenKey';
+      try {
+        final secureValue = await SecureStorage.instance.getSecureData(key);
+        print('🍎 SecureStorage test - $key: ${secureValue ?? 'NOT_FOUND'}');
+      } catch (e) {
+        print('🍎 SecureStorage test error - $key: $e');
+      }
+    }
+    
+    // تست SharedPreferences
+    print('🍎 === TESTING SHAREDPREFERENCES ACCESS ===');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys();
+      final relevantKeys = allKeys.where((k) => k.contains(userId)).toList();
+      
+      print('🍎 SharedPreferences - Total keys: ${allKeys.length}');
+      print('🍎 SharedPreferences - User-related keys: ${relevantKeys.length}');
+      
+      for (final key in relevantKeys) {
+        final value = prefs.getBool(key);
+        if (value == true) {
+          print('🍎   ✅ SharedPrefs: $key = $value');
+        }
+      }
+    } catch (e) {
+      print('🍎 SharedPreferences test error: $e');
+    }
+    
+    print('🍎 === END OF DEBUG STATUS ===');
+  }
+  
+  /// Force recovery از SecureStorage برای troubleshooting
+  Future<void> forceRecoveryFromSecureStorage() async {
+    if (!Platform.isIOS) {
+      print('🤖 Force recovery: Not iOS, skipping');
+      return;
+    }
+    
+    print('🍎 === FORCING RECOVERY FROM SECURESTORAGE ===');
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Clear existing cache and SharedPreferences for this user
+      final keysToRemove = prefs.getKeys().where((k) => k.contains(userId)).toList();
+      for (final key in keysToRemove) {
+        await prefs.remove(key);
+        print('🍎 Removed from SharedPreferences: $key');
+      }
+      
+      _tokenStateCache.clear();
+      print('🍎 Cache cleared');
+      
+      // Force reload from SecureStorage
+      await _loadFromSecureStorageOnIOS(prefs);
+      
+      print('🍎 === FORCE RECOVERY COMPLETED ===');
+      
+      // Show results
+      await debugTokenRecoveryStatus();
+      
+    } catch (e) {
+      print('🍎 ❌ Force recovery failed: $e');
+    }
+  }
 } 

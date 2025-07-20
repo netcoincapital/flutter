@@ -654,6 +654,7 @@ class _SettingItem extends StatelessWidget {
       case 'المحافظ':
       case 'cüzdanlar':
       case 'carteras':
+      case '钱包':
         iconData = Icons.account_balance_wallet_rounded;
         break;
       case 'price alerts':
@@ -661,6 +662,7 @@ class _SettingItem extends StatelessWidget {
       case 'تنبيهات الأسعار':
       case 'fiyat uyarıları':
       case 'alertas de precio':
+      case '价格提醒':
         iconData = Icons.notifications_active_rounded;
         break;
       case 'address book':
@@ -668,6 +670,7 @@ class _SettingItem extends StatelessWidget {
       case 'دفتر العناوين':
       case 'adres defteri':
       case 'libreta de direcciones':
+      case '地址簿':
         iconData = Icons.contacts_rounded;
         break;
       case 'scan qr code':
@@ -675,6 +678,7 @@ class _SettingItem extends StatelessWidget {
       case 'مسح رمز qr':
       case 'qr kod tara':
       case 'escanear código qr':
+      case '扫描二维码':
         iconData = Icons.qr_code_scanner_rounded;
         break;
       case 'preferences':
@@ -682,6 +686,7 @@ class _SettingItem extends StatelessWidget {
       case 'التفضيلات':
       case 'tercihler':
       case 'preferencias':
+      case '偏好设置':
         iconData = Icons.tune_rounded;
         break;
       case 'security':
@@ -689,6 +694,7 @@ class _SettingItem extends StatelessWidget {
       case 'الأمان':
       case 'güvenlik':
       case 'seguridad':
+      case '安全':
         iconData = Icons.security_rounded;
         break;
       case 'notifications':
@@ -696,6 +702,7 @@ class _SettingItem extends StatelessWidget {
       case 'الإشعارات':
       case 'bildirimler':
       case 'notificaciones':
+      case '通知':
         iconData = Icons.notifications_rounded;
         break;
       case 'help center':
@@ -703,6 +710,7 @@ class _SettingItem extends StatelessWidget {
       case 'مركز المساعدة':
       case 'yardım merkezi':
       case 'centro de ayuda':
+      case '帮助中心':
         iconData = Icons.help_center_rounded;
         break;
       case 'support':
@@ -710,6 +718,7 @@ class _SettingItem extends StatelessWidget {
       case 'الدعم':
       case 'destek':
       case 'soporte':
+      case '支持':
         iconData = Icons.support_agent_rounded;
         break;
       case 'about':
@@ -717,6 +726,7 @@ class _SettingItem extends StatelessWidget {
       case 'حول':
       case 'hakkında':
       case 'acerca de':
+      case '关于':
         iconData = Icons.info_rounded;
         break;
       case 'factory reset':
@@ -731,6 +741,7 @@ class _SettingItem extends StatelessWidget {
       case 'منصة x':
       case 'x platformu':
       case 'plataforma x':
+      case 'x平台':
         iconData = Icons.alternate_email_rounded; // X icon
         break;
       case 'instagram':

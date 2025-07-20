@@ -1102,6 +1102,12 @@ class TokenProvider extends ChangeNotifier {
     try {
       print('🔄 TokenProvider - Ensuring tokens are fully synchronized for user: $_userId');
       
+      // 🍎 iOS Debug: بررسی وضعیت recovery قبل از شروع
+      if (Platform.isIOS) {
+        print('🍎 TokenProvider - iOS detected, checking recovery status...');
+        await tokenPreferences.debugTokenRecoveryStatus();
+      }
+      
       // 1. اگر currencies خالی است، ابتدا از cache یا API بارگذاری کن
       if (_currencies.isEmpty) {
         print('📁 TokenProvider - Currencies is empty, loading from cache or API');

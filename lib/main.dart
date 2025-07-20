@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'services/service_provider.dart';
 import 'services/device_registration_manager.dart';
@@ -38,7 +39,6 @@ import 'screens/dex_screen.dart';
 import 'screens/passcode_screen.dart';
 import 'screens/security_screen.dart';
 import 'layout/network_overlay.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/wallets_screen.dart';
 import 'services/passcode_manager.dart';
@@ -64,6 +64,8 @@ void main() async {
         Locale('fa'),
         Locale('tr'),
         Locale('ar'),
+        Locale('zh'),
+        Locale('es'),
       ],
       path: 'assets/locales',
       fallbackLocale: const Locale('en'),
@@ -362,17 +364,28 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// Helper method for passcode debugging
   Future<void> _checkPasscodeDebug() async {
     try {
-      // ✅ Debug: Check passcode status directly
-      final passcodeIsSet = await PasscodeManager.isPasscodeSet();
-      print('🔑 DEBUG: PasscodeManager.isPasscodeSet() = $passcodeIsSet');
+      // Debug: Enhanced passcode debugging for iOS issue
+      print('🔍 === ENHANCED PASSCODE DEBUGGING ===');
       
-      // ✅ Debug: Check SharedPreferences directly
+      // Check both SharedPreferences and SecureStorage
       final prefs = await SharedPreferences.getInstance();
       final passcodeHash = prefs.getString('passcode_hash');
-      print('🔑 DEBUG: SharedPreferences passcode_hash = ${passcodeHash != null ? "EXISTS" : "NULL"}');
+      final passcodeSalt = prefs.getString('passcode_salt');
+      print('🔑 SharedPreferences passcode_hash = ${passcodeHash != null ? "EXISTS" : "NULL"}');
+      print('🔑 SharedPreferences passcode_salt = ${passcodeSalt != null ? "EXISTS" : "NULL"}');
       
-      // ✅ Debug: Check security settings state
-      await _securityManager.debugSecurityState();
+      // Check SecureStorage backup
+      const secureStorage = FlutterSecureStorage();
+      final secureHash = await secureStorage.read(key: 'passcode_hash_secure');
+      final secureSalt = await secureStorage.read(key: 'passcode_salt_secure');
+      print('🔑 SecureStorage passcode_hash_secure = ${secureHash != null ? "EXISTS" : "NULL"}');
+      print('🔑 SecureStorage passcode_salt_secure = ${secureSalt != null ? "EXISTS" : "NULL"}');
+      
+      // Use PasscodeManager to check (this will use the new backup logic)
+      final isPasscodeSetResult = await PasscodeManager.isPasscodeSet();
+      print('🔑 PasscodeManager.isPasscodeSet() = $isPasscodeSetResult');
+      
+      print('🔍 === END PASSCODE DEBUGGING ===');
     } catch (e) {
       print('❌ Error checking passcode debug: $e');
     }
@@ -514,6 +527,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               settings: settings,
             );
           }
+          // Route برای دریافت جزئیات تراکنش از API با transactionId (از crypto_details_screen)
+          if (settings.name == '/transaction_detail' && settings.arguments != null) {
+            final args = settings.arguments as Map<String, dynamic>;
+            final transactionId = args['transactionId'] as String?;
+            
+            return MaterialPageRoute(
+              builder: (context) => TransactionDetailScreen(
+                transactionId: transactionId, // دریافت جزئیات از API
+              ),
+              settings: settings,
+            );
+          }
+          
+          // Route قدیمی برای history_screen (با تمام parameters)
           if (settings.name != null && settings.name!.startsWith('/transaction_detail/')) {
             final path = settings.name!.substring('/transaction_detail/'.length);
             final parts = path.split('/');
