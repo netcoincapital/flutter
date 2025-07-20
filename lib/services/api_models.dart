@@ -769,6 +769,13 @@ class Transaction {
   @JsonKey(name: 'temporaryId')
   final String? temporaryId;
 
+  @JsonKey(name: 'explorerUrl')
+  final String? explorerUrl;
+
+  final String? fee;
+  final String? assetType;
+  final String? tokenContract;
+
   const Transaction({
     this.txHash,
     this.from,
@@ -781,6 +788,10 @@ class Transaction {
     this.blockchainName,
     this.price,
     this.temporaryId,
+    this.explorerUrl,
+    this.fee,
+    this.assetType,
+    this.tokenContract,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) => _$TransactionFromJson(json);

@@ -520,6 +520,10 @@ Transaction _$TransactionFromJson(Map<String, dynamic> json) => Transaction(
       blockchainName: json['blockchainName'] as String?,
       price: Transaction._priceFromJson(json['price']),
       temporaryId: json['temporaryId'] as String?,
+      explorerUrl: json['explorerUrl'] as String?,
+      fee: json['fee'] as String?,
+      assetType: json['assetType'] as String?,
+      tokenContract: json['tokenContract'] as String?,
     );
 
 Map<String, dynamic> _$TransactionToJson(Transaction instance) =>
@@ -535,6 +539,10 @@ Map<String, dynamic> _$TransactionToJson(Transaction instance) =>
       'blockchainName': instance.blockchainName,
       'price': instance.price,
       'temporaryId': instance.temporaryId,
+      'explorerUrl': instance.explorerUrl,
+      'fee': instance.fee,
+      'assetType': instance.assetType,
+      'tokenContract': instance.tokenContract,
     };
 
 TransactionsResponse _$TransactionsResponseFromJson(

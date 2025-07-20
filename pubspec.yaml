@@ -63,6 +63,7 @@ dependencies:
   crypto: ^3.0.5
   url_launcher: ^6.3.0
   external_app_launcher: ^4.0.0
+  share_plus: ^7.2.2
   
   # JSON Serialization
   json_annotation: ^4.9.0

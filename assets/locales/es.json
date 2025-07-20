@@ -1121,8 +1121,14 @@
   "date": "Fecha",
   "status": "Estado",
   "sender": "Remitente",
+  "recipient": "Destinatario",
   "network_fee": "Tarifa de red",
   "estimated": "Estimado",
+  "explorer": "Explorador",
+  "refresh": "Actualizar",
+  "back": "Atrás",
+  "forward": "Adelante",
+  "loading": "Cargando...",
   "view_on_explorer": "Ver en Explorador",
   "unknown_date": "Fecha Desconocida",
   "completed": "Completado",
@@ -1155,5 +1161,10 @@
   "secret_phrase_google_drive": "Frase secreta, Google Drive o solo vista",
   "loading": "Cargando...",
   "webview_removed": "Funcionalidad WebView eliminada por ahora",
-  "error_deleting_wallet": "Error al eliminar billetera: {error}"
+  "error_deleting_wallet": "Error al eliminar billetera: {error}",
+  
+  "no_explorer_url": "URL del explorador no disponible",
+  "share_failed": "Error al compartir transacción",
+  "transaction_details": "Detalles de Transacción",
+  "share_transaction_text": "Detalles de Transacción:\n\nCantidad: {amount}\nHash: {hash}\n\nVer en Explorador:"
 }

@@ -539,36 +539,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               settings: settings,
             );
           }
-          
-          // Route قدیمی برای history_screen (با تمام parameters)
-          if (settings.name != null && settings.name!.startsWith('/transaction_detail/')) {
-            final path = settings.name!.substring('/transaction_detail/'.length);
-            final parts = path.split('/');
-            if (parts.length >= 8) {
-              final amount = Uri.decodeComponent(parts[0]);
-              final symbol = Uri.decodeComponent(parts[1]);
-              final fiat = Uri.decodeComponent(parts[2]);
-              final date = Uri.decodeComponent(parts[3]);
-              final status = Uri.decodeComponent(parts[4]);
-              final sender = Uri.decodeComponent(parts[5]);
-              final networkFee = Uri.decodeComponent(parts[6]);
-              final hash = Uri.decodeComponent(parts[7]);
-              
-              return MaterialPageRoute(
-                builder: (context) => TransactionDetailScreen(
-                  amount: amount,
-                  symbol: symbol,
-                  fiat: fiat,
-                  date: date,
-                  status: status,
-                  sender: sender,
-                  networkFee: networkFee,
-                  hash: hash,
-                ),
-                settings: settings,
-              );
-            }
-          }
+
           return null;
         },
       ),

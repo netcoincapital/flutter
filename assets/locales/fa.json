@@ -950,9 +950,21 @@
   "date": "تاریخ",
   "status": "وضعیت",
   "sender": "فرستنده",
+  "recipient": "گیرنده",
   "network_fee": "کارمزد شبکه",
   "estimated": "تخمینی",
+  "explorer": "اکسپلورر",
+  "refresh": "بازخوانی",
+  "back": "بازگشت",
+  "forward": "جلو",
+  "loading": "در حال بارگذاری...",
   "view_on_explorer": "مشاهده در اکسپلورر",
+  "cannot_open_explorer": "امکان باز کردن اکسپلورر وجود ندارد",
+  "error_opening_explorer": "خطا در باز کردن اکسپلورر",
+  "loading_failed": "بارگذاری صفحه ناموفق",
+  "try_external_browser": "در مرورگر خارجی باز کنید",
+  "open_in_browser": "باز کردن در مرورگر",
+  "retry": "تلاش مجدد",
   "unknown_date": "تاریخ نامعلوم",
   "completed": "تکمیل شده",
   "pending": "در انتظار",
@@ -984,5 +996,10 @@
   "secret_phrase_google_drive": "عبارت مخفی، Google Drive یا فقط مشاهده",
   "loading": "در حال بارگذاری...",
   "webview_removed": "عملکرد WebView در حال حاضر حذف شده است",
-  "error_deleting_wallet": "خطا در حذف کیف پول: {error}"
+  "error_deleting_wallet": "خطا در حذف کیف پول: {error}",
+  
+  "no_explorer_url": "لینک اکسپلورر در دسترس نیست",
+  "share_failed": "اشتراک‌گذاری تراکنش ناموفق بود",
+  "transaction_details": "جزئیات تراکنش",
+  "share_transaction_text": "جزئیات تراکنش:\n\nمقدار: {amount}\nهش: {hash}\n\nمشاهده در اکسپلورر:"
 }

@@ -10,6 +10,7 @@ import '../screens/transaction_detail_screen.dart';
 import '../services/service_provider.dart';
 import '../services/api_models.dart' as api;
 import '../utils/transaction_cache.dart';
+import '../utils/number_formatter.dart';
 import '../services/secure_storage.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -177,20 +178,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   void _showFilterModal() {
     // Remove modal bottom sheet - filter modal removed
-  }
-
-  String _formatAmount(String amount) {
-    try {
-      final number = double.parse(amount);
-      String formatted = number.toStringAsFixed(6);
-      if (formatted.contains('.')) {
-        formatted = formatted.replaceFirst(RegExp(r'\.0+$'), '');
-        formatted = formatted.replaceFirst(RegExp(r'(\.\d*?[1-9])0+$'), r'\1');
-      }
-      return formatted;
-    } catch (e) {
-      return amount;
-    }
   }
 
   @override
@@ -388,29 +375,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _navigateToTransactionDetail(Transaction transaction) {
-    final isReceived = transaction.direction == "inbound";
-    final amountPrefix = isReceived ? "+" : "-";
-    final formattedAmount = _formatAmount(transaction.amount);
-    final amountValue = "$amountPrefix$formattedAmount";
+    print('🔍 History: Navigating to transaction detail for: ${transaction.txHash}');
     
-    final dateFormatted = DateFormat('MMM d, yyyy, h:mm a').format(DateTime.parse(transaction.timestamp));
-    final status = "Completed";
-    final senderAddress = isReceived ? transaction.from : transaction.to;
-    final networkFee = "0 ${transaction.tokenSymbol}";
-    
-    // Encode parameters for navigation
-    final encodedAmount = Uri.encodeComponent(amountValue);
-    final encodedSymbol = Uri.encodeComponent(transaction.tokenSymbol);
-    final encodedFiat = Uri.encodeComponent("≈ \$${((transaction.price ?? 0.0) * double.parse(transaction.amount)).toStringAsFixed(2)}");
-    final encodedDate = Uri.encodeComponent(dateFormatted);
-    final encodedStatus = Uri.encodeComponent(status);
-    final encodedSender = Uri.encodeComponent(senderAddress);
-    final encodedNetworkFee = Uri.encodeComponent(networkFee);
-    final encodedHash = Uri.encodeComponent(transaction.txHash);
-    
+    // استفاده از route جدید که از API جزئیات کامل تراکنش (شامل explorerUrl) را دریافت می‌کند
     Navigator.pushNamed(
       context,
-      '/transaction_detail/$encodedAmount/$encodedSymbol/$encodedFiat/$encodedDate/$encodedStatus/$encodedSender/$encodedNetworkFee/$encodedHash',
+      '/transaction_detail',
+      arguments: {
+        'transactionId': transaction.txHash, // ارسال txHash برای دریافت جزئیات از API
+      },
     );
   }
 }
@@ -434,17 +407,7 @@ class _HistoryTransactionItem extends StatelessWidget {
   }
 
   String _formatAmount(String amount) {
-    try {
-      final number = double.parse(amount);
-      String formatted = number.toStringAsFixed(6);
-      if (formatted.contains('.')) {
-        formatted = formatted.replaceFirst(RegExp(r'\.0+$'), '');
-        formatted = formatted.replaceFirst(RegExp(r'(\.\d*?[1-9])0+$'), r'\1');
-      }
-      return formatted;
-    } catch (e) {
-      return amount;
-    }
+    return NumberFormatter.formatAmount(amount);
   }
 
   @override

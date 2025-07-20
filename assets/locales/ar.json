@@ -1019,8 +1019,14 @@
   "date": "التاريخ",
   "status": "الحالة",
   "sender": "المرسل",
+  "recipient": "المستقبل",
   "network_fee": "رسوم الشبكة",
   "estimated": "مقدر",
+  "explorer": "المستكشف",
+  "refresh": "تحديث",
+  "back": "رجوع",
+  "forward": "إلى الأمام",
+  "loading": "جاري التحميل...",
   "view_on_explorer": "عرض في المتصفح",
   "unknown_date": "تاريخ غير معروف",
   "completed": "مكتمل",
@@ -1053,5 +1059,10 @@
   "secret_phrase_google_drive": "عبارة سرية، Google Drive أو للعرض فقط",
   "loading": "جاري التحميل...",
   "webview_removed": "تم إزالة وظائف WebView في الوقت الحالي",
-  "error_deleting_wallet": "خطأ في حذف المحفظة: {error}"
+  "error_deleting_wallet": "خطأ في حذف المحفظة: {error}",
+  
+  "no_explorer_url": "رابط المستكشف غير متوفر",
+  "share_failed": "فشل في مشاركة المعاملة",
+  "transaction_details": "تفاصيل المعاملة",
+  "share_transaction_text": "تفاصيل المعاملة:\n\nالمبلغ: {amount}\nالرمز: {hash}\n\nعرض في المستكشف:"
 }
