@@ -64,6 +64,8 @@ void main() async {
         Locale('fa'),
         Locale('tr'),
         Locale('ar'),
+        Locale('zh'),
+        Locale('es'),
       ],
       path: 'assets/locales',
       fallbackLocale: const Locale('en'),

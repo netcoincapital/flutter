@@ -686,9 +686,6 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       print('   Validation message: ${validationResult.message}');
       
       // Step 3: Prepare transaction
-      final actualAmount = validationResult.adjustedAmount;
-      
-      // Debug log before calling prepareTransaction
       print('🔧 DEBUG: About to call prepareTransaction with:');
       print('   UserID: "$userId"');
       print('   Original blockchain: "${token!.blockchainName}"');
@@ -696,7 +693,7 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       print('   Sender address: "$senderAddress"');
       print('   Recipient address STATE: "$address"');
       print('   Recipient address CONTROLLER: "${_addressController.text}"');
-      print('   Amount: "${actualAmount.toStringAsFixed(8)}"');
+      print('   Amount: "${_amountController.text}"');
       print('   Smart contract: "${token!.smartContractAddress ?? ''}"');
       print('   Flutter local balance: ${token!.amount}');
       print('   ');
@@ -712,55 +709,42 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       }
       
       print('🔍 BALANCE COMPARISON:');
-      print('   Flutter thinks balance is: ${token!.amount} MATIC');
-      print('   Attempting to send: ${actualAmount.toStringAsFixed(8)} MATIC');
-      print('   Should be sufficient locally: ${actualAmount <= (token!.amount ?? 0.0)}');
-      print('   But Tatum API might see different on-chain balance...');
+      print('   Flutter thinks balance is: ${token!.amount} ${token!.symbol}');
+      print('   Attempting to send: ${parsedAmount.toStringAsFixed(8)} ${token!.symbol}');
+      print('   Should be sufficient locally: ${parsedAmount <= (token!.amount ?? 0.0)}');
+      print('   Backend will auto-adjust if needed for native tokens...');
       
       final prepareResponse = await apiService.prepareTransaction(
         userID: userId,
         blockchainName: normalizedBlockchain,
         senderAddress: senderAddress,
         recipientAddress: recipientAddress, // ✅ Use controller text instead of state variable
-        amount: actualAmount.toStringAsFixed(8),
+        amount: parsedAmount.toStringAsFixed(8),
         smartContractAddress: token!.smartContractAddress ?? '',
       );
       
       if (!prepareResponse.success) {
         print('❌ PREPARE TRANSACTION FAILED:');
         print('   Server response message: ${prepareResponse.message}');
-        print('   This suggests on-chain balance ≠ local balance');
+        print('   This suggests balance still insufficient even after adjustment');
         print('   Sender address: $senderAddress');
         print('   UserID: $userId');
         print('   ');
-        print('💡 RECOMMENDED ACTIONS:');
-        print('   1. Check actual MATIC balance on Polygon scanner');
-        print('   2. Verify wallet address is correct');
-        print('   3. Ensure sufficient MATIC for gas fees');
-        print('   4. Try smaller amount (e.g., 0.001 MATIC)');
-        print('   ');
-        print('🧪 FOR DEBUGGING:');
-        print('   Python test works with UserID: test_user_flutter');
-        print('   Python test works with Address: 0x68Ba7F66B09783977E36AA7bD8390b812742853C');
-        print('   Your UserID: $userId');
-        print('   Your Address: $senderAddress');
-        print('   ');
-        print('   To test with working credentials:');
-        print('   1. Create/Import wallet with test private key');
-        print('   2. Or check if your wallet has sufficient MATIC');
+        print('💡 POSSIBLE CAUSES:');
+        print('   1. Insufficient balance even for gas fees');
+        print('   2. Token transfer without enough native currency for gas');
+        print('   3. Network connectivity issues');
         
         // ✅ Better error message for insufficient funds from server
         if (prepareResponse.message?.contains('insufficient funds') == true ||
-            prepareResponse.message?.contains('Insufficient balance') == true) {
+            prepareResponse.message?.contains('Insufficient balance') == true ||
+            prepareResponse.message?.contains('network fee') == true) {
           _showError(
-            'Blockchain Balance Error\n\n'
-            'The blockchain shows insufficient MATIC balance.\n\n'
-            'Your wallet address:\n$senderAddress\n\n'
-            'This can happen when:\n'
-            '• Not enough MATIC for gas fees\n'
-            '• Local balance cache is outdated\n'
-            '• Recent transactions not synced\n\n'
-            'Check your balance on Polygonscan and try a smaller amount.'
+            'Insufficient Balance\n\n'
+            '${prepareResponse.message}\n\n'
+            'For native tokens: The system will auto-adjust your amount to maximum sendable.\n'
+            'For tokens: Ensure you have enough native currency for gas fees.\n\n'
+            'Check your balance and try a smaller amount.'
           );
         } else {
           _showError('Server error: ${prepareResponse.message}');
@@ -768,12 +752,37 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
         return;
       }
       
+      // ✅ Check if amount was auto-adjusted by backend
+      final details = prepareResponse.details;
+      final adjustedAmount = details?.amount;
+      final originalAmount = details?.amount;
+      final wasAutoAdjusted = false; // TransactionDetails doesn't have autoAdjusted field
+      
+      if (wasAutoAdjusted && adjustedAmount != null && originalAmount != null) {
+        print('✅ BACKEND AUTO-ADJUSTED AMOUNT:');
+        print('   Original amount: $originalAmount ${token!.symbol}');
+        print('   Adjusted amount: $adjustedAmount ${token!.symbol}');
+        print('   User will send maximum possible amount');
+        
+        // Show confirmation dialog for adjusted amount
+        final shouldContinue = await _showAutoAdjustmentDialog(
+          originalAmount, 
+          adjustedAmount, 
+          token!.symbol ?? ''
+        );
+        
+        if (!shouldContinue) {
+          print('ℹ️ User cancelled auto-adjusted transaction');
+          return;
+        }
+      }
+      
       // Create pending transaction
       final pendingTransaction = models.Transaction(
         txHash: prepareResponse.transactionId,
-        from: prepareResponse.details.sender,
-        to: prepareResponse.details.recipient,
-        amount: prepareResponse.details.amount,
+        from: prepareResponse.details?.sender ?? senderAddress,
+        to: prepareResponse.details?.recipient ?? recipientAddress,
+        amount: prepareResponse.details?.amount ?? parsedAmount.toStringAsFixed(8),
         tokenSymbol: token!.symbol ?? '',
         direction: 'outbound',
         status: 'pending',
@@ -805,36 +814,14 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
     setState(() { isLoading = true; });
     
     try {
-      // Get private key from secure storage
-      String? privateKey;
-      try {
-        privateKey = await SecureStorage.instance.getPrivateKeyForSelectedWallet();
-        if (privateKey == null || privateKey.isEmpty) {
-          // Try to get from wallets list
-          final wallets = await SecureStorage.instance.getWalletsList();
-          if (wallets.isNotEmpty) {
-            final firstWallet = wallets.first;
-            final walletName = firstWallet['walletName'];
-            if (walletName != null) {
-              privateKey = await SecureStorage.instance.getPrivateKey(walletName);
-            }
-          }
-        }
-      } catch (e) {
-        print('⚠️ Error getting private key: $e');
-        privateKey = null;
-      }
+      // ✅ SECURITY IMPROVEMENT: No private key handling on frontend
+      // Backend will securely retrieve private key from database
       
-      if (privateKey == null || privateKey.isEmpty) {
-        // Use test private key for development (same as curl test)
-        privateKey = 'b7b9c47587f84c99d92d7f3207db9fa8a1c6689e7aa783d461c025bf216270d7';
-        print('⚠️ Using test private key for development');
-      }
-      
-      // FIXED: Use the same UserID that was used for prepare transaction
-      // The server requires the same UserID for both prepare and confirm
-      String confirmUserId = userId; // Use the same userId
-      print('🔧 DEBUG: Using same UserID for confirm: $confirmUserId (same as prepare)');
+      print('🔧 DEBUG: Secure transaction confirmation (no private key from frontend)');
+      print('   UserID: $userId');
+      print('   TransactionID: ${txDetails!.transactionId}');
+      print('   Blockchain: ${_normalizeBlockchainName(token!.blockchainName)}');
+      print('   ✅ Private key will be retrieved securely by backend from database');
       
       // Try confirm transaction with retry logic for Polygon
       ConfirmTransactionResponse? confirmResponse;
@@ -843,11 +830,12 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
       
       while (retryCount <= maxRetries) {
         try {
+          // ✅ SECURE API CALL: No private key sent from frontend
           confirmResponse = await apiService.confirmTransaction(
-            userID: confirmUserId, // Use different UserID for confirm (server workaround)
+            userID: userId, // Use same UserID as prepare
             transactionId: txDetails!.transactionId,
             blockchain: _normalizeBlockchainName(token!.blockchainName),
-            // ✅ SECURITY: Private key now handled securely by backend
+            // ✅ SECURITY: Private key parameter removed - backend handles it securely
           );
           break; // Success, exit retry loop
         } catch (e) {
@@ -855,16 +843,15 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
           if (retryCount > maxRetries) {
             rethrow; // Re-throw after max retries
           }
-          print('🔄 Retry $retryCount for Polygon confirm transaction...');
+          print('🔄 Retry $retryCount for secure transaction confirmation...');
           await Future.delayed(Duration(seconds: 2)); // Wait before retry
         }
       }
       
-      print('🔧 DEBUG: Confirm response received:');
+      print('🔧 DEBUG: Secure confirm response received:');
       print('   Success: ${confirmResponse?.success}');
       print('   Message: ${confirmResponse?.message}');
-      print('   Transaction Hash: ${confirmResponse?.transactionHash}');
-      print('   Tx Hash: ${confirmResponse?.txHash}');
+      print('   Hash: ${confirmResponse?.hash}');
       print('   IsSuccess: ${confirmResponse?.isSuccess}');
       
       if (confirmResponse?.isSuccess == true) {
@@ -899,6 +886,10 @@ class _SendDetailScreenState extends State<SendDetailScreen> {
           _showError('Insufficient Balance\n\nYou don\'t have enough balance to complete this transaction. Please check your balance and try again.');
         } else if (errorMessage.contains('Invalid transaction data')) {
           _showError('Invalid Transaction\n\nPlease verify your recipient address and amount, then try again.');
+        } else if (errorMessage.contains('Private key does not match')) {
+          _showError('Wallet Configuration Error\n\nThere appears to be a mismatch in wallet configuration. Please try restarting the app or contact support.');
+        } else if (errorMessage.contains('not found') || errorMessage.contains('expired')) {
+          _showError('Transaction Not Found\n\nThe transaction may have expired. Please create a new transaction.');
         } else {
           // Generic error with better formatting
           _showError('Transaction Failed\n\n$errorMessage');
@@ -1216,10 +1207,10 @@ $message
     }
   }
 
-  /// ✅ Debug helper to check wallet info and balance
+  /// ✅ Debug helper to check wallet info and balance (SECURE - no private key exposure)
   Future<void> _debugWalletInfo() async {
     try {
-      print('🔍 WALLET DEBUG INFO:');
+      print('🔍 WALLET DEBUG INFO (SECURE):');
       
       // Get wallet info
       final selectedWallet = await SecureStorage.instance.getSelectedWallet();
@@ -1249,6 +1240,11 @@ $message
           print('   1. Go to: https://polygonscan.com/address/${addressResponse.publicAddress}');
           print('   2. Check MATIC balance');
           print('   3. Compare with Flutter: ${token!.amount} MATIC');
+          print('   ');
+          print('🔒 SECURITY NOTE: Private keys are managed securely by backend');
+          print('   ✅ No private keys exposed in frontend debugging');
+          print('   ✅ Backend retrieves encrypted private keys from database');
+          print('   ✅ Private keys never sent over network from frontend');
         }
       }
       
@@ -1467,7 +1463,7 @@ $message
     );
   }
 
-  // Transaction Confirmation Modal - Professional design with app's official styling
+  // Transaction Confirmation Modal - همسان با استایل کل اپلیکیشن
   Widget _buildTransactionConfirmModal() {
     if (txDetails == null) return const SizedBox();
     
@@ -1476,291 +1472,175 @@ $message
     final totalValue = (amountValue * pricePerToken).toStringAsFixed(2);
     final totalWithFee = ((double.tryParse(totalValue) ?? 0.0) + selectedFee.feeUsd).toStringAsFixed(2);
     
-    return Material(
-      color: Colors.transparent,
-      child: GestureDetector(
-      onTap: () => setState(() => showConfirmModal = false),
-      child: Container(
-        color: Colors.black.withOpacity(0.6),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: GestureDetector(
-            onTap: () {}, // Prevent tap from closing modal when tapping inside
-            child: Container(
-              width: double.infinity,
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.85,
-                  minHeight: 400,
-                ),
-              margin: const EdgeInsets.all(0),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+    return Container(
+      color: Colors.black.withOpacity(0.6),
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // آیکون و عنوان
+              const Icon(
+                Icons.send_rounded,
+                size: 48,
+                color: Color(0xFF08C495),
               ),
-              child: SafeArea(
+              const SizedBox(height: 16),
+              const Text(
+                'Transaction Confirmation',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // مقدار منفی (ارسال)
+              Text(
+                '-${txDetails!.details?.amount ?? '0'} ${token!.symbol ?? ''}',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '≈ \$${totalValue}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // جزئیات تراکنش
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Column(
-                    mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Handle bar
-                    Container(
-                      width: 50,
-                      height: 5,
-                      margin: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                    
-                      // Content
+                    _buildSimpleDetailRow('From', walletName),
+                    const SizedBox(height: 12),
+                    _buildSimpleDetailRow('To', _formatAddress(txDetails!.details?.recipient ?? '')),
+                    const SizedBox(height: 12),
+                    _buildSimpleDetailRow('Network Fee', '${selectedFee.feeEth.toStringAsFixed(8)} ${_getBlockchainCurrency(token!.blockchainName)}'),
+                    const SizedBox(height: 12),
+                    _buildSimpleDetailRow('Total', '≈ \$${totalWithFee}'),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // هشدار
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.orange[600], size: 20),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const SizedBox(height: 10),
-                            
-                              // Large negative amount display
-                            Container(
-                              width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    const Color(0xFF08C495).withOpacity(0.05),
-                                    const Color(0xFF08C495).withOpacity(0.02),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: const Color(0xFF08C495).withOpacity(0.1)),
-                              ),
-                              child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    '-${txDetails!.details.amount}',
-                                    style: const TextStyle(
-                                        fontSize: 32,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.black,
-                                      height: 1.2,
-                                        decoration: TextDecoration.none,
-                                    ),
-                                      textAlign: TextAlign.center,
-                                  ),
-                                    const SizedBox(height: 6),
-                                  Text(
-                                      '≈ \$${totalValue} ${token!.symbol ?? ''}',
-                                    style: const TextStyle(
-                                        fontSize: 16,
-                                      color: Colors.grey,
-                                      fontWeight: FontWeight.w600,
-                                        decoration: TextDecoration.none,
-                                    ),
-                                      textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            
-                              const SizedBox(height: 24),
-                            
-                              // Transaction details
-                            Container(
-                                width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.grey[100]!),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.08),
-                                    spreadRadius: 0,
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                children: [
-                                  // Wallet row  
-                                    _buildStandardDetailRow('Wallet', walletName, 
-                                      subtitle: _formatAddress(txDetails!.details.sender), isFirst: true),
-                                    _buildStandardDivider(),
-                                  
-                                  // To row
-                                    _buildStandardDetailRow('To', _formatAddress(txDetails!.details.recipient)),
-                                    _buildStandardDivider(),
-                                  
-                                    // Network Fee row
-                                  GestureDetector(
-                                    onTap: () => _showNetworkFeeOptions(),
-                                    child: Container(
-                                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          const Text(
-                                            'Network Fee',
-                                            style: TextStyle(
-                                                fontSize: 15,
-                                              color: Colors.grey,
-                                              fontWeight: FontWeight.w600,
-                                                decoration: TextDecoration.none,
-                                            ),
-                                          ),
-                                          Row(
-                                            children: [
-                                              Column(
-                                                crossAxisAlignment: CrossAxisAlignment.end,
-                                                children: [
-                                                  Text(
-                                                      '${selectedFee.feeEth.toStringAsFixed(8)} ${_getBlockchainCurrency(token!.blockchainName)}',
-                                                    style: const TextStyle(
-                                                        fontSize: 15,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: Colors.black,
-                                                        decoration: TextDecoration.none,
-                                                    ),
-                                                  ),
-                                                    const SizedBox(height: 3),
-                                                  Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFF08C495).withOpacity(0.1),
-                                                        borderRadius: BorderRadius.circular(12),
-                                                    ),
-                                                    child: Text(
-                                                      '≈ \$${selectedFee.feeUsd.toStringAsFixed(2)} • ${selectedFee.priority.toUpperCase()}',
-                                                      style: const TextStyle(
-                                                          fontSize: 11,
-                                                        color: Color(0xFF08C495),
-                                                        fontWeight: FontWeight.w700,
-                                                          decoration: TextDecoration.none,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                                const SizedBox(width: 8),
-                                              const Icon(
-                                                Icons.arrow_forward_ios,
-                                                  size: 14,
-                                                color: Color(0xFF08C495),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                    _buildStandardDivider(),
-                                  
-                                  // Max Total row
-                                    _buildStandardDetailRow('Max Total', '≈ \$${totalWithFee}', 
-                                    subtitle: '(Amount + Fee)', isLast: true),
-                                ],
-                              ),
-                            ),
-                            
-                              const SizedBox(height: 20),
-                            
-                              // Warning message
-                            Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8F9FA),
-                                  borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[200]!),
-                              ),
-                              child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                      padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[100],
-                                        borderRadius: BorderRadius.circular(10),
-                                    ),
-                                      child: const Icon(Icons.info_outline, color: Colors.grey, size: 18),
-                                  ),
-                                    const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      'Please double-check the recipient address before confirming.',
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                        color: Colors.grey[600],
-                                        fontWeight: FontWeight.w600,
-                                          height: 1.3,
-                                          decoration: TextDecoration.none,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            
-                              const SizedBox(height: 24),
-                          ],
+                      child: Text(
+                        'Please double-check the recipient address before confirming.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange[700],
                         ),
                       ),
                     ),
-                    
-                      // Send button with proper spacing
-                    Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 60),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border(top: BorderSide(color: Colors.grey[100]!)),
-                      ),
-                        child: SizedBox(
-                          height: 50,
-                            child: ElevatedButton(
-                              onPressed: isLoading ? null : _onConfirmSend,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF08C495),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(25),
-                                ),
-                                elevation: 0,
-                                shadowColor: Colors.transparent,
-                              ),
-                              child: isLoading
-                                  ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Text(
-                                      'Send ${token!.symbol}',
-                                      style: const TextStyle(
-                                      fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                      decoration: TextDecoration.none,
-                                      ),
-                                    ),
-                            ),
-                      ),
-                    ),
                   ],
-                  ),
                 ),
               ),
-            ),
+              
+              const SizedBox(height: 24),
+              
+              // دکمه‌ها
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => setState(() => showConfirmModal = false),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey[200],
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancel', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: isLoading ? null : _onConfirmSend,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF08C495),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Text('Send ${token!.symbol}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+  
+  // متد کمکی برای نمایش جزئیات ساده
+  Widget _buildSimpleDetailRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            color: Colors.grey,
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
+        ),
+      ],
     );
   }
 
@@ -2239,38 +2119,30 @@ $message
       final senderAddress = addressResponse.publicAddress!;
       print('   Address: $senderAddress');
       
-             // Try to get balance from server (if balance API exists)
-       try {
-         // Note: Use the correct API signature for getBalance
-         final balanceResponse = await apiService.getBalance(userId);
-         if (balanceResponse.success && balanceResponse.balances != null) {
-           // Find the balance for current token
-           final tokenBalance = balanceResponse.balances!.firstWhere(
-             (balance) => balance.symbol?.toUpperCase() == token!.symbol?.toUpperCase(),
-             orElse: () => const BalanceItem(),
-           );
-           
-           if (tokenBalance.balance != null) {
-             final serverBalance = double.tryParse(tokenBalance.balance!) ?? 0.0;
-             print('   Server balance: $serverBalance ${token!.symbol}');
-             print('   Balance difference: ${(token!.amount ?? 0.0) - serverBalance} ${token!.symbol}');
-             
-             if ((token!.amount ?? 0.0) != serverBalance) {
-               print('⚠️ BALANCE MISMATCH DETECTED!');
-               print('   Local balance might be outdated');
-               print('   Consider refreshing token balance');
-             } else {
-               print('✅ Balance matches server');
-             }
-           } else {
-             print('⚠️ Token balance not found in server response');
-           }
-         } else {
-           print('⚠️ Could not verify balance from server: ${balanceResponse.message}');
-         }
-       } catch (e) {
-         print('⚠️ Balance verification API not available: $e');
-       }
+      // Try to get balance from server (if balance API exists)
+      try {
+        // Note: This assumes a balance API exists - adjust URL as needed
+        final balanceResponse = await apiService.getBalance(userId);
+        if (balanceResponse.success) {
+          // Get balance from first balance item (if available)
+          final firstBalance = balanceResponse.balances?.first?.balance;
+          final serverBalance = double.tryParse(firstBalance ?? '0') ?? 0.0;
+          print('   Server balance: $serverBalance ${token!.symbol}');
+          print('   Balance difference: ${(token!.amount ?? 0.0) - serverBalance} ${token!.symbol}');
+          
+          if ((token!.amount ?? 0.0) != serverBalance) {
+            print('⚠️ BALANCE MISMATCH DETECTED!');
+            print('   Local balance might be outdated');
+            print('   Consider refreshing token balance');
+          } else {
+            print('✅ Balance matches server');
+          }
+        } else {
+          print('⚠️ Could not verify balance from server: ${balanceResponse.message}');
+        }
+      } catch (e) {
+        print('⚠️ Balance verification API not available: $e');
+      }
       
       // Always show the address for manual verification
       print('💡 Manual verification:');
@@ -2286,6 +2158,87 @@ $message
     } catch (e) {
       print('❌ Error in balance verification: $e');
     }
+  }
+
+  /// ✅ Show dialog when backend auto-adjusts the amount
+  Future<bool> _showAutoAdjustmentDialog(String originalAmount, String adjustedAmount, String symbol) async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.auto_fix_high, color: Color(0xFF08C495)),
+              SizedBox(width: 8),
+              Text('Amount Adjusted'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Your balance is insufficient for the requested amount plus network fees.'),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Color(0xFFF0F9FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Color(0xFF08C495), width: 1),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info, color: Color(0xFF08C495), size: 16),
+                        SizedBox(width: 4),
+                        Text('Auto-Adjustment:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF08C495))),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Requested:'),
+                        Text('$originalAmount $symbol', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Adjusted to:'),
+                        Text('$adjustedAmount $symbol', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF08C495))),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('This sends the maximum possible amount after reserving funds for network fees.'),
+              SizedBox(height: 8),
+              Text('Would you like to continue with the adjusted amount?'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF08C495),
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Continue'),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
   }
 }
 

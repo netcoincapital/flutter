@@ -186,9 +186,16 @@ class FiatCurrenciesScreen extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final currency = currencies[index];
                   return InkWell(
-                    onTap: () async {
-                      await _saveSelectedCurrency(context, currency['code']);
+                    onTap: () {
+                      final selectedCurrency = currency['code'];
+                      
+                      // Navigate back immediately
                       Navigator.pop(context);
+                      
+                      // Save currency in background
+                      _saveSelectedCurrency(context, selectedCurrency).catchError((e) {
+                        print('Error saving currency: $e');
+                      });
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10.0),

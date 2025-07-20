@@ -18,6 +18,8 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart'; // Added import for APIService
 import 'package:shared_preferences/shared_preferences.dart'; // Added import for SharedPreferences
 import 'dart:convert'; // Added import for json
+import '../screens/wallets_screen.dart'; // Added import for WalletsScreen
+import '../utils/shared_preferences_utils.dart'; // Added import for formatAmount
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -591,9 +593,159 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showWalletModal() {
-    // Remove modal bottom sheet - wallet selection removed
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 8),
+                child: Text(
+                  _safeTranslate('select_wallet', 'Select Wallet'),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Wallets list
+              Flexible(
+                child: FutureBuilder<List<Map<String, String>>>(
+                  future: SecureStorage.instance.getWalletsList(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+                          ),
+                        ),
+                      );
+                    }
+                    
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.all(40),
+                        child: Center(
+                          child: Text(
+                            _safeTranslate('no_wallets_found', 'No wallets found'),
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    
+                    final wallets = snapshot.data!;
+                    
+                    return ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount: wallets.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final wallet = wallets[index];
+                        final walletName = wallet['walletName'] ?? '';
+                        final userId = wallet['userID'] ?? '';
+                        
+                        return GestureDetector(
+                          onTap: () async {
+                            try {
+                              // Save selected wallet to SecureStorage
+                              await SecureStorage.instance.saveSelectedWallet(walletName, userId);
+                              
+                              // Update AppProvider
+                              final appProvider = Provider.of<AppProvider>(context, listen: false);
+                              await appProvider.selectWallet(walletName);
+                              
+                              // Close modal
+                              Navigator.pop(context);
+                              
+                              // Force refresh after wallet change
+                              await _performImmediateRefreshAfterTokenChange();
+                              
+                              // Show success message
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(_safeTranslate('wallet_switched', 'Switched to {wallet}').replaceAll('{wallet}', walletName)),
+                                  backgroundColor: const Color(0xFF0BAB9B),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            } catch (e) {
+                              print('❌ Error switching wallet: $e');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(_safeTranslate('error_switching_wallet', 'Error switching wallet')),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF08C495), Color(0xFF39b6fb)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    walletName,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                Image.asset(
+                                  'assets/images/rightarrow.png',
+                                  width: 18,
+                                  height: 18,
+                                  color: Colors.white,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
   }
-  
+
   /// تریگر debug mode برای iOS - فراخوانی debug methods
   void _triggerDebugMode(AppProvider appProvider) async {
     if (!Platform.isIOS) {
@@ -1476,8 +1628,8 @@ class _TokenRow extends StatelessWidget {
     // استفاده از موجودی نمایشی که از parent دریافت شده
     final tokenValue = displayAmount * price;
     
-    // Helper for formatting
-    final amountFormat = NumberFormat('#,##0.####');
+    // Format amount using the same logic as Android
+    final formattedAmount = isHidden ? '****' : SharedPreferencesUtils.formatAmount(displayAmount, price);
     
     // لوگوهای معروف را از asset نمایش بده
     final assetIcons = {
@@ -1559,7 +1711,7 @@ class _TokenRow extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(isHidden ? '****' : amountFormat.format(displayAmount), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(formattedAmount, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 4),
               Consumer<PriceProvider>(
                 builder: (context, priceProvider, child) {
@@ -1573,5 +1725,5 @@ class _TokenRow extends StatelessWidget {
         ],
       ),
     );
-  }
+    }
 } 
