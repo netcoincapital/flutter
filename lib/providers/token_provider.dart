@@ -280,21 +280,28 @@ class TokenProvider extends ChangeNotifier {
   void _runBackgroundTasks() {
     print('🔄 TokenProvider: Starting background tasks...');
     
-    // Fetch gas fees
-    _fetchGasFees();
-    
-    // Load fresh tokens from API
-    smartLoadTokens(forceRefresh: false).then((_) {
-      print('✅ TokenProvider: Fresh tokens loaded from API');
-    }).catchError((e) {
-      print('❌ TokenProvider: Error loading fresh tokens: $e');
+    // Add a delay before starting background tasks to avoid blocking startup
+    Future.delayed(const Duration(seconds: 2), () {
+      // Fetch gas fees (non-critical)
+      _fetchGasFees();
     });
     
-    // Load balances
-    fetchBalancesForActiveTokens().then((_) {
-      print('✅ TokenProvider: Balances loaded in background');
-    }).catchError((e) {
-      print('❌ TokenProvider: Error loading balances: $e');
+    // Load fresh tokens from API with delay
+    Future.delayed(const Duration(seconds: 3), () {
+      smartLoadTokens(forceRefresh: false).then((_) {
+        print('✅ TokenProvider: Fresh tokens loaded from API');
+      }).catchError((e) {
+        print('❌ TokenProvider: Error loading fresh tokens: $e');
+      });
+    });
+    
+    // Load balances with even more delay to avoid overwhelming the system
+    Future.delayed(const Duration(seconds: 5), () {
+      fetchBalancesForActiveTokens().then((_) {
+        print('✅ TokenProvider: Balances loaded in background');
+      }).catchError((e) {
+        print('❌ TokenProvider: Error loading balances: $e');
+      });
     });
   }
   

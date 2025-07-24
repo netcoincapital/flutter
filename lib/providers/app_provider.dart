@@ -7,6 +7,7 @@ import '../models/crypto_token.dart';
 import '../services/api_service.dart';
 import 'token_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/wallet_state_manager.dart'; // Added import for WalletStateManager
 
 /// Provider اصلی اپلیکیشن
 class AppProvider extends ChangeNotifier {
@@ -272,13 +273,63 @@ class AppProvider extends ChangeNotifier {
       
       await SecureStorage.instance.saveSelectedWallet(walletName, _currentUserId!);
       
-      // Remove listener from previous TokenProvider
+      // ✅ Save activeTokens from current TokenProvider before switching
       if (_currentTokenProvider != null) {
+        final activeTokens = _currentTokenProvider!.enabledTokens.map((t) => t.symbol ?? '').toList();
+        final currentWalletName = _currentWalletName;
+        final currentUserId = _currentUserId;
+        
+        if (currentWalletName != null && currentUserId != null) {
+          // Save current wallet's active tokens
+          await WalletStateManager.instance.saveActiveTokensForWallet(
+            currentWalletName, 
+            currentUserId, 
+            activeTokens
+          );
+          
+          // Save current wallet's balance cache
+          final balanceCache = <String, double>{};
+          for (final token in _currentTokenProvider!.enabledTokens) {
+            if (token.amount > 0) {
+              balanceCache[token.symbol ?? ''] = token.amount;
+            }
+          }
+          if (balanceCache.isNotEmpty) {
+            await WalletStateManager.instance.saveBalanceCacheForWallet(
+              currentWalletName, 
+              currentUserId, 
+              balanceCache
+            );
+          }
+          
+          print('✅ AppProvider: Saved activeTokens and cache for previous wallet: $currentWalletName');
+        }
+        
+        // Remove listener from previous TokenProvider
         _currentTokenProvider!.removeListener(_onTokenProviderChanged);
       }
       
       // Switch to the appropriate TokenProvider
       final tokenProvider = await _getOrCreateTokenProvider(_currentUserId!);
+      
+      // ✅ Load activeTokens for new wallet
+      final completeWalletInfo = await WalletStateManager.instance.getCompleteWalletInfo(walletName, _currentUserId!);
+      if (completeWalletInfo != null) {
+        final activeTokens = completeWalletInfo['activeTokens'] as List<String>? ?? [];
+        final balanceCache = completeWalletInfo['balanceCache'] as Map<String, double>? ?? {};
+        
+        print('💾 AppProvider: Loaded for wallet $walletName: ${activeTokens.length} activeTokens, ${balanceCache.length} cached balances');
+        
+        // Apply activeTokens to TokenProvider
+        if (activeTokens.isNotEmpty) {
+          await _applyActiveTokensToProvider(tokenProvider, activeTokens);
+        }
+        
+        // Apply balance cache to TokenProvider
+        if (balanceCache.isNotEmpty) {
+          await _applyBalanceCacheToProvider(tokenProvider, balanceCache);
+        }
+      }
       
       // اطمینان از synchronization فوری برای کاربر جدید
       await tokenProvider.ensureTokensSynchronized();
@@ -286,12 +337,51 @@ class AppProvider extends ChangeNotifier {
       // Update other providers that depend on wallet selection
       await _notifyWalletChange(walletName, _currentUserId!);
       
-      print('✅ AppProvider: Wallet selected and TokenProvider synchronized');
+      print('✅ AppProvider: Wallet selected and TokenProvider synchronized with per-wallet data');
     }
     
     notifyListeners();
   }
 
+  /// Apply activeTokens to TokenProvider
+  Future<void> _applyActiveTokensToProvider(TokenProvider tokenProvider, List<String> activeTokens) async {
+    try {
+      // Enable tokens that should be active for this wallet
+      for (final token in tokenProvider.currencies) {
+        final shouldBeEnabled = activeTokens.contains(token.symbol);
+        if (token.isEnabled != shouldBeEnabled) {
+          await tokenProvider.toggleToken(token, shouldBeEnabled);
+          print('🔄 AppProvider: Set token ${token.symbol} to $shouldBeEnabled for current wallet');
+        }
+      }
+      
+      print('✅ AppProvider: Applied ${activeTokens.length} activeTokens to TokenProvider');
+    } catch (e) {
+      print('❌ AppProvider: Error applying activeTokens: $e');
+    }
+  }
+
+  /// Apply balance cache to TokenProvider
+  Future<void> _applyBalanceCacheToProvider(TokenProvider tokenProvider, Map<String, double> balanceCache) async {
+    try {
+      // Update token balances from cache
+      final updatedTokens = tokenProvider.enabledTokens.map((token) {
+        final cachedBalance = balanceCache[token.symbol];
+        if (cachedBalance != null && cachedBalance > 0) {
+          return token.copyWith(amount: cachedBalance);
+        }
+        return token;
+      }).toList();
+      
+      // Apply updated tokens to provider
+      await tokenProvider.setActiveTokens(updatedTokens);
+      
+      print('✅ AppProvider: Applied balance cache with ${balanceCache.length} entries to TokenProvider');
+    } catch (e) {
+      print('❌ AppProvider: Error applying balance cache: $e');
+    }
+  }
+  
   /// اطلاع‌رسانی تغییر کیف پول به سایر Provider ها
   Future<void> _notifyWalletChange(String walletName, String userId) async {
     // TokenProvider is now handled internally

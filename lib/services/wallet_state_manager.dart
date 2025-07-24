@@ -157,6 +157,7 @@ class WalletStateManager {
     required String userId,
     required String walletId,
     String? mnemonic,
+    List<String>? activeTokens,
   }) async {
     try {
       // Save wallet info to secure storage
@@ -165,6 +166,11 @@ class WalletStateManager {
       
       if (mnemonic != null) {
         await SecureStorage.instance.saveMnemonic(walletName, userId, mnemonic);
+      }
+
+      // ✅ Save activeTokens if provided
+      if (activeTokens != null) {
+        await SecureStorage.instance.saveActiveTokens(walletName, userId, activeTokens);
       }
 
       // Add to wallets list
@@ -184,9 +190,56 @@ class WalletStateManager {
         await SecureStorage.instance.saveWalletsList(existingWallets);
       }
 
-      print('✅ Wallet info saved successfully');
+      print('✅ Wallet info saved successfully (including ${activeTokens?.length ?? 0} active tokens)');
     } catch (e) {
       print('❌ Error saving wallet info: $e');
+      rethrow;
+    }
+  }
+
+  /// Get complete wallet information including activeTokens
+  Future<Map<String, dynamic>?> getCompleteWalletInfo(String walletName, String userId) async {
+    try {
+      final mnemonic = await SecureStorage.instance.getMnemonic(walletName, userId);
+      final activeTokens = await SecureStorage.instance.getActiveTokens(walletName, userId);
+      final balanceCache = await SecureStorage.instance.getWalletBalanceCache(walletName, userId);
+      
+      if (mnemonic != null && mnemonic.isNotEmpty) {
+        return {
+          'walletName': walletName,
+          'userId': userId,
+          'walletId': walletName, // Using wallet name as ID for now
+          'mnemonic': mnemonic,
+          'activeTokens': activeTokens,
+          'balanceCache': balanceCache,
+        };
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ Error getting complete wallet info: $e');
+      return null;
+    }
+  }
+
+  /// Save activeTokens for current wallet
+  Future<void> saveActiveTokensForWallet(String walletName, String userId, List<String> activeTokens) async {
+    try {
+      await SecureStorage.instance.saveActiveTokens(walletName, userId, activeTokens);
+      print('✅ Active tokens saved for wallet: $walletName');
+    } catch (e) {
+      print('❌ Error saving active tokens: $e');
+      rethrow;
+    }
+  }
+
+  /// Save balance cache for specific wallet
+  Future<void> saveBalanceCacheForWallet(String walletName, String userId, Map<String, double> balances) async {
+    try {
+      await SecureStorage.instance.saveWalletBalanceCache(walletName, userId, balances);
+      print('✅ Balance cache saved for wallet: $walletName');
+    } catch (e) {
+      print('❌ Error saving balance cache: $e');
       rethrow;
     }
   }

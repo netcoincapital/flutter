@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_options.dart';
 
 import 'services/service_provider.dart';
 import 'services/device_registration_manager.dart';
@@ -14,6 +17,7 @@ import 'services/wallet_state_manager.dart';
 import 'services/language_manager.dart';
 import 'services/security_settings_manager.dart';
 import 'services/uninstall_data_manager.dart';
+import 'services/firebase_messaging_service.dart';
 import 'providers/history_provider.dart';
 import 'providers/network_provider.dart';
 import 'providers/app_provider.dart';
@@ -47,12 +51,36 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
 
+  // Initialize Firebase with error handling
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('🔥 Firebase initialized successfully');
+  } catch (e) {
+    print('⚠️ Firebase initialization failed: $e');
+    print('💡 App will continue without Firebase features');
+    // Continue without Firebase - app should still work for core crypto features
+  }
+
+  // Set background message handler (only if Firebase is available)
+  try {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    print('🔥 Firebase background handler set');
+  } catch (e) {
+    print('⚠️ Firebase messaging setup failed: $e');
+  }
+
   // 🚀 Initialize critical services in parallel for faster startup
   await Future.wait([
     // Initialize ServiceProvider (synchronous - wrapped in Future)
     Future.sync(() => ServiceProvider.instance.initialize()),
     // Initialize NotificationHelper
     NotificationHelper.initialize(),
+    // Initialize Firebase Messaging
+    FirebaseMessagingService.instance.initialize(),
+    // ✅ جدید: Initialize notification settings
+    _initializeNotificationSettings(),
   ]);
   
   print('🚀 All critical services initialized in parallel');
@@ -150,6 +178,17 @@ Future<String?> _getWalletId() async {
     return null;
   }
 }
+
+/// ✅ جدید: Initialize notification settings
+Future<void> _initializeNotificationSettings() async {
+  try {
+    await NotificationHelper.initializeNotificationSettings();
+    print('✅ Notification settings initialized successfully');
+  } catch (e) {
+    print('❌ Error initializing notification settings: $e');
+  }
+}
+
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
@@ -301,37 +340,31 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       
       print('🎯 Final initial route determined: $initialRoute');
       
-      // 🚀 Step 2: Run critical initializations first, then non-critical ones
-      // Critical operations first
-      await LanguageManager.initializeLanguage(context);
-      _userId = await _getUserId();
+      // 🚀 Step 2: Run all non-critical initializations in parallel
+      final parallelFutures = await Future.wait([
+        // Language initialization
+        LanguageManager.initializeLanguage(context),
+        // Get UserId from SecureStorage
+        _getUserId(),
+        // Test server connection
+        _testServerConnection(),
+        // Show network status
+        ServiceProvider.instance.showNetworkStatus(),
+        // Debug: Check passcode status
+        _checkPasscodeDebug(),
+      ]);
       
-      // Non-critical operations in background (don't await)
-      _testServerConnection().then((result) {
-        print(result ? '✅ Server connection successful' : '⚠️ Server connection failed');
-      });
-      
-      ServiceProvider.instance.showNetworkStatus().then((_) {
-        print('✅ Network status shown');
-      });
-      
-      _checkPasscodeDebug().then((_) {
-        print('✅ Passcode debug completed');
-      });
+      // Extract results from parallel operations
+      _userId = parallelFutures[1] as String?;
       
       // 🎯 Step 3: Start transaction notification listener (after UI)
       WidgetsBinding.instance.addPostFrameCallback((_) {
         TransactionNotificationReceiver.instance.startListening(context);
       });
       
-      // 🎯 Step 4: Start device registration with available data (non-blocking)
-      if (_userId != null) {
-        _initializeDeviceRegistrationWithData(_userId!).then((_) {
-          print('📱 Device registration completed with user data');
-        }).catchError((e) {
-          print('❌ Device registration failed with user data: $e');
-        });
-      }
+      // ✅ Skip device registration from main.dart - now handled only during wallet creation/import
+      // Device registration will be done automatically when user creates/imports wallet
+      print('📱 Device registration will be handled during wallet setup (not from main.dart)');
       
       print('🚀 All app initialization completed in parallel');
       
@@ -391,7 +424,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       print('❌ Error checking passcode debug: $e');
     }
   }
-
 
 
   @override

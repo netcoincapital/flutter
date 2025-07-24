@@ -427,6 +427,9 @@ class GenerateWalletResponse {
   @JsonKey(name: 'UserID')
   final String? userID;
   
+  @JsonKey(name: 'WalletID')
+  final String? walletID;
+  
   @JsonKey(name: 'Mnemonic')
   final String? mnemonic;
   final String? message;
@@ -434,6 +437,7 @@ class GenerateWalletResponse {
   const GenerateWalletResponse({
     required this.success,
     this.userID,
+    this.walletID,
     this.mnemonic,
     this.message,
   });
@@ -1032,14 +1036,190 @@ class ConfirmTransactionResponse {
 
 /// کلاس برای مدیریت نتایج API
 class ApiResult<T> {
+  final bool success;
   final T? data;
   final String? error;
-  final bool isSuccess;
 
-  const ApiResult.success(this.data) : error = null, isSuccess = true;
-  const ApiResult.error(this.error) : data = null, isSuccess = false;
+  ApiResult.success(this.data) : success = true, error = null;
+  ApiResult.error(this.error) : success = false, data = null;
+}
 
-  String get displayMessage => error ?? 'Unknown error occurred';
+// ==================== NOTIFICATION MODELS ====================
+
+/// Firebase notification payload
+@JsonSerializable()
+class NotificationPayload {
+  final String title;
+  final String body;
+
+  const NotificationPayload({
+    required this.title,
+    required this.body,
+  });
+
+  factory NotificationPayload.fromJson(Map<String, dynamic> json) => _$NotificationPayloadFromJson(json);
+  Map<String, dynamic> toJson() => _$NotificationPayloadToJson(this);
+}
+
+/// Transaction notification data
+@JsonSerializable()
+class NotificationData {
+  @JsonKey(name: 'transaction_id')
+  final String? transactionId;
+  
+  final String? type; // "receive", "send", etc.
+  final String? direction; // "inbound", "outbound"
+  final String? amount;
+  final String? currency; // BTC, ETH, etc.
+  final String? symbol; // For backward compatibility
+  
+  @JsonKey(name: 'from_address')
+  final String? fromAddress;
+  
+  @JsonKey(name: 'to_address')
+  final String? toAddress;
+  
+  @JsonKey(name: 'wallet_id')
+  final String? walletId;
+  
+  final String? timestamp;
+  final String? status;
+
+  const NotificationData({
+    this.transactionId,
+    this.type,
+    this.direction,
+    this.amount,
+    this.currency,
+    this.symbol,
+    this.fromAddress,
+    this.toAddress,
+    this.walletId,
+    this.timestamp,
+    this.status,
+  });
+
+  factory NotificationData.fromJson(Map<String, dynamic> json) => _$NotificationDataFromJson(json);
+  Map<String, dynamic> toJson() => _$NotificationDataToJson(this);
+}
+
+/// Android-specific notification configuration
+@JsonSerializable()
+class AndroidNotificationConfig {
+  @JsonKey(name: 'channel_id')
+  final String? channelId;
+  
+  final String? sound;
+  final String? icon;
+  final int? priority;
+
+  const AndroidNotificationConfig({
+    this.channelId,
+    this.sound,
+    this.icon,
+    this.priority,
+  });
+
+  factory AndroidNotificationConfig.fromJson(Map<String, dynamic> json) => _$AndroidNotificationConfigFromJson(json);
+  Map<String, dynamic> toJson() => _$AndroidNotificationConfigToJson(this);
+}
+
+/// Complete FCM notification message
+@JsonSerializable()
+class FCMNotificationMessage {
+  final NotificationPayload notification;
+  final NotificationData data;
+  
+  @JsonKey(name: 'android')
+  final Map<String, AndroidNotificationConfig>? androidConfig;
+
+  const FCMNotificationMessage({
+    required this.notification,
+    required this.data,
+    this.androidConfig,
+  });
+
+  factory FCMNotificationMessage.fromJson(Map<String, dynamic> json) => _$FCMNotificationMessageFromJson(json);
+  Map<String, dynamic> toJson() => _$FCMNotificationMessageToJson(this);
+}
+
+// Helper methods for creating notification messages
+extension FCMNotificationMessageExtensions on FCMNotificationMessage {
+  /// Create a receive notification
+  static FCMNotificationMessage createReceiveNotification({
+    required String amount,
+    required String currency,
+    required String fromAddress,
+    required String toAddress,
+    required String transactionId,
+    required String walletId,
+  }) {
+    return FCMNotificationMessage(
+      notification: NotificationPayload(
+        title: '💰 Received: $amount $currency',
+        body: 'From ${fromAddress.length > 10 ? "${fromAddress.substring(0, 6)}...${fromAddress.substring(fromAddress.length - 4)}" : fromAddress}',
+      ),
+      data: NotificationData(
+        transactionId: transactionId,
+        type: 'receive',
+        direction: 'inbound',
+        amount: amount,
+        currency: currency,
+        symbol: currency, // For backward compatibility
+        fromAddress: fromAddress,
+        toAddress: toAddress,
+        walletId: walletId,
+        timestamp: DateTime.now().toIso8601String(),
+        status: 'confirmed',
+      ),
+      androidConfig: {
+        'notification': AndroidNotificationConfig(
+          channelId: 'receive_channel',
+          sound: 'receive_sound',
+          icon: 'ic_notification',
+          priority: 2, // High priority
+        ),
+      },
+    );
+  }
+
+  /// Create a send notification
+  static FCMNotificationMessage createSendNotification({
+    required String amount,
+    required String currency,
+    required String fromAddress,
+    required String toAddress,
+    required String transactionId,
+    required String walletId,
+  }) {
+    return FCMNotificationMessage(
+      notification: NotificationPayload(
+        title: '📤 Sent: $amount $currency',
+        body: 'To ${toAddress.length > 10 ? "${toAddress.substring(0, 6)}...${toAddress.substring(toAddress.length - 4)}" : toAddress}',
+      ),
+      data: NotificationData(
+        transactionId: transactionId,
+        type: 'send',
+        direction: 'outbound',
+        amount: amount,
+        currency: currency,
+        symbol: currency, // For backward compatibility
+        fromAddress: fromAddress,
+        toAddress: toAddress,
+        walletId: walletId,
+        timestamp: DateTime.now().toIso8601String(),
+        status: 'confirmed',
+      ),
+      androidConfig: {
+        'notification': AndroidNotificationConfig(
+          channelId: 'send_channel',
+          sound: 'send_sound',
+          icon: 'ic_notification',
+          priority: 2, // High priority
+        ),
+      },
+    );
+  }
 }
 
 /// کلاس برای مدیریت خطاهای API

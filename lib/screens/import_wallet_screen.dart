@@ -238,6 +238,7 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
           userId: walletData.userID ?? '',
           walletId: walletData.walletID ?? '',
           mnemonic: walletData.mnemonic ?? mnemonic, // مطمئن می‌شویم که mnemonic ذخیره شود
+          activeTokens: ['BTC', 'ETH', 'TRX'], // ✅ Default active tokens for imported wallet
         );
         
         // **اطمینان از ذخیره mnemonic**: در صورت عدم ذخیره، مستقیماً ذخیره می‌کنیم
@@ -419,6 +420,7 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
               userId: walletData.userID ?? '',
               walletId: walletData.walletID ?? '',
               mnemonic: walletData.mnemonic ?? mnemonic,
+              activeTokens: ['BTC', 'ETH', 'TRX'], // ✅ Default active tokens for imported wallet
             );
             
             print('✅ Fallback: Saved wallet with actual UserID: ${walletData.userID}');
@@ -437,6 +439,7 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
               userId: '',
               walletId: '',
               mnemonic: mnemonic,
+              activeTokens: ['BTC', 'ETH', 'TRX'], // ✅ Default active tokens for imported wallet
             );
             
             // اطمینان از ذخیره mnemonic در fallback path
@@ -454,6 +457,7 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
             userId: '',
             walletId: '',
             mnemonic: mnemonic,
+            activeTokens: ['BTC', 'ETH', 'TRX'], // ✅ Default active tokens for imported wallet
           );
           
           // اطمینان از ذخیره mnemonic در fallback path

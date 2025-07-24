@@ -162,4 +162,25 @@ class NotificationHelper {
       }
     }
   }
+
+  /// Initialize notification settings (stub method for compatibility)
+  static Future<void> initializeNotificationSettings() async {
+    try {
+      print('📱 Initializing notification settings...');
+      
+      // Request notification permissions on iOS and Android 13+
+      if (Platform.isIOS || (Platform.isAndroid)) {
+        final permission = await Permission.notification.request();
+        if (permission.isGranted) {
+          print('✅ Notification permission granted');
+        } else {
+          print('❌ Notification permission denied');
+        }
+      }
+      
+      print('✅ Notification settings initialized');
+    } catch (e) {
+      print('❌ Error initializing notification settings: $e');
+    }
+  }
 } 
