@@ -14,6 +14,7 @@ import 'services/wallet_state_manager.dart';
 import 'services/language_manager.dart';
 import 'services/security_settings_manager.dart';
 import 'services/uninstall_data_manager.dart';
+import 'services/firebase_messaging_service.dart';
 import 'providers/history_provider.dart';
 import 'providers/network_provider.dart';
 import 'providers/app_provider.dart';
@@ -53,6 +54,8 @@ void main() async {
     Future.sync(() => ServiceProvider.instance.initialize()),
     // Initialize NotificationHelper
     NotificationHelper.initialize(),
+    // Initialize Firebase Messaging Service
+    FirebaseMessagingService.instance.initialize(),
   ]);
   
   print('🚀 All critical services initialized in parallel');

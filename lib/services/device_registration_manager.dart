@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:async';
 import 'api_service.dart';
 import 'secure_storage.dart';
+import 'firebase_messaging_service.dart';
 import '../services/api_models.dart';
 
 /// مدیریت ثبت دستگاه در سرور - مشابه DeviceRegistrationManager.kt
@@ -34,22 +35,39 @@ class DeviceRegistrationManager {
     try {
       print('📱 Attempting to get FCM token...');
       
-      // بررسی آیا Firebase نصب شده
-      // TODO: اضافه کردن بررسی Firebase initialization
+      // استفاده از Firebase Messaging Service
+      final firebaseService = FirebaseMessagingService.instance;
       
-      // دریافت توکن از SecureStorage (یا تولید جدید)
-      final token = await _getDeviceToken();
+      // تلاش برای دریافت توکن واقعی Firebase
+      final firebaseToken = await firebaseService.getToken();
       
-      if (token.isNotEmpty) {
-        print('✅ FCM token retrieved successfully');
-        return token;
+      if (firebaseToken != null && firebaseToken.isNotEmpty) {
+        print('✅ Firebase FCM token retrieved successfully');
+        return firebaseToken;
+      }
+      
+      // در صورت عدم موفقیت Firebase، از fallback استفاده کن
+      print('⚠️ Firebase token not available, using fallback method');
+      final fallbackToken = await firebaseService.getTokenWithFallback();
+      
+      if (fallbackToken.isNotEmpty) {
+        print('✅ Fallback token generated successfully');
+        return fallbackToken;
       } else {
-        print('❌ Failed to get FCM token');
+        print('❌ Failed to get any token');
         return null;
       }
     } catch (e) {
       print('❌ Error getting FCM token: $e');
-      return null;
+      // Fallback to local token generation
+      try {
+        final fallbackToken = await FirebaseMessagingService.instance.generateFallbackToken();
+        print('⚠️ Using emergency fallback token');
+        return fallbackToken;
+      } catch (fallbackError) {
+        print('❌ Even fallback token generation failed: $fallbackError');
+        return null;
+      }
     }
   }
   

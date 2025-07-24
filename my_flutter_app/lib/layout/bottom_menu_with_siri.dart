@@ -118,6 +118,7 @@ class _BottomMenuState extends State<BottomMenu> {
     _debounceTimer?.cancel();
     super.dispose();
   }
+    // Remove bottom padr iOS to move menu even lower
 
   @override
   Widget build(BuildContext context) {
