@@ -20,6 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart'; // Added import for
 import 'dart:convert'; // Added import for json
 import '../screens/wallets_screen.dart'; // Added import for WalletsScreen
 import '../utils/shared_preferences_utils.dart'; // Added import for formatAmount
+import 'dart:async'; // Added import for Timer
+import '../services/wallet_state_manager.dart'; // Added import for WalletStateManager
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -32,8 +34,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool isHidden = false;
   int selectedTab = 0;
   bool _isRefreshing = false; // جلوگیری از concurrent refresh
-  Map<String, double> _cachedBalances = {}; // کش موجودی‌ها
-  Map<String, double> _displayBalances = {}; // موجودی‌های نمایشی
+  
+  // ✅ Remove global cache - now handled per-wallet in AppProvider/WalletStateManager
+  // Map<String, double> _cachedBalances = {}; // ❌ Removed global cache
+  // Map<String, double> _displayBalances = {}; // ❌ Removed global display cache
+  
   int _debugTapCount = 0; // شمارنده تپ برای debug مخفی
   
   final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
@@ -60,7 +65,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadCachedBalances(); // بارگذاری کش موجودی‌ها از SharedPreferences
+    // ✅ Remove global cache loading - now handled per-wallet
+    // _loadCachedBalances(); // ❌ Removed
     _initializeHomeScreen();
   }
 
@@ -108,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         
         if (enabledTokens.isNotEmpty) {
           // ابتدا موجودی‌های cached را نمایش بده
-          _applyCachedBalancesToTokens(enabledTokens);
+          // _applyCachedBalancesToTokens(enabledTokens); // ❌ Removed global apply
           
           // بارگذاری موجودی‌ها و قیمت‌ها به صورت موازی در background
           await Future.wait<void>([
@@ -126,27 +132,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// اعمال موجودی‌های cached به توکن‌ها
-  void _applyCachedBalancesToTokens(List<CryptoToken> tokens) {
-    try {
-      for (final token in tokens) {
-        final cachedBalance = _cachedBalances[token.symbol ?? ''];
-        if (cachedBalance != null && cachedBalance > 0) {
-          // فقط اگر token.amount صفر باشد، از cached balance استفاده کن
-          if (token.amount <= 0) {
-            _displayBalances[token.symbol ?? ''] = cachedBalance;
-            print('📦 HomeScreen: Applied cached balance for ${token.symbol}: $cachedBalance');
-          } else {
-            // اگر token.amount موجود باشد، آن را به عنوان display balance استفاده کن
-            _displayBalances[token.symbol ?? ''] = token.amount;
-            print('📦 HomeScreen: Applied actual balance for ${token.symbol}: ${token.amount}');
-          }
-        }
-      }
-    } catch (e) {
-      print('❌ HomeScreen: Error applying cached balances: $e');
-    }
-  }
+  // ✅ Cached balance application is now handled per-wallet in AppProvider
+  // No longer needed as balances are managed per-wallet through WalletStateManager
 
   /// بارگذاری موجودی‌ها برای توکن‌های فعال با cache
   Future<void> _loadBalancesForEnabledTokens(tokenProvider) async {
@@ -160,13 +147,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       print('💰 HomeScreen: Loading balances for enabled tokens');
       
-      // ذخیره موجودی‌های فعلی به عنوان backup
-      final currentTokens = tokenProvider.enabledTokens;
-      for (final token in currentTokens) {
-        if (token.amount > 0) {
-          _cachedBalances[token.symbol ?? ''] = token.amount;
-        }
-      }
+      // ✅ Balance caching is now handled per-wallet in WalletStateManager
+      // Current balances are automatically saved when switching wallets
       
       // تلاش برای به‌روزرسانی موجودی با timeout
       final success = await tokenProvider.updateBalance().timeout(
@@ -179,19 +161,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       
       if (success) {
         print('✅ HomeScreen: Balances loaded successfully');
-        // به‌روزرسانی کش با موجودی‌های جدید
-        for (final token in tokenProvider.enabledTokens) {
-          if (token.amount > 0) {
-            _cachedBalances[token.symbol ?? ''] = token.amount;
-            _displayBalances[token.symbol ?? ''] = token.amount;
+        
+        // ✅ Save updated balances per-wallet automatically through AppProvider
+        final appProvider = Provider.of<AppProvider>(context, listen: false);
+        if (appProvider.currentWalletName != null && appProvider.currentUserId != null) {
+          final balanceCache = <String, double>{};
+          for (final token in tokenProvider.enabledTokens) {
+            if (token.amount > 0) {
+              balanceCache[token.symbol ?? ''] = token.amount;
+            }
+          }
+          if (balanceCache.isNotEmpty) {
+            await WalletStateManager.instance.saveBalanceCacheForWallet(
+              appProvider.currentWalletName!, 
+              appProvider.currentUserId!, 
+              balanceCache
+            );
           }
         }
-        // ذخیره کش در SharedPreferences
-        await _saveCachedBalances();
       } else {
-        print('⚠️ HomeScreen: Failed to load balances, using cached values');
-        // بازگردانی موجودی‌ها از کش
-        _restoreBalancesFromCache(tokenProvider);
+        print('⚠️ HomeScreen: Failed to load balances, keeping existing TokenProvider state');
+        // TokenProvider already has the correct cached balances from wallet selection
       }
       
     } catch (e) {
@@ -203,24 +193,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// بازگردانی موجودی‌ها از کش
-  void _restoreBalancesFromCache(tokenProvider) {
-    try {
-      final tokens = tokenProvider.enabledTokens;
-      for (final token in tokens) {
-        final cachedBalance = _cachedBalances[token.symbol ?? ''];
-        if (cachedBalance != null && cachedBalance > 0) {
-          // استفاده از _displayBalances بجای تغییر مستقیم token.amount
-          _displayBalances[token.symbol ?? ''] = cachedBalance;
-          print('📦 HomeScreen: Restored ${token.symbol} balance from cache: $cachedBalance');
-        }
-      }
-      // Force UI update
-      setState(() {});
-    } catch (e) {
-      print('❌ HomeScreen: Error restoring balances from cache: $e');
-    }
-  }
+  // ✅ Balance restoration is now handled per-wallet in AppProvider
+  // Cached balances are automatically restored when selecting wallets
 
   // _loadPricesForEnabledTokens removed - use _loadPricesForTokens directly
 
@@ -247,14 +221,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   /// شروع periodic updates برای wallet استاندارد
+  Timer? _periodicTimer;
+  
   void _startPeriodicUpdates() {
+    // Cancel existing timer if any
+    _periodicTimer?.cancel();
+    
     // هر 60 ثانیه قیمت‌ها را به‌روزرسانی کن (فقط قیمت‌ها، نه موجودی‌ها)
-    Future.delayed(const Duration(seconds: 60), () {
+    _periodicTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       if (mounted) {
         _refreshPricesForEnabledTokens();
-        _startPeriodicUpdates(); // recursive call for continuous updates
+      } else {
+        // If widget is disposed, cancel the timer
+        timer.cancel();
       }
     });
+  }
+  
+  void _stopPeriodicUpdates() {
+    _periodicTimer?.cancel();
+    _periodicTimer = null;
   }
 
   /// تنظیم مجدد کش موجودی‌ها در صورت مشکل
@@ -286,8 +272,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    // ذخیره کش موجودی‌ها قبل از dispose
-    _saveCachedBalances();
+    
+    // ✅ Save current wallet's balance cache automatically through AppProvider
+    // This is handled automatically when the app goes to background or switches context
+    
+    _stopPeriodicUpdates(); // Stop periodic updates on dispose
     super.dispose();
   }
 
@@ -468,7 +457,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// به‌روزرسانی موجودی یک توکن با استفاده از کش
+  /// به‌روزرسانی موجودی یک توکن با per-wallet caching
   Future<void> _updateSingleTokenBalanceWithCache(CryptoToken token, tokenProvider) async {
     try {
       final success = await tokenProvider.updateSingleTokenBalance(token).timeout(
@@ -480,29 +469,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
       
       if (success && token.amount > 0) {
-        // به‌روزرسانی کش
-        _cachedBalances[token.symbol ?? ''] = token.amount;
-        _displayBalances[token.symbol ?? ''] = token.amount;
-        print('📦 HomeScreen: Updated cache for ${token.symbol}: ${token.amount}');
-        // ذخیره کش در SharedPreferences
-        await _saveCachedBalances();
-      } else {
-        // بازگردانی از کش
-        final cachedBalance = _cachedBalances[token.symbol ?? ''];
-        if (cachedBalance != null && cachedBalance > 0) {
-          _displayBalances[token.symbol ?? ''] = cachedBalance;
-          print('📦 HomeScreen: Restored ${token.symbol} from cache: $cachedBalance');
+        print('✅ HomeScreen: Updated balance for ${token.symbol}: ${token.amount}');
+        
+        // ✅ Save updated balance per-wallet automatically
+        final appProvider = Provider.of<AppProvider>(context, listen: false);
+        if (appProvider.currentWalletName != null && appProvider.currentUserId != null) {
+          final balanceCache = {token.symbol ?? '': token.amount};
+          
+          // Get existing cache and update
+          final existingCache = await SecureStorage.instance.getWalletBalanceCache(
+            appProvider.currentWalletName!, 
+            appProvider.currentUserId!
+          );
+          existingCache.addAll(balanceCache);
+          
+          await WalletStateManager.instance.saveBalanceCacheForWallet(
+            appProvider.currentWalletName!, 
+            appProvider.currentUserId!, 
+            existingCache
+          );
         }
+        
+      } else {
+        print('⚠️ HomeScreen: Failed to update ${token.symbol} balance, keeping existing value');
+        // TokenProvider retains its existing state, no manual cache restoration needed
       }
       setState(() {});
     } catch (e) {
       print('❌ HomeScreen: Error updating single token balance: $e');
-      // بازگردانی از کش در صورت خطا
-      final cachedBalance = _cachedBalances[token.symbol ?? ''];
-      if (cachedBalance != null && cachedBalance > 0) {
-        _displayBalances[token.symbol ?? ''] = cachedBalance;
-        print('📦 HomeScreen: Restored ${token.symbol} from cache after error: $cachedBalance');
-      }
       setState(() {});
     }
   }
@@ -520,35 +514,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// بارگذاری کش موجودی‌ها از SharedPreferences
-  Future<void> _loadCachedBalances() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cachedBalancesJson = prefs.getString('cached_balances');
-      
-      if (cachedBalancesJson != null) {
-        final Map<String, dynamic> decoded = json.decode(cachedBalancesJson);
-        _cachedBalances = decoded.map((key, value) => MapEntry(key, value.toDouble()));
-        // همچنین display balances را initialize کن
-        _displayBalances = Map.from(_cachedBalances);
-        print('📦 HomeScreen: Loaded cached balances: $_cachedBalances');
-      }
-    } catch (e) {
-      print('❌ HomeScreen: Error loading cached balances: $e');
-    }
-  }
-
-  /// ذخیره کش موجودی‌ها در SharedPreferences
-  Future<void> _saveCachedBalances() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final encodedBalances = json.encode(_cachedBalances);
-      await prefs.setString('cached_balances', encodedBalances);
-      print('📦 HomeScreen: Saved cached balances: $_cachedBalances');
-    } catch (e) {
-      print('❌ HomeScreen: Error saving cached balances: $e');
-    }
-  }
+  // ✅ Balance caching is now handled per-wallet in WalletStateManager
+  // Global SharedPreferences caching has been replaced with per-wallet SecureStorage caching
 
   /// ثبت دستگاه هنگام ورود به صفحه home
   Future<void> _registerDeviceOnHome() async {

@@ -172,6 +172,47 @@ class SecureStorage {
     return [];
   }
 
+  /// ذخیره activeTokens برای کیف پول (جدید)
+  Future<void> saveActiveTokens(String walletName, String userId, List<String> activeTokens) async {
+    final key = 'ActiveTokens_${userId}_$walletName';
+    await saveSecureJson(key, {'tokens': activeTokens});
+    print('📝 Saved ${activeTokens.length} active tokens for wallet: $walletName');
+  }
+
+  /// خواندن activeTokens کیف پول (جدید)
+  Future<List<String>> getActiveTokens(String walletName, String userId) async {
+    final key = 'ActiveTokens_${userId}_$walletName';
+    final data = await getSecureJson(key);
+    if (data != null && data['tokens'] != null) {
+      return List<String>.from(data['tokens'] as List);
+    }
+    return []; // بازگرداندن لیست خالی اگر هیچ توکنی فعال نباشد
+  }
+
+  /// ذخیره کش موجودی‌ها برای کیف پول خاص (جدید)
+  Future<void> saveWalletBalanceCache(String walletName, String userId, Map<String, double> balances) async {
+    final key = 'BalanceCache_${userId}_$walletName';
+    await saveSecureJson(key, balances.map((k, v) => MapEntry(k, v.toString())));
+    print('💾 Saved balance cache for wallet: $walletName (${balances.length} tokens)');
+  }
+
+  /// خواندن کش موجودی‌ها برای کیف پول خاص (جدید)
+  Future<Map<String, double>> getWalletBalanceCache(String walletName, String userId) async {
+    final key = 'BalanceCache_${userId}_$walletName';
+    final data = await getSecureJson(key);
+    if (data != null) {
+      return data.map((k, v) => MapEntry(k, double.tryParse(v.toString()) ?? 0.0));
+    }
+    return {};
+  }
+
+  /// حذف کش موجودی‌ها برای کیف پول خاص (جدید)
+  Future<void> clearWalletBalanceCache(String walletName, String userId) async {
+    final key = 'BalanceCache_${userId}_$walletName';
+    await deleteSecureData(key);
+    print('🗑️ Cleared balance cache for wallet: $walletName');
+  }
+
   /// ذخیره کیف پول انتخاب شده (مطابق با Kotlin)
   Future<void> saveSelectedWallet(String walletName, String userId) async {
     await saveSecureData('selected_wallet', walletName);

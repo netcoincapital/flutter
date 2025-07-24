@@ -10,6 +10,10 @@ class Transaction {
   final String blockchainName;
   final double? price;
   final String? temporaryId;
+  final String? explorerUrl;
+  final String? fee;
+  final String? assetType;
+  final String? tokenContract;
 
   Transaction({
     required this.txHash,
@@ -23,6 +27,10 @@ class Transaction {
     required this.blockchainName,
     this.price,
     this.temporaryId,
+    this.explorerUrl,
+    this.fee,
+    this.assetType,
+    this.tokenContract,
   });
 
   factory Transaction.fromJson(Map<String, dynamic> json) {
@@ -38,6 +46,10 @@ class Transaction {
       blockchainName: json['blockchainName'] ?? '',
       price: json['price'] != null ? double.tryParse(json['price'].toString()) : null,
       temporaryId: json['temporaryId'],
+      explorerUrl: json['explorerUrl'],
+      fee: json['fee'],
+      assetType: json['assetType'],
+      tokenContract: json['tokenContract'],
     );
   }
 
@@ -54,6 +66,10 @@ class Transaction {
       'blockchainName': blockchainName,
       'price': price,
       'temporaryId': temporaryId,
+      'explorerUrl': explorerUrl,
+      'fee': fee,
+      'assetType': assetType,
+      'tokenContract': tokenContract,
     };
   }
 }

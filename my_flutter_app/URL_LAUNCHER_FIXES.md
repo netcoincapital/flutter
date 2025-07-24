@@ -50,11 +50,12 @@ await Clipboard.setData(ClipboardData(text: url));
 ```
 
 ### 4. تنظیمات AndroidManifest.xml
-- اضافه کردن `QUERY_ALL_PACKAGES` permission
-- اضافه کردن intent-filters برای URL schemes
-- پیکربندی برای Telegram, Twitter, Instagram
+- ~~اضافه کردن `QUERY_ALL_PACKAGES` permission~~ (حذف شد برای تطبیق با Google Play Policy)
+- اضافه کردن intent-filters برای URL schemes در `<queries>`  
+- پیکربندی برای Telegram, Twitter, Instagram در `<queries>`
 - اضافه کردن `<package>` queries برای social media apps
 - پشتیبانی از schemes اضافی مانند `fb`, `tg`, `twitter`, `instagram`
+- استفاده از `<queries>` به جای `QUERY_ALL_PACKAGES` برای تطبیق با Google Play Policy
 
 ### 5. نسخه‌های dependency
 - `url_launcher: ^6.3.0`

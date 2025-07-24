@@ -1021,8 +1021,14 @@
   "date": "日期",
   "status": "状态",
   "sender": "发送方",
+  "recipient": "接收方",
   "network_fee": "网络手续费",
   "estimated": "预估",
+  "explorer": "浏览器",
+  "refresh": "刷新",
+  "back": "返回",
+  "forward": "前进",
+  "loading": "加载中...",
   "view_on_explorer": "在浏览器中查看",
   "unknown_date": "未知日期",
   "completed": "已完成",
@@ -1055,5 +1061,10 @@
   "secret_phrase_google_drive": "助记词、Google Drive或仅查看",
   "loading": "加载中...",
   "webview_removed": "WebView功能暂时移除",
-  "error_deleting_wallet": "删除钱包时出错: {error}"
+  "error_deleting_wallet": "删除钱包时出错: {error}",
+  
+  "no_explorer_url": "区块浏览器链接不可用",
+  "share_failed": "分享交易失败",
+  "transaction_details": "交易详情",
+  "share_transaction_text": "交易详情:\n\n金额: {amount}\n哈希: {hash}\n\n在区块浏览器中查看:"
 }

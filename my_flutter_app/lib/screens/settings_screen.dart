@@ -367,6 +367,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
 
 
+  /// باز کردن URL Social Media در مرورگر خارجی
+  Future<void> _openSocialMediaUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        print('✅ Settings: Successfully opened social media URL: $url');
+      } else {
+        print('❌ Settings: Cannot launch URL: $url');
+      }
+    } catch (e) {
+      print('❌ Settings: Error opening social media URL: $e');
+    }
+  }
+
   /// نمایش دیالوگ وضعیت شبکه
   void _showNetworkStatusDialog() {
     // Remove dialog - network status dialog removed
@@ -542,17 +560,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _SettingItem(
                       icon: 'assets/images/x.png',
                       title: _safeTranslate('x_platform', 'X platform'),
-                      onTap: _openXLink,
+                      onTap: () => _openSocialMediaUrl('https://x.com/laxcecrypto'),
                     ),
                     _SettingItem(
                       icon: 'assets/images/instagram.png',
                       title: _safeTranslate('instagram', 'Instagram'),
-                      onTap: _openInstagramLink,
+                      onTap: () => _openSocialMediaUrl('https://www.instagram.com/laxcecrypto/'),
                     ),
                     _SettingItem(
                       icon: 'assets/images/telegram.png',
                       title: _safeTranslate('telegram', 'Telegram'),
-                      onTap: _openTelegramLink,
+                      onTap: () => _openSocialMediaUrl('https://t.me/Laxce_L2'),
                     ),
                   ],
                 ),

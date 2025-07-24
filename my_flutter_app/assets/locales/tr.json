@@ -1121,8 +1121,14 @@
   "date": "Tarih",
   "status": "Durum",
   "sender": "Gönderen",
+  "recipient": "Alıcı",
   "network_fee": "Ağ ücreti",
   "estimated": "Tahmini",
+  "explorer": "Gezgin",
+  "refresh": "Yenile",
+  "back": "Geri",
+  "forward": "İleri",
+  "loading": "Yükleniyor...",
   "view_on_explorer": "Explorer'da Görüntüle",
   "unknown_date": "Bilinmeyen Tarih",
   "completed": "Tamamlandı",
@@ -1155,5 +1161,10 @@
   "secret_phrase_google_drive": "Gizli ifade, Google Drive veya sadece görüntüleme",
   "loading": "Yükleniyor...",
   "webview_removed": "WebView işlevselliği şimdilik kaldırıldı",
-  "error_deleting_wallet": "Cüzdan silinirken hata: {error}"
+  "error_deleting_wallet": "Cüzdan silinirken hata: {error}",
+  
+  "no_explorer_url": "Explorer URL'si mevcut değil",
+  "share_failed": "İşlem paylaşımı başarısız",
+  "transaction_details": "İşlem Detayları",
+  "share_transaction_text": "İşlem Detayları:\n\nMiktar: {amount}\nHash: {hash}\n\nExplorer'da Görüntüle:"
 }

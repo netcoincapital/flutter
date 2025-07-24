@@ -1,4 +1,4 @@
-package com.example.my_flutter_app
+package com.laxce.my_flutter_app
 
 import android.content.BroadcastReceiver
 import android.content.Context

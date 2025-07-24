@@ -1170,9 +1170,21 @@
   "date": "Date",
   "status": "Status",
   "sender": "Sender",
+  "recipient": "Recipient",
   "network_fee": "Network fee",
   "estimated": "Estimated",
+  "explorer": "Explorer",
+  "refresh": "Refresh",
+  "back": "Back",
+  "forward": "Forward",
+  "loading": "Loading...",
   "view_on_explorer": "View on Explorer",
+  "cannot_open_explorer": "Cannot open explorer",
+  "error_opening_explorer": "Error opening explorer",
+  "loading_failed": "Failed to load page",
+  "try_external_browser": "Try opening in external browser",
+  "open_in_browser": "Open in Browser",
+  "retry": "Retry",
   "unknown_date": "Unknown Date",
   "completed": "Completed",
   "pending": "Pending",
@@ -1227,5 +1239,10 @@
   "account_transactions": "Account Transactions",
   "no_wallet_selected": "No wallet selected. Please select a wallet first.",
   "no_balance_data": "No balance data received from server",
-  "error_loading_balances": "Error loading balances"
+  "error_loading_balances": "Error loading balances",
+  
+  "no_explorer_url": "Explorer URL not available",
+  "share_failed": "Failed to share transaction",
+  "transaction_details": "Transaction Details",
+  "share_transaction_text": "Transaction Details:\n\nAmount: {amount}\nHash: {hash}\n\nView on Explorer:"
 }

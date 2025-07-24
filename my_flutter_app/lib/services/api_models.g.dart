@@ -248,6 +248,7 @@ GenerateWalletResponse _$GenerateWalletResponseFromJson(
     GenerateWalletResponse(
       success: json['success'] as bool,
       userID: json['UserID'] as String?,
+      walletID: json['WalletID'] as String?,
       mnemonic: json['Mnemonic'] as String?,
       message: json['message'] as String?,
     );
@@ -257,6 +258,7 @@ Map<String, dynamic> _$GenerateWalletResponseToJson(
     <String, dynamic>{
       'success': instance.success,
       'UserID': instance.userID,
+      'WalletID': instance.walletID,
       'Mnemonic': instance.mnemonic,
       'message': instance.message,
     };
@@ -520,6 +522,10 @@ Transaction _$TransactionFromJson(Map<String, dynamic> json) => Transaction(
       blockchainName: json['blockchainName'] as String?,
       price: Transaction._priceFromJson(json['price']),
       temporaryId: json['temporaryId'] as String?,
+      explorerUrl: json['explorerUrl'] as String?,
+      fee: json['fee'] as String?,
+      assetType: json['assetType'] as String?,
+      tokenContract: json['tokenContract'] as String?,
     );
 
 Map<String, dynamic> _$TransactionToJson(Transaction instance) =>
@@ -535,6 +541,10 @@ Map<String, dynamic> _$TransactionToJson(Transaction instance) =>
       'blockchainName': instance.blockchainName,
       'price': instance.price,
       'temporaryId': instance.temporaryId,
+      'explorerUrl': instance.explorerUrl,
+      'fee': instance.fee,
+      'assetType': instance.assetType,
+      'tokenContract': instance.tokenContract,
     };
 
 TransactionsResponse _$TransactionsResponseFromJson(
@@ -700,4 +710,85 @@ Map<String, dynamic> _$ConfirmTransactionResponseToJson(
       'tx_hash': instance.txHash,
       'status': instance.status,
       'description': instance.description,
+    };
+
+NotificationPayload _$NotificationPayloadFromJson(Map<String, dynamic> json) =>
+    NotificationPayload(
+      title: json['title'] as String,
+      body: json['body'] as String,
+    );
+
+Map<String, dynamic> _$NotificationPayloadToJson(
+        NotificationPayload instance) =>
+    <String, dynamic>{
+      'title': instance.title,
+      'body': instance.body,
+    };
+
+NotificationData _$NotificationDataFromJson(Map<String, dynamic> json) =>
+    NotificationData(
+      transactionId: json['transaction_id'] as String?,
+      type: json['type'] as String?,
+      direction: json['direction'] as String?,
+      amount: json['amount'] as String?,
+      currency: json['currency'] as String?,
+      symbol: json['symbol'] as String?,
+      fromAddress: json['from_address'] as String?,
+      toAddress: json['to_address'] as String?,
+      walletId: json['wallet_id'] as String?,
+      timestamp: json['timestamp'] as String?,
+      status: json['status'] as String?,
+    );
+
+Map<String, dynamic> _$NotificationDataToJson(NotificationData instance) =>
+    <String, dynamic>{
+      'transaction_id': instance.transactionId,
+      'type': instance.type,
+      'direction': instance.direction,
+      'amount': instance.amount,
+      'currency': instance.currency,
+      'symbol': instance.symbol,
+      'from_address': instance.fromAddress,
+      'to_address': instance.toAddress,
+      'wallet_id': instance.walletId,
+      'timestamp': instance.timestamp,
+      'status': instance.status,
+    };
+
+AndroidNotificationConfig _$AndroidNotificationConfigFromJson(
+        Map<String, dynamic> json) =>
+    AndroidNotificationConfig(
+      channelId: json['channel_id'] as String?,
+      sound: json['sound'] as String?,
+      icon: json['icon'] as String?,
+      priority: (json['priority'] as num?)?.toInt(),
+    );
+
+Map<String, dynamic> _$AndroidNotificationConfigToJson(
+        AndroidNotificationConfig instance) =>
+    <String, dynamic>{
+      'channel_id': instance.channelId,
+      'sound': instance.sound,
+      'icon': instance.icon,
+      'priority': instance.priority,
+    };
+
+FCMNotificationMessage _$FCMNotificationMessageFromJson(
+        Map<String, dynamic> json) =>
+    FCMNotificationMessage(
+      notification: NotificationPayload.fromJson(
+          json['notification'] as Map<String, dynamic>),
+      data: NotificationData.fromJson(json['data'] as Map<String, dynamic>),
+      androidConfig: (json['android'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(
+            k, AndroidNotificationConfig.fromJson(e as Map<String, dynamic>)),
+      ),
+    );
+
+Map<String, dynamic> _$FCMNotificationMessageToJson(
+        FCMNotificationMessage instance) =>
+    <String, dynamic>{
+      'notification': instance.notification,
+      'data': instance.data,
+      'android': instance.androidConfig,
     };

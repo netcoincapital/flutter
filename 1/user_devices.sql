@@ -1,0 +1,109 @@
+-- phpMyAdmin SQL Dump
+-- version 5.2.2-1.el9
+-- https://www.phpmyadmin.net/
+--
+-- Host: localhost
+-- Generation Time: Jul 23, 2025 at 12:42 PM
+-- Server version: 8.0.36
+-- PHP Version: 8.0.30
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Database: `coincee`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_devices`
+--
+
+CREATE TABLE `user_devices` (
+  `DeviceID` int NOT NULL,
+  `UserID` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `WalletID` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `DeviceToken` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `DeviceName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `DeviceType` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `CreatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `UpdatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `user_devices`
+--
+
+INSERT INTO `user_devices` (`DeviceID`, `UserID`, `WalletID`, `DeviceToken`, `DeviceName`, `DeviceType`, `CreatedAt`, `UpdatedAt`) VALUES
+(217, '2a272775-17e9-4739-a756-67da1090dbcb', 'c2569417-736b-4352-860f-5f063948b6b1', 'fGxJ8K9mQvWz7X2nP4tR6sY8uB1vN3mL5qA7cE9dF2gH4jK6lM8nO0pQ2sT4uV6wX8zA1bC3dE5fG7hI9jK1lM3nO5pQ7sT9uV1wX3zA5bC7dE9fG1hI3jK5lM7nO9pQ1sT3uV5wX7zA9bC1dE3fG5hI7jK9lM1nO3pQ5sT7uV9wX1zA3bC5dE7fG9hI1jK3lM5nO7pQ9sT1uV3wX5zA7bC9dE1fG3hI5jK7lM9nO1pQ3sT5uV7wX9zA1bC3dE5fG7hI9', 'Samsung Galaxy S21', 'android', '2025-07-23 07:41:22', '2025-07-23 07:41:22'),
+(214, 'c06ec6e5-267c-4ea0-873b-0a50130d8321', 'edac51dc-cc3e-4fec-a9de-c68a6aac664f', 'ecGQFEuNQRGCMOfacafVzZ:APA91bEUXh7TCM9LgyPoHGOioI00F40_bxPUSPlpjjrtwWZRT41WOXamWoVgW8JNveCkM68gbMqNltBzDub_g5ojploZUlZmNx10K0i2h8a3b-PxKHra7gg', 'VNE-N41', 'android', '2025-07-21 00:28:51', '2025-07-21 00:28:51'),
+(213, 'ee5aac95-d314-4ff7-9b06-9bbde6628d0a', 'cb08f6f5-eaab-4805-903d-26d294b2884f', 'cjI7bvrFQu-ugFpv1ra_6P:APA91bGQ2ZH0v_w1HX0ODxXr0ktEWxFHlNVYkwBBR3Zk0D4wl6vfAFTbxDVJOeb_hCuLyZM_BiCa_RUnZOw1IjnGhqnU8L1endtk2wylGI4fRGDQsPqaTio', 'M2102J20SG', 'android', '2025-07-19 19:28:57', '2025-07-19 19:28:57'),
+(212, 'b21ccd8e-3083-4244-bef6-8158c95f3e77', 'db33baba-abc6-41b9-b5be-d316ee1c6203', 'ciH_fZKiSX2XN6zpu3ACdk:APA91bFnQNWTCNv5trh7BHnrdss0w-VUjRKjZY9zce8aehVqXatNNsU18aT-lkXUXjRWT-z7vB-9FSJCc1xL5NHa7u_Fhxtmzu0rBCPCNgJ_a0wfz7PKgKw', 'SM-A165F', 'android', '2025-07-19 18:12:53', '2025-07-19 18:12:53'),
+(211, '3c2fc1c7-5813-4b8f-81bb-0883af29a67e', 'bf0edc2c-264a-417e-a9eb-75fc8101bc52', 'fXXntW1zTHy9ukXiNNVi80:APA91bF-sjiCSaWM-ztyz2Q7iJtwygPfrB_a60KAd41nzbNTA4S1n-wXP7dPgO1KZ6tM4uyJJcDTaMe3IfUidT6colFyILB1294pa0A0v37A4p5VhinSSck', 'M2010J19SG', 'android', '2025-07-19 15:23:23', '2025-07-19 15:23:23'),
+(210, '9fb8027d-0360-4ccd-b18f-0e2e4483a613', 'f82e32d4-5d70-4c8b-b119-71ed77a62fc9', 'dD1LwBlYRja9n1QU3OuMLo:APA91bE3JGfIJLE6KuVkMP8FfBFE3BhROiZi8rIgt9EA4q1qoDtHabR1h1Pys1a0LPYTy9dE2XfDOsVnDvc-Alm9jNibT22l-SH4pEfrdqktSuSNugMHmdg', 'SM-A307FN', 'android', '2025-07-19 05:49:29', '2025-07-19 05:49:29'),
+(209, 'da98809e-001e-4358-9f34-4ea8464d2b2b', '7b0d931d-534f-4699-9216-a4042522a1e4', 'cMggBeHqTpSUlcwXo10zaV:APA91bEcgeNouIYL63Ic6nEt88ACIs9dpL9m6M_JtypQCSKVI-GoiomGoYsSh2zs68U6N9mfA4p_aSBI--1dYs4UDyJx2lfThq_1SZ8hB9sYuTvSdc_YjcU', 'SM-G991B', 'android', '2025-07-18 20:32:04', '2025-07-19 20:25:33'),
+(208, '6e3ef325-23f9-4d54-8100-0931eaa351d5', '245057c9-f9c1-4aa8-ac34-3ef65b06c708', 'e7Xjm3P4RRmH-6OlZon2lY:APA91bGwtasAofJA-hXvB2T0G1OFW3CrytaVKBSVJd1G0PoeCA1B-TMYvUujUR_hnQr7zCdnEIKFPm9JhQucMN8lAfeehLwE6tunO-zm9Oz8hMla_gYTpfs', 'Redmi Note 8', 'android', '2025-07-18 17:01:41', '2025-07-18 17:01:41'),
+(207, '03224923-eaa3-40b1-843b-76fa4d6f7344', '709bcaf3-0d5b-47a9-8df9-bc16025f4d2e', 'dZzerhK6Sn-1qwGQ1u516D:APA91bHdsivYWucM2tJiTK9YiW5_RnChaVzFV_SdZIWtiOuSD2iPf_NPdxye2VIWO4Hrs4Czf0AZTG4M1DinUWTNbXRZ3yK5MEYx7tHqnEs_KCiKM_Ph8n0', 'Redmi Note 9 Pro', 'android', '2025-07-18 15:14:25', '2025-07-18 15:20:03'),
+(206, '5e04e1d7-2e1e-49cb-9b28-7653e0855793', 'b3db31ce-0b14-4096-9f4c-b5c5b588af96', 'fXNX5PfzSAOwAn4xlqpW1T:APA91bG0HMEbgXptuWPGTNqeNqipAUHblNl1OYhBsGHqe9NyuLBbUdqPdB8USpJBCjSDkmCEHRJB-I8T2yh9M1vujwzZwh0QKC5G8t29uY77xALIxFDLxIw', '220333QPG', 'android', '2025-07-18 15:02:29', '2025-07-18 15:02:29'),
+(205, '375543c4-d7cf-4c49-a941-2161f88bfbcc', '5d980e1d-a52b-41bf-90a1-087ccc6b72e1', 'eoFRZSmvTVWJIsbpT4z7NE:APA91bFvpCflWglbst4Za7q2c9TVZnh0UQHPFYPCx3vZaTS8FyzhX0RX2lfBGWhSbgU4ebW44a74AxYBWcsxXqdgwa5U3BUX2myl86iWUK_tkruTgfzlNZg', 'SM-G781B', 'android', '2025-07-18 09:53:02', '2025-07-18 09:53:02'),
+(204, 'd894da84-fa3d-4c39-8be2-01412d5ea341', '7c029a20-d914-4be1-82a5-20b02e43337c', 'cyFcDdbaTvGFiLcfLorvA3:APA91bH4hMeXD5ew1l4yQHqDJWxw4HDW9ryxsGLnz9A-Pfui_AOmVHw1DnTbSlBvDeePnpyJFfTZhvvT9zYV2eRb1cXrOeD2WO1xqNmz_ZFqozEyZOsd2Lw', 'SM-S918B', 'android', '2025-07-18 08:42:39', '2025-07-18 08:42:39'),
+(203, '7bd22286-7f67-4de8-94dc-a243022310b6', 'c90c7550-a2ad-4d12-9592-7c89131b17e8', 'dx8_1MCzR92Al3EUGJ48Ug:APA91bFMclU71H9bFw11EWm5zATJWBEhJay5p_vSIYuungDomtt8cTo0RXzuqRnzILVdsoRuGEtYZy6rI3qR5BTHn8-9oHnZLH-IhgfeP-T8RaD7dudTHyE', 'SM-A546E', 'android', '2025-07-18 08:32:36', '2025-07-18 08:32:36'),
+(202, '1a55c3ea-f36e-462e-a7f3-7f5958f29353', '6efbb672-9010-4573-b242-a1d65a36f63f', 'fqjuqjPzQMWDy4t_tCYqod:APA91bFz7eQH0hxwrdlCSsJbyfLQA6lpAdoU7ejV1veDk1rQRRjyKyM1xxPdT_4XX-gnXJfsrIdfzh2-qoIj7LdC-x-qtdLwQE0HWpZ7G5Geush73NpnSQ8', 'SM-S908E', 'android', '2025-07-18 05:10:20', '2025-07-18 05:10:20'),
+(201, '4eeb3992-fd10-44da-ab97-b415b8a19405', 'c9abed92-dc55-406d-8b52-01a1adbcec6f', 'cvblU90eTQK-2kNZK7htY6:APA91bFKbGmHc9D3NDTgpvAKVKsZF0DrJ9HGxwegbOMGMfGOlr9ne2Y-AUKBTA_CSEoTNN6gBPGD-hMy4MSYT8hlicR22l8wQ6z6T3Lm7PMo2YrVSInKcjg', 'VNE-N41', 'android', '2025-07-17 21:43:16', '2025-07-17 21:43:16'),
+(200, 'fcded4b4-3212-4e39-a2bb-848ddcaa6d9f', '5c1d5cc5-859b-40f5-a157-4e0afcd431a8', 'dIwmkdT8RYGOTCHSIOWFcg:APA91bH-EHw1AsOqZN5WQge1pB8PUuUouNVjbkSs5hfVzYX945S_YV2B11lEU2nKbg91ULyNpwX-9_jNwAt0gzT4mva5PpS94n4hgaeGscZIdRQYMdAKVNM', 'SM-A065F', 'android', '2025-07-17 21:20:08', '2025-07-17 21:20:08'),
+(199, 'c14d3c63-0783-4987-ba91-86edc6678b24', 'b9552b89-67b8-4752-932e-34c873cdff60', 'cP5IiJeASFGMAPIaJLyA_8:APA91bHNg6tzB7vwEJOXKfvd2p6moiW-oiYE3gUYJUyJaHkcR5XaG9p4FECaXjRTIqJw3YJoElJBIovD2jf4jIWZxcIYAoeHVXtUXL2vr2dU4Y0ozRGTrq8', 'SM-A556E', 'android', '2025-07-17 11:32:02', '2025-07-17 11:32:02'),
+(198, 'ab61f5af-bfde-4457-8908-10de2d965885', '326b6012-e06c-489e-a2c3-ba13ba5bf9d6', 'flNGqBU1Q6uQvck7eE7ukH:APA91bGyRRmYJOxs3vWhkWTQjAfXlOdmJHYLjPgJUTGkZwKxeow11zUkVq6SNpiwi3qG7SW2KQMgvh4oaksT1RV7_DnU7oFU1hc1oAVxn2GqELQpjVM9R6Y', 'MAR-LX2', 'android', '2025-07-17 09:34:46', '2025-07-18 08:27:39'),
+(197, '05166ef0-c35c-4511-b223-8a53dd2a5549', '44ba5a58-11aa-4cb6-87a4-8d21255dd175', 'coQMVVZeQZSTYVHmnJMZiN:APA91bGLwLhg2tyg52tQ_79pJQcyiRyo2Y4gySR2vFeRVXC0RRE2BWUfj9OzcQpIGYDvNKbbKyySJG03otRODHnNyJEDj4scMwG_LLN0_kSGoZO2xWumbjw', 'SM-A325F', 'android', '2025-07-17 08:06:13', '2025-07-17 08:06:13'),
+(196, '075845aa-8f26-42f3-ac4b-02b221875712', '4b18f7b0-1ac2-4e0d-8cfe-f8a3482570f1', 'dwaktzW8SpCfnlDLFQ3w0n:APA91bH26i6iJr36oYaV5Mo1xfkLF6LJ1c3RrCOQBS6jyyNijcXXCc3HDIJmFBqOtI3mwRMcTwsl0vI21G8c10vl8jUilwrKS_8vAJ95icwF0b9TR2KLuUQ', 'SM-A715F', 'android', '2025-07-17 07:55:41', '2025-07-17 09:13:40'),
+(195, '2c323382-509c-4e6f-bc58-f0f3377c1f25', 'ed7d6b96-2b8c-4ecf-b8db-d44d4d4d801a', 'ey9wbOZaRhisewNRTt0fy5:APA91bFvkrfr8ShZB4MC-_pJ-5wo3ZVCRHCwdb7dAsgvkvbt6fFnUDBrjoGIdkgsAeIF0RoLZ8xRkjRjb7cpdcyQsJSz-8Q4G1w_PNZRlaR050cuBALkQ6s', 'SM-A127F', 'android', '2025-07-16 19:41:06', '2025-07-16 19:41:06'),
+(194, 'e6b7aaf3-c284-4233-aecd-b254e579d541', 'ee89450e-c2d1-4fcd-9150-faef5a0a8893', 'd1kk5GPdRd6NkW1a3feTrf:APA91bHGEVaqIBaECZUFHEpQCxrWTZlu6P_elDsSGy_S2jRgGPJoRlB1oJsA0HRKBi-pZWRmJFKZ6o0S_lbhaEe8ZqyYLx4GFkfkG1UAOsGIwRuc7n-0UYI', '2207117BPG', 'android', '2025-07-16 15:09:10', '2025-07-16 15:09:10'),
+(193, '38a44820-d64d-493b-aa01-1f71fc58b09a', 'abebb2bb-eb80-4188-863c-dd00a6cf126b', 'cgFBc5wnTyShG6wRAMhvSk:APA91bEU4N3Hr5_kPPLP0UaSL7Um4ow0u9_wY25xsCuD4JV1bqwuimgMDnRwnxow0rzfuoWz5fWyohYmKyB_YqpbcrUEN_HHGgW2VNCbBoVTte1Mi6F1gto', 'SM-G973F', 'android', '2025-07-16 13:44:54', '2025-07-16 13:45:10'),
+(192, '29ee8745-3ba5-4690-a708-da07b9b9cd91', '8f01e597-4d91-4e52-ba70-9e0e66d1778a', 'dmqh5n_DQoyLhr-eeEmkga:APA91bEFDMUDf0yMIkIeinxGHRKcr6OR_be-uGUTNEBgEpZ39nxlPqRnzLWmZIFRDfE0M7mrCFRUEReoV7dlEOHL8GOectgXshimkEyFtATKTuq8lPwCmb4', '23078PND5G', 'android', '2025-07-16 10:45:20', '2025-07-16 10:45:20'),
+(191, 'f8799afe-ab19-4b2c-8980-0234104cb3d4', '94519240-aecd-4cb1-b885-6a3855133661', 'dJwAAatJRQqvAHP-BSDHsd:APA91bENYS5GaWinRXCN-rZt932TfNItMmA-1nbn1SbE08dRUNOGGgzf8QVSKqe8cB-X6bwSiecMRqZ6mdwsTZ2KUWJaS-9xY9U72pcpWRa833dowkvo3o4', 'Redmi Note 8', 'android', '2025-07-16 09:01:26', '2025-07-16 09:01:26');
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `user_devices`
+--
+ALTER TABLE `user_devices`
+  ADD PRIMARY KEY (`DeviceID`),
+  ADD UNIQUE KEY `DeviceToken` (`DeviceToken`),
+  ADD KEY `UserID` (`UserID`),
+  ADD KEY `WalletID` (`WalletID`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `user_devices`
+--
+ALTER TABLE `user_devices`
+  MODIFY `DeviceID` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=218;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `user_devices`
+--
+ALTER TABLE `user_devices`
+  ADD CONSTRAINT `user_devices_ibfk_1` FOREIGN KEY (`UserID`) REFERENCES `users` (`UserID`) ON DELETE CASCADE,
+  ADD CONSTRAINT `user_devices_ibfk_2` FOREIGN KEY (`WalletID`) REFERENCES `wallets` (`WalletID`) ON DELETE CASCADE;
+COMMIT;
+
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

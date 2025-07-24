@@ -13,10 +13,6 @@
     <uses-permission android:name="android.permission.MANAGE_KEYGUARD" />
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
     
-    <!-- URL Launcher permissions -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" 
-        tools:ignore="QueryAllPackagesPermission" />
-    
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
         android:label="laxce"
@@ -137,4 +133,4 @@
             <data android:scheme="fb-messenger" />
         </intent>
     </queries>
-</manifest>
+</manifest> 

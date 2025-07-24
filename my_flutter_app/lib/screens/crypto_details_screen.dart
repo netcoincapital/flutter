@@ -10,6 +10,7 @@ import '../services/api_models.dart' as api;
 import '../services/secure_storage.dart';
 import '../services/service_provider.dart';
 import '../providers/price_provider.dart';
+import '../utils/number_formatter.dart';
 
 class CryptoDetailsScreen extends StatefulWidget {
   final String tokenName;
@@ -417,7 +418,7 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
                       valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
                     )
                   : Text(
-                      '${tokenBalance.toStringAsFixed(6)} ${widget.tokenSymbol}',
+                      '${NumberFormatter.formatDouble(tokenBalance)} ${widget.tokenSymbol}',
                       style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                     ),
                 const SizedBox(height: 4),
@@ -633,18 +634,7 @@ class _TransactionItem extends StatelessWidget {
   }
 
   String _formatAmount(String amount) {
-    try {
-      final number = double.parse(amount);
-      String formatted = number.toStringAsFixed(6);
-      if (formatted.contains('.')) {
-        formatted = formatted.replaceFirst(RegExp(r'\.0+ '), '');
-        formatted = formatted.replaceFirst(RegExp(r'(\.\d*?[1-9])0+ '), r'\1');
-        formatted = formatted.replaceFirst(RegExp(r'\.$'), '');
-      }
-      return formatted;
-    } catch (e) {
-      return amount;
-    }
+    return NumberFormatter.formatAmount(amount);
   }
 
   @override
@@ -658,9 +648,21 @@ class _TransactionItem extends StatelessWidget {
     final amountPrefix = isReceived ? "+" : "-";
     final amountValue = "$amountPrefix${_formatAmount(tx.amount)}";
     final isPending = !isReceived && (tx.status ?? '').toLowerCase() == "pending";
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-      child: Row(
+    
+    return GestureDetector(
+      onTap: () {
+        // Navigate to transaction detail screen with txHash for API loading
+        Navigator.pushNamed(
+          context,
+          '/transaction_detail',
+          arguments: {
+            'transactionId': tx.txHash, // ارسال txHash برای دریافت جزئیات از API
+          },
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(
         children: [
           Container(
             width: 24,
@@ -742,6 +744,7 @@ class _TransactionItem extends StatelessWidget {
             ],
           ),
         ],
+        ),
       ),
     );
   }

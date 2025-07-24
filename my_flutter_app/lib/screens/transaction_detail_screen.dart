@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/transaction.dart';
 import '../layout/main_layout.dart';
 import '../services/api_models.dart' as api;
 import '../services/service_provider.dart';
 import '../services/secure_storage.dart';
-import 'web_view_screen.dart';
+import '../utils/number_formatter.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
   final Transaction? transaction;
@@ -59,6 +62,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     
     // اگر transactionId موجود است، تراکنش را از API دریافت کن (مطابق با transaction_detail.kt)
     if (widget.transactionId != null && widget.transactionId!.isNotEmpty) {
+      print('🔍 TransactionDetail: Loading from API with txHash: ${widget.transactionId}');
       _loadTransactionDetails();
     } else {
       _fetchExplorerUrl();
@@ -103,6 +107,17 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         );
         
         print('✅ TransactionDetail: Found transaction: ${transaction.txHash ?? 'unknown'}');
+        print('✅ TransactionDetail: Transaction details:');
+        print('   amount: ${transaction.amount}');
+        print('   status: ${transaction.status}');
+        print('   direction: ${transaction.direction}');
+        print('   from: ${transaction.from}');
+        print('   to: ${transaction.to}');
+        print('   timestamp: ${transaction.timestamp}');
+        print('   price: ${transaction.price}');
+        print('   explorerUrl: ${transaction.explorerUrl}');
+        print('   fee: ${transaction.fee}');
+        print('   assetType: ${transaction.assetType}');
         
         // تبدیل به Transaction مدل محلی با null safety
         loadedTransaction = Transaction(
@@ -117,9 +132,15 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           blockchainName: transaction.blockchainName ?? '',
           price: transaction.price,
           temporaryId: transaction.temporaryId,
+          explorerUrl: transaction.explorerUrl,
+          fee: transaction.fee,
+          assetType: transaction.assetType,
+          tokenContract: transaction.tokenContract,
         );
         
-        print('✅ TransactionDetail: Successfully loaded transaction details');
+        print('✅ TransactionDetail: Successfully created loadedTransaction');
+        print('   loadedTransaction.amount: ${loadedTransaction!.amount}');
+        print('   loadedTransaction.status: ${loadedTransaction!.status}');
       } else {
         print('❌ TransactionDetail: API returned error status: ${response.status}');
         throw Exception('Failed to fetch transaction details');
@@ -136,24 +157,96 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   void _fetchExplorerUrl() async {
     await Future.delayed(const Duration(milliseconds: 600));
     setState(() {
-      final txHash = widget.hash ?? loadedTransaction?.txHash ?? widget.transaction?.txHash ?? '';
-      explorerUrl = 'https://explorer.example.com/tx/$txHash';
+      // ابتدا سعی می‌کنیم از explorerUrl که از API می‌آید استفاده کنیم
+      String? apiExplorerUrl = loadedTransaction?.explorerUrl ?? widget.transaction?.explorerUrl;
+      
+      print('🔍 Transaction Detail: Checking explorer URLs:');
+      print('   loadedTransaction?.explorerUrl: ${loadedTransaction?.explorerUrl}');
+      print('   widget.transaction?.explorerUrl: ${widget.transaction?.explorerUrl}');
+      print('   Final apiExplorerUrl: $apiExplorerUrl');
+      
+      if (apiExplorerUrl != null && apiExplorerUrl.isNotEmpty) {
+        explorerUrl = apiExplorerUrl;
+        print('✅ Transaction Detail: Using API explorer URL: $explorerUrl');
+      } else {
+        // اگر API explorer URL ندارد، خودمان می‌سازیم
+        final txHash = widget.hash ?? loadedTransaction?.txHash ?? widget.transaction?.txHash ?? '';
+        final blockchain = loadedTransaction?.blockchainName ?? widget.transaction?.blockchainName ?? '';
+        
+        print('⚠️ Transaction Detail: No API explorer URL found, building manually');
+        print('   TxHash: $txHash');
+        print('   Blockchain: $blockchain');
+        
+        if (txHash.isNotEmpty) {
+          explorerUrl = _buildExplorerUrl(blockchain, txHash);
+          print('   Generated Explorer URL: $explorerUrl');
+        } else {
+          print('❌ Transaction Detail: No txHash found, cannot generate explorer URL');
+        }
+      }
+      
+      print('🎯 Transaction Detail: Final explorerUrl set to: $explorerUrl');
     });
   }
 
+  String _buildExplorerUrl(String blockchain, String txHash) {
+    // ساخت URL explorer بر اساس blockchain
+    switch (blockchain.toLowerCase()) {
+      case 'ethereum':
+        return 'https://etherscan.io/tx/$txHash';
+      case 'bitcoin':
+        return 'https://blockstream.info/tx/$txHash';
+      case 'polygon':
+        return 'https://polygonscan.com/tx/$txHash';
+      case 'binance':
+      case 'bsc':
+        return 'https://bscscan.com/tx/$txHash';
+      case 'avalanche':
+        return 'https://snowtrace.io/tx/$txHash';
+      case 'arbitrum':
+        return 'https://arbiscan.io/tx/$txHash';
+      case 'optimism':
+        return 'https://optimistic.etherscan.io/tx/$txHash';
+      case 'fantom':
+        return 'https://ftmscan.com/tx/$txHash';
+      case 'solana':
+        return 'https://solscan.io/tx/$txHash';
+      case 'tron':
+        return 'https://tronscan.org/#/transaction/$txHash';
+      case 'cardano':
+        return 'https://cardanoscan.io/transaction/$txHash';
+      case 'polkadot':
+        return 'https://polkadot.subscan.io/extrinsic/$txHash';
+      case 'cosmos':
+        return 'https://www.mintscan.io/cosmos/txs/$txHash';
+      case 'xrp':
+        return 'https://xrpscan.com/tx/$txHash';
+      default:
+        return 'https://etherscan.io/tx/$txHash'; // fallback to Ethereum
+    }
+  }
+
   String _getAmount() {
-    if (widget.amount != null) return widget.amount!;
-    if (loadedTransaction != null) {
+    String amount = '0';
+    String symbol = _getSymbol();
+    
+    if (widget.amount != null) {
+      amount = widget.amount!;
+    } else if (loadedTransaction != null) {
       final tx = loadedTransaction!;
-      final prefix = tx.direction == 'inbound' ? '+' : '-';
-      return '$prefix${tx.amount}';
-    }
-    if (widget.transaction != null) {
+      final isInbound = tx.direction == 'inbound';
+      amount = NumberFormatter.formatTransactionAmount(tx.amount, isInbound);
+    } else if (widget.transaction != null) {
       final tx = widget.transaction!;
-      final prefix = tx.direction == 'inbound' ? '+' : '-';
-      return '$prefix${tx.amount}';
+      final isInbound = tx.direction == 'inbound';
+      amount = NumberFormatter.formatTransactionAmount(tx.amount, isInbound);
     }
-    return '0.00';
+    
+    // اضافه کردن symbol به amount
+    if (symbol.isNotEmpty) {
+      return '$amount $symbol';
+    }
+    return amount;
   }
 
   String _getSymbol() {
@@ -161,15 +254,75 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   String _getFiat() {
-    return widget.fiat ?? '≈ \$0.00';
+    if (widget.fiat != null) return widget.fiat!;
+    if (loadedTransaction != null) {
+      final tx = loadedTransaction!;
+      try {
+        final amount = double.parse(tx.amount);
+        final price = tx.price ?? 0.0;
+        final value = amount * price;
+        return NumberFormatter.formatCurrency(value, '≈ \$');
+      } catch (e) {
+        return '≈ \$0.00';
+      }
+    }
+    return '≈ \$0.00';
   }
 
   String _getDate() {
-    return widget.date ?? loadedTransaction?.timestamp ?? widget.transaction?.timestamp ?? _safeTranslate('unknown_date', 'Unknown Date');
+    if (widget.date != null) return widget.date!;
+    
+    String? timestamp;
+    if (loadedTransaction != null) {
+      timestamp = loadedTransaction!.timestamp;
+    } else if (widget.transaction != null) {
+      timestamp = widget.transaction!.timestamp;
+    }
+    
+    if (timestamp != null && timestamp.isNotEmpty) {
+      try {
+        final dateTime = DateTime.parse(timestamp);
+        return DateFormat('MMM d, yyyy, h:mm a').format(dateTime);
+      } catch (e) {
+        print('❌ TransactionDetail: Error parsing date: $e');
+        return timestamp; // Return raw timestamp if parsing fails
+      }
+    }
+    
+    return _safeTranslate('unknown_date', 'Unknown Date');
   }
 
   String _getStatus() {
-    final status = widget.status ?? loadedTransaction?.status ?? widget.transaction?.status ?? 'Completed';
+    String status = 'completed'; // Default to completed for API transactions
+    
+    if (widget.status != null) {
+      status = widget.status!;
+    } else if (loadedTransaction != null) {
+      final apiStatus = loadedTransaction!.status.toLowerCase();
+      // Map API status values to standard values
+      switch (apiStatus) {
+        case 'success':
+        case 'confirmed':
+        case 'completed':
+        case 'mined':
+          status = 'completed';
+          break;
+        case 'pending':
+        case 'unconfirmed':
+          status = 'pending';
+          break;
+        case 'failed':
+        case 'error':
+        case 'rejected':
+          status = 'failed';
+          break;
+        default:
+          status = 'completed'; // Default for unknown API statuses
+      }
+    } else if (widget.transaction != null) {
+      status = widget.transaction!.status;
+    }
+    
     // Translate status based on value
     switch (status.toLowerCase()) {
       case 'completed':
@@ -179,25 +332,189 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       case 'failed':
         return _safeTranslate('failed', 'Failed');
       default:
-        return _safeTranslate('unknown', 'Unknown');
+        return _safeTranslate('completed', 'Completed'); // Default to completed
     }
   }
 
-  String _getSender() {
-    return widget.sender ?? loadedTransaction?.from ?? widget.transaction?.from ?? _safeTranslate('unknown', 'Unknown');
+  String _getSenderOrRecipient() {
+    if (widget.sender != null) return _formatAddress(widget.sender!);
+    
+    if (loadedTransaction != null) {
+      final tx = loadedTransaction!;
+      final isInbound = tx.direction == 'inbound';
+      final address = isInbound ? tx.from : tx.to; // inbound: from sender, outbound: to recipient
+      return _formatAddress(address ?? '');
+    }
+    
+    if (widget.transaction != null) {
+      final tx = widget.transaction!;
+      final isInbound = tx.direction == 'inbound';
+      final address = isInbound ? tx.from : tx.to;
+      return _formatAddress(address ?? '');
+    }
+    
+    return _safeTranslate('unknown', 'Unknown');
+  }
+  
+  String _getSenderOrRecipientLabel() {
+    // برای route parameters، بسته به amount prefix تشخیص بده
+    if (widget.amount != null) {
+      final isInbound = widget.amount!.startsWith('+');
+      return isInbound 
+          ? _safeTranslate('sender', 'Sender')
+          : _safeTranslate('recipient', 'Recipient');
+    }
+    
+    if (loadedTransaction != null) {
+      final isInbound = loadedTransaction!.direction == 'inbound';
+      return isInbound 
+          ? _safeTranslate('sender', 'Sender')
+          : _safeTranslate('recipient', 'Recipient');
+    }
+    
+    if (widget.transaction != null) {
+      final isInbound = widget.transaction!.direction == 'inbound';
+      return isInbound 
+          ? _safeTranslate('sender', 'Sender')
+          : _safeTranslate('recipient', 'Recipient');
+    }
+    
+    return _safeTranslate('sender', 'Sender'); // default
   }
 
   String _getNetworkFee() {
-    return widget.networkFee ?? '0.00';
+    final fee = widget.networkFee ?? '0';
+    try {
+      final feeDouble = double.parse(fee.replaceAll(RegExp(r'[^\d.]'), ''));
+      return NumberFormatter.formatDouble(feeDouble);
+    } catch (e) {
+      return fee;
+    }
   }
 
   String _getHash() {
     return widget.hash ?? loadedTransaction?.txHash ?? widget.transaction?.txHash ?? '';
   }
 
+  /// باز کردن URL explorer در مرورگر داخلی اپلیکیشن
+  Future<void> _openExplorerUrl() async {
+    if (explorerUrl.isEmpty) {
+      print('❌ Transaction Detail: No explorer URL available');
+      return;
+    }
+
+    print('🔗 Transaction Detail: Opening explorer URL in app: $explorerUrl');
+
+    try {
+      final uri = Uri.parse(explorerUrl);
+      if (await canLaunchUrl(uri)) {
+        // استفاده از مرورگر داخلی اپلیکیشن
+        await launchUrl(
+          uri,
+          mode: LaunchMode.inAppWebView,
+          webViewConfiguration: const WebViewConfiguration(
+            enableJavaScript: true,
+            enableDomStorage: true,
+          ),
+        );
+        print('✅ Transaction Detail: Successfully opened in in-app browser');
+      } else {
+        print('❌ Transaction Detail: Cannot launch URL: $explorerUrl');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_safeTranslate('cannot_open_explorer', 'Cannot open explorer')),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (launchError) {
+      print('❌ Transaction Detail: Launch URL failed: $launchError');
+      
+      // Fallback: اگر inAppWebView کار نکرد، به external browser برو
+      try {
+        print('🔄 Transaction Detail: Fallback to external browser');
+        final uri = Uri.parse(explorerUrl);
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        print('✅ Transaction Detail: Fallback successful - opened in external browser');
+      } catch (fallbackError) {
+        print('❌ Transaction Detail: Fallback also failed: $fallbackError');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_safeTranslate('error_opening_explorer', 'Error opening explorer')),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// اشتراک گذاری تراکنش (همراه با URL explorer در صورت وجود)
+  Future<void> _shareTransaction() async {
+    try {
+      print('📤 Transaction Detail: Sharing transaction...');
+      
+      // ساخت متن مناسب برای اشتراک‌گذاری
+      final txHash = _getHash();
+      final symbol = _getSymbol();
+      final amount = _getAmount();
+      final date = _getDate();
+      final status = _getStatus();
+      
+      // ساخت متن کامل تراکنش
+      String shareText = '';
+      
+      if (explorerUrl.isNotEmpty) {
+        final shareTextTemplate = _safeTranslate(
+          'share_transaction_text', 
+          'Transaction Details:\n\nAmount: {amount}\nHash: {hash}\n\nView on Explorer:'
+        );
+        
+        // جایگزینی placeholders با مقادیر واقعی
+        shareText = shareTextTemplate
+            .replaceAll('{amount}', amount)
+            .replaceAll('{hash}', txHash);
+        
+        shareText = '$shareText\n$explorerUrl';
+        print('✅ Transaction Detail: Sharing with explorer URL: $explorerUrl');
+      } else {
+        // اگر explorer URL نیست، فقط اطلاعات اساسی
+        shareText = _safeTranslate('transaction_details', 'Transaction Details') + ':\n\n' +
+                   _safeTranslate('amount', 'Amount') + ': $amount\n' +
+                   _safeTranslate('date', 'Date') + ': $date\n' +
+                   _safeTranslate('status', 'Status') + ': $status\n' +
+                   'Hash: $txHash';
+        print('⚠️ Transaction Detail: Sharing without explorer URL');
+      }
+      
+      await Share.share(
+        shareText,
+        subject: _safeTranslate('transaction_details', 'Transaction Details'),
+      );
+      
+      print('✅ Transaction Detail: Successfully shared transaction');
+    } catch (shareError) {
+      print('❌ Transaction Detail: Share failed: $shareError');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_safeTranslate('share_failed', 'Failed to share transaction')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   String _formatAddress(String address) {
-    if (address.length > 12) {
-      return '${address.substring(0, 6)}...${address.substring(address.length - 6)}';
+    if (address.length > 11) {
+      return '${address.substring(0, 6)}.....${address.substring(address.length - 5)}';
     }
     return address;
   }
@@ -208,7 +525,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     final fiatStr = _getFiat();
     final dateStr = _getDate();
     final statusStr = _getStatus();
-    final addressStr = _formatAddress(_getSender());
+    final senderRecipientLabel = _getSenderOrRecipientLabel();
+    final addressStr = _getSenderOrRecipient();
     final feeStr = _getNetworkFee();
 
     return MainLayout(
@@ -234,9 +552,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                         Text(_safeTranslate('transfer', 'Transfer'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                         IconButton(
                           icon: const Icon(Icons.share, color: Colors.black),
-                          onPressed: explorerUrl.isNotEmpty ? () {
-                            // Remove success message - share silently
-                          } : null,
+                          onPressed: _shareTransaction, // همیشه فعال باشد
                         ),
                       ],
                     ),
@@ -266,7 +582,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           const Divider(height: 24, color: Color(0xFFEEEEEE)),
                           _DetailRow(label: _safeTranslate('status', 'Status'), value: statusStr),
                           const Divider(height: 24, color: Color(0xFFEEEEEE)),
-                          _DetailRow(label: _safeTranslate('sender', 'Sender'), value: addressStr),
+                          _DetailRow(label: senderRecipientLabel, value: addressStr),
                           const Divider(height: 24, color: Color(0xFFEEEEEE)),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -300,16 +616,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => WebViewScreen(
-                                  url: explorerUrl,
-                                ),
-                              ),
-                            );
-                          },
+                          onPressed: _openExplorerUrl,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF11c699),
                             foregroundColor: Colors.white,

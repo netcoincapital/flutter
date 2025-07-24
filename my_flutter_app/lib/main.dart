@@ -301,22 +301,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       
       print('🎯 Final initial route determined: $initialRoute');
       
-      // 🚀 Step 2: Run all non-critical initializations in parallel
-      final parallelFutures = await Future.wait([
-        // Language initialization
-        LanguageManager.initializeLanguage(context),
-        // Get UserId from SecureStorage
-        _getUserId(),
-        // Test server connection
-        _testServerConnection(),
-        // Show network status
-        ServiceProvider.instance.showNetworkStatus(),
-        // Debug: Check passcode status
-        _checkPasscodeDebug(),
-      ]);
+      // 🚀 Step 2: Run critical initializations first, then non-critical ones
+      // Critical operations first
+      await LanguageManager.initializeLanguage(context);
+      _userId = await _getUserId();
       
-      // Extract results from parallel operations
-      _userId = parallelFutures[1] as String?;
+      // Non-critical operations in background (don't await)
+      _testServerConnection().then((result) {
+        print(result ? '✅ Server connection successful' : '⚠️ Server connection failed');
+      });
+      
+      ServiceProvider.instance.showNetworkStatus().then((_) {
+        print('✅ Network status shown');
+      });
+      
+      _checkPasscodeDebug().then((_) {
+        print('✅ Passcode debug completed');
+      });
       
       // 🎯 Step 3: Start transaction notification listener (after UI)
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -527,34 +528,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               settings: settings,
             );
           }
-          if (settings.name != null && settings.name!.startsWith('/transaction_detail/')) {
-            final path = settings.name!.substring('/transaction_detail/'.length);
-            final parts = path.split('/');
-            if (parts.length >= 8) {
-              final amount = Uri.decodeComponent(parts[0]);
-              final symbol = Uri.decodeComponent(parts[1]);
-              final fiat = Uri.decodeComponent(parts[2]);
-              final date = Uri.decodeComponent(parts[3]);
-              final status = Uri.decodeComponent(parts[4]);
-              final sender = Uri.decodeComponent(parts[5]);
-              final networkFee = Uri.decodeComponent(parts[6]);
-              final hash = Uri.decodeComponent(parts[7]);
-              
-              return MaterialPageRoute(
-                builder: (context) => TransactionDetailScreen(
-                  amount: amount,
-                  symbol: symbol,
-                  fiat: fiat,
-                  date: date,
-                  status: status,
-                  sender: sender,
-                  networkFee: networkFee,
-                  hash: hash,
-                ),
-                settings: settings,
-              );
-            }
+          // Route برای دریافت جزئیات تراکنش از API با transactionId (از crypto_details_screen)
+          if (settings.name == '/transaction_detail' && settings.arguments != null) {
+            final args = settings.arguments as Map<String, dynamic>;
+            final transactionId = args['transactionId'] as String?;
+            
+            return MaterialPageRoute(
+              builder: (context) => TransactionDetailScreen(
+                transactionId: transactionId, // دریافت جزئیات از API
+              ),
+              settings: settings,
+            );
           }
+
           return null;
         },
       ),

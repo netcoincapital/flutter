@@ -144,32 +144,24 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
       
       if (response.success && response.userID != null) {
         print('🔧 DEBUG: Wallet creation successful!');
+        print('   UserID: ${response.userID}');
+        print('   WalletID: ${response.walletID}');
+        print('   Has Mnemonic: ${response.mnemonic != null}');
         
-        // Get existing wallets list
-        final existingWallets = await SecureStorage.instance.getWalletsList();
-        
-        // Add new wallet to the list
-        existingWallets.add({
-          'walletName': newWalletName,
-          'userID': response.userID!,
-          'mnemonic': response.mnemonic ?? '',
-        });
-        
-        // Save updated wallets list
-        await SecureStorage.instance.saveWalletsList(existingWallets);
-        final debugWallets = await SecureStorage.instance.getWalletsList();
-        print('Wallets after add: ' + debugWallets.toString());
-        await SecureStorage.instance.saveSelectedWallet(newWalletName, response.userID!);
-        await SecureStorage.instance.saveUserId(newWalletName, response.userID!);
-        
-        // **اصلاح مهم**: ذخیره mnemonic در SecureStorage  
-        if (response.mnemonic != null) {
-          await SecureStorage.instance.saveMnemonic(newWalletName, response.userID!, response.mnemonic!);
-          print('✅ Mnemonic saved in SecureStorage with key: Mnemonic_${response.userID!}_$newWalletName');
-        }
+        // Save wallet information securely using WalletStateManager
+        await WalletStateManager.instance.saveWalletInfo(
+          walletName: newWalletName,
+          userId: response.userID!,
+          walletId: response.walletID ?? '', // ✅ Save WalletID from server
+          mnemonic: response.mnemonic,
+          activeTokens: ['BTC', 'ETH', 'TRX'], // ✅ Default active tokens for new wallet
+        );
         
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('UserID', response.userID!);
+        if (response.walletID != null) {
+          await prefs.setString('WalletID', response.walletID!);
+        }
         if (response.mnemonic != null) {
           await prefs.setString('mnemonic', response.mnemonic!);
         }
@@ -222,7 +214,7 @@ class _InsideNewWalletScreenState extends State<InsideNewWalletScreen> {
               print('🔄 Starting device registration');
               await DeviceRegistrationManager.instance.registerDevice(
                 userId: response.userID!,
-                walletId: '',
+                walletId: response.walletID ?? '', // ✅ Use WalletID from server
               );
               print('🔄 Device registration result: true');
               deviceRegistrationSuccess = true;

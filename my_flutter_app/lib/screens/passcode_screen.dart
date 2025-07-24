@@ -5,6 +5,7 @@ import 'package:easy_localization/easy_localization.dart';
 import '../services/passcode_manager.dart';
 import '../services/wallet_state_manager.dart';
 import '../services/security_settings_manager.dart';
+import 'dart:async'; // Added for Timer
 
 class PasscodeScreen extends StatefulWidget {
   final String title;
@@ -48,6 +49,8 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
     Color(0xFF0ab62c), Color(0xFF15b65c), Color(0xFF1bb679),
     Color(0xFF27b6ac), Color(0xFF2db6c7), Color(0xFF39b6fb)
   ];
+
+  Timer? _lockoutTimer;
 
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
@@ -127,18 +130,24 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
   }
 
   void _startLockoutTimer() {
-    Future.delayed(const Duration(seconds: 1), () async {
-      if (mounted) {
-        final remaining = await PasscodeManager.getLockoutRemainingTime();
-        setState(() {
-          lockoutRemainingTime = remaining;
-        });
-        
-        if (remaining > 0) {
-          _startLockoutTimer();
-        } else {
-          await _checkLockStatus();
-        }
+    // Cancel existing timer
+    _lockoutTimer?.cancel();
+    
+    // Use Timer.periodic instead of recursive Future.delayed
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      final remaining = await PasscodeManager.getLockoutRemainingTime();
+      setState(() {
+        lockoutRemainingTime = remaining;
+      });
+      
+      if (remaining <= 0) {
+        timer.cancel();
+        await _checkLockStatus();
       }
     });
   }
@@ -246,6 +255,7 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
 
   @override
   void dispose() {
+    _lockoutTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
