@@ -9,8 +9,8 @@ import UIKit
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
     
-    // Check for fresh install and cleanup any remaining data
-    checkAndCleanupOnFreshInstall()
+    // Disabled aggressive cleanup on launch to prevent loss of user preferences (token toggles)
+    // iOS already clears data on uninstall; do not clear UserDefaults on normal app launches.
     
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

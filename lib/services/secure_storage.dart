@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 /// سرویس ذخیره‌سازی امن برای تمام پلتفرم‌ها
@@ -13,7 +14,10 @@ class SecureStorage {
       encryptedSharedPreferences: true,
     ),
     iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock_this_device,
+      accessibility: KeychainAccessibility.first_unlock,
+      synchronizable: false, // جلوگیری از sync با iCloud
+      accountName: 'com.coinceeper.app', // مشخص کردن App-specific storage
+      groupId: null, // عدم استفاده از shared keychain group
     ),
   );
 
@@ -76,9 +80,90 @@ class SecureStorage {
   Future<void> clearAllSecureData() async {
     try {
       await _storage.deleteAll();
+      print('✅ All secure data cleared');
     } catch (e) {
       print('Error clearing secure data: $e');
       rethrow;
+    }
+  }
+
+  /// بررسی و پاکسازی داده‌های orphaned در صورت نصب جدید
+  Future<void> checkAndClearOrphanedData() async {
+    try {
+      // بررسی کن که آیا این اولین اجرای اپ پس از نصب است
+      final isFirstRun = await _isFirstRunAfterInstall();
+      
+      if (isFirstRun) {
+        print('🔍 iOS: First run after install detected, clearing orphaned keychain data');
+        
+        // پاک کردن تمام داده‌های keychain
+        await clearAllSecureData();
+        
+        // ثبت که اولین اجرا انجام شده
+        await _markFirstRunCompleted();
+        
+        print('✅ iOS: Orphaned keychain data cleared');
+      } else {
+        print('📱 iOS: Normal app launch, keychain data preserved');
+      }
+    } catch (e) {
+      print('❌ Error in checkAndClearOrphanedData: $e');
+    }
+  }
+
+  /// بررسی اینکه آیا این اولین اجرای اپ پس از نصب است
+  Future<bool> _isFirstRunAfterInstall() async {
+    try {
+      // استفاده از SharedPreferences برای تشخیص نصب جدید
+      // زیرا SharedPreferences همراه با اپ حذف می‌شود ولی Keychain باقی می‌ماند
+      final prefs = await SharedPreferences.getInstance();
+      final hasSharedPrefsData = prefs.getBool('app_initialized') ?? false;
+      
+      if (!hasSharedPrefsData) {
+        // اگر SharedPreferences خالی است ولی Keychain دارای داده است،
+        // یعنی اپ حذف و دوباره نصب شده
+        final hasKeychainData = await _hasAnyKeychainData();
+        
+        if (hasKeychainData) {
+          print('🔍 iOS: App reinstalled detected - SharedPreferences empty but Keychain has data');
+          return true;
+        } else {
+          print('🔍 iOS: Fresh install detected - both SharedPreferences and Keychain are empty');
+          return false; // نصب کاملاً جدید
+        }
+      }
+      
+      return false; // اجرای عادی
+    } catch (e) {
+      print('❌ Error checking first run: $e');
+      return false;
+    }
+  }
+
+  /// بررسی اینکه آیا Keychain دارای داده است
+  Future<bool> _hasAnyKeychainData() async {
+    try {
+      final allData = await _storage.readAll();
+      return allData.isNotEmpty;
+    } catch (e) {
+      print('❌ Error checking keychain data: $e');
+      return false;
+    }
+  }
+
+  /// علامت‌گذاری اینکه اپ initialize شده
+  Future<void> _markFirstRunCompleted() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('app_initialized', true);
+      await prefs.setString('app_install_timestamp', DateTime.now().millisecondsSinceEpoch.toString());
+      
+      // همچنین در keychain هم ذخیره کن
+      await _storage.write(key: 'app_last_initialized', value: DateTime.now().millisecondsSinceEpoch.toString());
+      
+      print('✅ iOS: App marked as initialized');
+    } catch (e) {
+      print('❌ Error marking first run completed: $e');
     }
   }
 
@@ -137,6 +222,45 @@ class SecureStorage {
   /// خواندن Passcode
   Future<String?> getPasscode() async {
     return await getSecureData('Passcode');
+  }
+
+  // ==================== DEBUG METHODS ====================
+
+  /// Debug: نمایش تمام کلیدهای موجود در keychain
+  Future<void> debugPrintAllKeychainKeys() async {
+    try {
+      final allData = await _storage.readAll();
+      print('=== KEYCHAIN DEBUG ===');
+      print('Total keys in keychain: ${allData.length}');
+      
+      if (allData.isEmpty) {
+        print('📱 Keychain is empty');
+      } else {
+        print('📱 Keychain keys:');
+        for (final key in allData.keys) {
+          print('   - $key');
+        }
+      }
+      print('=== END KEYCHAIN DEBUG ===');
+    } catch (e) {
+      print('❌ Error debugging keychain: $e');
+    }
+  }
+
+  /// Debug: پاک کردن اجباری تمام داده‌های keychain
+  Future<void> debugForceClearAllData() async {
+    try {
+      print('🗑️ DEBUG: Force clearing all keychain data...');
+      await clearAllSecureData();
+      
+      // همچنین SharedPreferences را هم پاک کن
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      
+      print('✅ DEBUG: All data cleared (Keychain + SharedPreferences)');
+    } catch (e) {
+      print('❌ Error in debug force clear: $e');
+    }
   }
 
   /// ذخیره تنظیمات کیف پول

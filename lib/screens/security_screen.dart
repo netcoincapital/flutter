@@ -161,10 +161,10 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
         final passcodeAlreadySet = await PasscodeManager.isPasscodeSet();
         
         if (passcodeAlreadySet) {
-          // If passcode is already set, just enable it
-          await _securityManager.setPasscodeEnabled(true);
+          // 🔒 CRITICAL FIX: Don't override user's passcode enabled setting
+          // Just mark as accessed - SecuritySettingsManager handles the smart default
           await prefs.setBool(securityScreenAccessedKey, true);
-          print('🔒 Passcode already set - enabled by default');
+          print('🔒 Passcode already set - letting SecuritySettingsManager handle enabled state');
         } else {
           // If passcode is not set, show setup dialog
           _showInitialPasscodeSetupDialog();
@@ -193,13 +193,20 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
       
       if (mounted) {
         setState(() {
-          _passcodeEnabled = settings['passcodeEnabled'] ?? true; // Default to true
+          // 🔒 CRITICAL FIX: No default override - trust SecuritySettingsManager
+          _passcodeEnabled = settings['passcodeEnabled'] ?? false; // Use SecuritySettingsManager's logic
           _autoLockDuration = settings['autoLockDuration'] ?? AutoLockDuration.immediate;
           _lockMethod = settings['lockMethod'] ?? LockMethod.passcodeAndBiometric;
           _biometricAvailable = settings['biometricAvailable'] ?? false;
           _passcodeSet = settings['passcodeSet'] ?? false;
           _isLoading = false;
         });
+        
+        // 🔍 DEBUG: Log the actual loaded values
+        print('🔒 Security Screen loaded settings:');
+        print('   _passcodeEnabled: $_passcodeEnabled');
+        print('   _passcodeSet: $_passcodeSet');
+        print('   settings[passcodeEnabled]: ${settings['passcodeEnabled']}');
       }
     } catch (e) {
       print('❌ Error loading security settings: $e');
@@ -316,15 +323,374 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
     }
   }
 
-  /// نمایش تأیید غیرفعال کردن passcode
+  /// نمایش تأیید غیرفعال کردن passcode با modal زیبا
   Future<bool> _showConfirmDisableDialog() async {
-    // Remove dialog - confirm disable dialog removed
-    return true; // Always return true to allow disabling
+    return await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Warning Icon & Title
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.red,
+                      size: 48,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Security Warning',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Are you sure you want to disable passcode protection?',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Security Risks Section
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.red.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.security, color: Colors.red, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Security Risks:',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildRiskItem('Anyone can access your wallet', Icons.person_outline),
+                  _buildRiskItem('Your crypto assets will be unprotected', Icons.account_balance_wallet_outlined),
+                  _buildRiskItem('Unauthorized transactions possible', Icons.swap_horiz),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Warning Message
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'This action will remove all security protection from your crypto wallet.',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Action Buttons
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                        ),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Disable Passcode',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ) ?? false;
+  }
+  
+  /// Build risk item widget
+  Widget _buildRiskItem(String text, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.red, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.red,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// نمایش dialog انتخاب auto-lock duration
   Future<void> _showAutoLockDialog() async {
-    // Remove modal bottom sheet - auto lock dialog removed
+    final selectedDuration = await showModalBottomSheet<AutoLockDuration>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Title
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Text(
+                _safeTranslate('auto_lock_duration', 'Auto-lock Duration'),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            
+            // Options
+            _buildAutoLockOption(
+              AutoLockDuration.immediate,
+              _safeTranslate('immediate', 'Immediate'),
+              _safeTranslate('lock_immediately_desc', 'Lock as soon as app goes to background'),
+              Icons.flash_on,
+              Colors.red,
+            ),
+            
+            _buildAutoLockOption(
+              AutoLockDuration.fiveMinutes,
+              _safeTranslate('5_minutes', '5 Minutes'),
+              _safeTranslate('lock_after_5min_desc', 'Lock after 5 minutes in background'),
+              Icons.timer,
+              Colors.orange,
+            ),
+            
+            _buildAutoLockOption(
+              AutoLockDuration.tenMinutes,
+              _safeTranslate('10_minutes', '10 Minutes'),
+              _safeTranslate('lock_after_10min_desc', 'Lock after 10 minutes in background'),
+              Icons.access_time,
+              Colors.blue,
+            ),
+            
+            _buildAutoLockOption(
+              AutoLockDuration.fifteenMinutes,
+              _safeTranslate('15_minutes', '15 Minutes'),
+              _safeTranslate('lock_after_15min_desc', 'Lock after 15 minutes in background'),
+              Icons.schedule,
+              Colors.green,
+            ),
+            
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+    
+    if (selectedDuration != null && selectedDuration != _autoLockDuration) {
+      await _securityManager.setAutoLockDuration(selectedDuration);
+      await _loadSecuritySettings();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _safeTranslate('auto_lock_updated', 'Auto-lock duration updated to {duration}')
+                  .replaceAll('{duration}', _securityManager.getAutoLockDurationText(selectedDuration))
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+  }
+  
+  /// Build auto-lock option widget
+  Widget _buildAutoLockOption(
+    AutoLockDuration duration,
+    String title,
+    String description,
+    IconData icon,
+    Color color,
+  ) {
+    final isSelected = _autoLockDuration == duration;
+    
+    return InkWell(
+      onTap: () => Navigator.pop(context, duration),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? color : Colors.grey.withOpacity(0.2),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: isSelected ? color : Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelected ? color.withOpacity(0.8) : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              Icon(Icons.check_circle, color: color, size: 24),
+          ],
+        ),
+      ),
+    );
   }
 
   /// نمایش dialog انتخاب lock method
@@ -416,61 +782,6 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
             
             const SizedBox(height: 24),
             
-            // Auto-lock Status Card (only show when passcode is enabled)
-            if (_passcodeEnabled && _passcodeSet)
-              _buildAutoLockStatusCard(),
-            
-            const SizedBox(height: 16),
-            
-            // اطلاعات اضافی
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.info, color: Colors.blue, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        _safeTranslate('security_info', 'Security Information'),
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _safeTranslate('security_description', 'Configure security settings to protect your wallet. Passcode and biometric authentication help keep your assets safe.'),
-                    style: const TextStyle(fontSize: 14, color: Colors.blue),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        _biometricAvailable ? Icons.check_circle : Icons.error,
-                        color: _biometricAvailable ? Colors.green : Colors.red,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _biometricAvailable 
-                          ? _safeTranslate('biometric_available', 'Biometric authentication available')
-                          : _safeTranslate('biometric_not_available', 'Biometric authentication not available'),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _biometricAvailable ? Colors.green : Colors.red,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            
             const SizedBox(height: 24),
             
             // Debug button for testing passcode persistence
@@ -484,6 +795,42 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
                   onTap: _debugPasscodeState,
                 ),
               ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.storage, color: Colors.orange),
+                  title: const Text('Test SharedPreferences'),
+                  subtitle: const Text('Test persistence across app kills'),
+                  onTap: _testSharedPreferencesPersistence,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.android, color: Colors.green),
+                  title: const Text('Android Storage Debug'),
+                  subtitle: const Text('Test Android app data persistence'),
+                  onTap: _debugAndroidStorageBehavior,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.refresh, color: Colors.red),
+                  title: const Text('🔧 Force Re-Init'),
+                  subtitle: const Text('Force SecurityManager re-initialization'),
+                  onTap: _forceReinitialization,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.science, color: Colors.blue),
+                  title: const Text('🧪 Comprehensive Test'),
+                  subtitle: const Text('Full persistence & initialization test'),
+                  onTap: _comprehensivePersistenceTest,
+                ),
+              ),
             ],
           ],
         ),
@@ -491,6 +838,30 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
     );
   }
   
+  /// Test SharedPreferences persistence
+  Future<void> _testSharedPreferencesPersistence() async {
+    await _securityManager.testSharedPreferencesPersistence();
+  }
+
+  /// Debug Android storage behavior
+  Future<void> _debugAndroidStorageBehavior() async {
+    await _securityManager.debugAndroidStorageBehavior();
+  }
+
+  /// Force re-initialization for debugging
+  Future<void> _forceReinitialization() async {
+    print('🔧 === FORCING RE-INITIALIZATION ===');
+    SecuritySettingsManager.forceReinitialization();
+    await _securityManager.initialize();
+    await _loadSecuritySettings();
+    print('🔧 === RE-INITIALIZATION COMPLETED ===');
+  }
+
+  /// Comprehensive persistence test
+  Future<void> _comprehensivePersistenceTest() async {
+    await _securityManager.comprehensivePersistenceTest();
+  }
+
   /// Debug method to test passcode state
   Future<void> _debugPasscodeState() async {
     try {

@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import '../utils/json_converters.dart';
 
 part 'crypto_token.g.dart';
 
@@ -11,10 +12,12 @@ class CryptoToken {
   @JsonKey(name: 'iconUrl')
   final String? iconUrl;
   @JsonKey(name: 'isEnabled')
+  @BoolIntConverter()
   final bool isEnabled;
   @JsonKey(name: 'amount')
   final double amount;
   @JsonKey(name: 'isToken')
+  @BoolIntConverter()
   final bool isToken;
   @JsonKey(name: 'SmartContractAddress')
   final String? smartContractAddress;
@@ -23,7 +26,7 @@ class CryptoToken {
     this.name,
     this.symbol,
     this.blockchainName,
-    this.iconUrl = "https://coinceeper.com/defualtIcons/coin.png",
+    this.iconUrl = "https://coinceeper.com/defaultIcons/coin.png",
     required this.isEnabled,
     this.amount = 0.0,
     required this.isToken,

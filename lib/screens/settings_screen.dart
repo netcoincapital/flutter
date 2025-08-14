@@ -118,7 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// باز کردن لینک تلگرام
   Future<void> _openTelegramLink() async {
-    const telegramUrl = 'https://t.me/Laxce_L2';
+    const telegramUrl = 'https://t.me/Coinceeper_L2';
     
     print('🔗 Trying to open Telegram link...');
     
@@ -149,7 +149,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('📱 Trying External App Launcher...');
       await LaunchApp.openApp(
         androidPackageName: 'org.telegram.messenger',
-        iosUrlScheme: 'tg://resolve?domain=Laxce_L2',
+        iosUrlScheme: 'tg://resolve?domain=Coinceeper_L2',
         appStoreLink: telegramUrl,
         openStore: false,
       );
@@ -201,7 +201,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// باز کردن لینک X (توییتر)
   Future<void> _openXLink() async {
-    const xUrl = 'https://x.com/laxcecrypto';
+    const xUrl = 'https://x.com/coinceepcrypto';
     
     print('🔗 Trying to open X link...');
     
@@ -232,7 +232,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('📱 Trying External App Launcher...');
       await LaunchApp.openApp(
         androidPackageName: 'com.twitter.android',
-        iosUrlScheme: 'twitter://user?screen_name=laxcecrypto',
+        iosUrlScheme: 'twitter://user?screen_name=coinceepcrypto',
         appStoreLink: xUrl,
         openStore: false,
       );
@@ -284,7 +284,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// باز کردن لینک اینستاگرام
   Future<void> _openInstagramLink() async {
-    const instagramUrl = 'https://www.instagram.com/laxcecrypto/';
+    const instagramUrl = 'https://www.instagram.com/coinceepcrypto/';
     
     print('🔗 Trying to open Instagram link...');
     
@@ -315,7 +315,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('📱 Trying External App Launcher...');
       await LaunchApp.openApp(
         androidPackageName: 'com.instagram.android',
-        iosUrlScheme: 'instagram://user?username=laxcecrypto',
+        iosUrlScheme: 'instagram://user?username=coinceepcrypto',
         appStoreLink: instagramUrl,
         openStore: false,
       );
@@ -560,17 +560,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _SettingItem(
                       icon: 'assets/images/x.png',
                       title: _safeTranslate('x_platform', 'X platform'),
-                      onTap: () => _openSocialMediaUrl('https://x.com/laxcecrypto'),
+                      onTap: () => _openSocialMediaUrl('https://x.com/coinceepcrypto'),
                     ),
                     _SettingItem(
                       icon: 'assets/images/instagram.png',
                       title: _safeTranslate('instagram', 'Instagram'),
-                      onTap: () => _openSocialMediaUrl('https://www.instagram.com/laxcecrypto/'),
+                      onTap: () => _openSocialMediaUrl('https://www.instagram.com/coinceepcrypto/'),
                     ),
                     _SettingItem(
                       icon: 'assets/images/telegram.png',
                       title: _safeTranslate('telegram', 'Telegram'),
-                      onTap: () => _openSocialMediaUrl('https://t.me/Laxce_L2'),
+                      onTap: () => _openSocialMediaUrl('https://t.me/Coinceeper_L2'),
                     ),
                   ],
                 ),

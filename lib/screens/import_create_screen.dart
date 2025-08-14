@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -131,16 +132,16 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                           shaderCallback: (bounds) {
                             return LinearGradient(
                               colors: const [
-                                Color(0xFF0BAB9B),
-                                Color(0xFF04243C),
-                                Color(0xFF0BAB9B),
+                                Color(0xFF03ac0e),
+                                Color(0xFF37b3f7),
+                                Color(0xFF03ac0e),
                               ],
                               begin: Alignment(_animation.value / bounds.width, 0),
                               end: Alignment((_animation.value + 500) / bounds.width, 0),
                             ).createShader(bounds);
                           },
                           child: Text(
-                            _safeTranslate('laxce_wallet', 'LAXCE WALLET'),
+                            _safeTranslate('coinceeper', 'COINCEEPER'),
                             style: const TextStyle(
                               fontSize: 48,
                               fontWeight: FontWeight.w900,
@@ -178,7 +179,7 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                   height: 50,
                   margin: const EdgeInsets.symmetric(horizontal: 24),
                   decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFF0BAB9B), width: 1),
+                    border: Border.all(color: const Color(0xFF03ac0e), width: 1),
                     borderRadius: BorderRadius.circular(50),
                   ),
                   child: ElevatedButton(
@@ -187,7 +188,7 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF0BAB9B),
+                      foregroundColor: const Color(0xFF03ac0e),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(50),
                       ),
@@ -215,7 +216,7 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                       Navigator.pushNamed(context, '/create-new-wallet');
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0BAB9B),
+                      backgroundColor: const Color(0xFF37b3f7),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(50),
@@ -234,6 +235,22 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                 
                 const SizedBox(height: 16),
                 
+                // Debug button (only in debug mode)
+                if (kDebugMode)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/debug-wallet-state');
+                      },
+                      icon: const Icon(Icons.bug_report, size: 16),
+                      label: const Text('Debug Wallet State'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
 
               ],
             ),

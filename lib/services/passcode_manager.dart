@@ -58,6 +58,12 @@ class PasscodeManager {
       await _platformStorage.deleteData(_attemptsKey);
       await _platformStorage.deleteData(_lockoutUntilKey);
       
+      // CRITICAL: Mark app as used when passcode is set
+      await _markAppAsUsedForPasscode();
+      
+      // CRITICAL: Enable passcode by default when it's set
+      await _enablePasscodeByDefault();
+      
       print('🔑 Passcode saved using platform-specific strategy');
       return true;
     } catch (e) {
@@ -294,5 +300,36 @@ class PasscodeManager {
   /// Check if string is numeric
   static bool _isNumeric(String str) {
     return RegExp(r'^[0-9]+$').hasMatch(str);
+  }
+
+  /// Mark app as used when passcode is set (prevent false fresh install detection)
+  static Future<void> _markAppAsUsedForPasscode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('app_has_been_used', true);
+      await prefs.setBool('passcode_set', true);
+      await prefs.setString('last_passcode_action', DateTime.now().millisecondsSinceEpoch.toString());
+      
+      print('✅ App marked as used (passcode set) - fresh install detection will be more accurate');
+    } catch (e) {
+      print('❌ Error marking app as used for passcode: $e');
+    }
+  }
+
+  /// Enable passcode by default when it's first set
+  static Future<void> _enablePasscodeByDefault() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Only set to enabled if not explicitly set before
+      if (!prefs.containsKey('passcode_enabled')) {
+        await prefs.setBool('passcode_enabled', true);
+        print('✅ Passcode enabled by default on first setup');
+      } else {
+        print('🔑 Passcode enabled state already exists - keeping current setting');
+      }
+    } catch (e) {
+      print('❌ Error enabling passcode by default: $e');
+    }
   }
 } 

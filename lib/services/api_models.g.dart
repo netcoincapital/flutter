@@ -246,7 +246,7 @@ Map<String, dynamic> _$GetUserBalanceRequestToJson(
 GenerateWalletResponse _$GenerateWalletResponseFromJson(
         Map<String, dynamic> json) =>
     GenerateWalletResponse(
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
       userID: json['UserID'] as String?,
       walletID: json['WalletID'] as String?,
       mnemonic: json['Mnemonic'] as String?,
@@ -256,7 +256,7 @@ GenerateWalletResponse _$GenerateWalletResponseFromJson(
 Map<String, dynamic> _$GenerateWalletResponseToJson(
         GenerateWalletResponse instance) =>
     <String, dynamic>{
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
       'UserID': instance.userID,
       'WalletID': instance.walletID,
       'Mnemonic': instance.mnemonic,
@@ -302,7 +302,7 @@ Map<String, dynamic> _$PriceDataToJson(PriceData instance) => <String, dynamic>{
 
 PricesResponse _$PricesResponseFromJson(Map<String, dynamic> json) =>
     PricesResponse(
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
       prices: (json['prices'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(
             k,
@@ -315,7 +315,7 @@ PricesResponse _$PricesResponseFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$PricesResponseToJson(PricesResponse instance) =>
     <String, dynamic>{
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
       'prices': instance.prices,
     };
 
@@ -326,7 +326,7 @@ ApiCurrency _$ApiCurrencyFromJson(Map<String, dynamic> json) => ApiCurrency(
       symbol: json['Symbol'] as String?,
       icon: json['Icon'] as String?,
       smartContractAddress: json['SmartContractAddress'] as String?,
-      isToken: json['IsToken'] as bool?,
+      isToken: const NullableBoolIntConverter().fromJson(json['IsToken']),
       decimalPlaces: (json['DecimalPlaces'] as num?)?.toInt(),
     );
 
@@ -338,7 +338,7 @@ Map<String, dynamic> _$ApiCurrencyToJson(ApiCurrency instance) =>
       'Symbol': instance.symbol,
       'Icon': instance.icon,
       'SmartContractAddress': instance.smartContractAddress,
-      'IsToken': instance.isToken,
+      'IsToken': const NullableBoolIntConverter().toJson(instance.isToken),
       'DecimalPlaces': instance.decimalPlaces,
     };
 
@@ -346,49 +346,49 @@ ApiResponse _$ApiResponseFromJson(Map<String, dynamic> json) => ApiResponse(
       currencies: (json['currencies'] as List<dynamic>)
           .map((e) => ApiCurrency.fromJson(e as Map<String, dynamic>))
           .toList(),
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
     );
 
 Map<String, dynamic> _$ApiResponseToJson(ApiResponse instance) =>
     <String, dynamic>{
       'currencies': instance.currencies,
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
     };
 
 ReceiveResponse _$ReceiveResponseFromJson(Map<String, dynamic> json) =>
     ReceiveResponse(
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
       publicAddress: json['PublicAddress'] as String?,
       message: json['message'] as String?,
     );
 
 Map<String, dynamic> _$ReceiveResponseToJson(ReceiveResponse instance) =>
     <String, dynamic>{
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
       'PublicAddress': instance.publicAddress,
       'message': instance.message,
     };
 
 BalanceItem _$BalanceItemFromJson(Map<String, dynamic> json) => BalanceItem(
-      balance: json['Balance'] as String?,
-      blockchain: json['Blockchain'] as String?,
-      isToken: json['IsToken'] as bool?,
-      symbol: json['Symbol'] as String?,
+      balance: json['balance'] as String?,
+      blockchain: json['blockchain'] as String?,
+      isToken: const NullableBoolIntConverter().fromJson(json['is_token']),
+      symbol: json['symbol'] as String?,
       currencyName: json['currency_name'] as String?,
     );
 
 Map<String, dynamic> _$BalanceItemToJson(BalanceItem instance) =>
     <String, dynamic>{
-      'Balance': instance.balance,
-      'Blockchain': instance.blockchain,
-      'IsToken': instance.isToken,
-      'Symbol': instance.symbol,
+      'balance': instance.balance,
+      'blockchain': instance.blockchain,
+      'is_token': const NullableBoolIntConverter().toJson(instance.isToken),
+      'symbol': instance.symbol,
       'currency_name': instance.currencyName,
     };
 
 BalanceResponse _$BalanceResponseFromJson(Map<String, dynamic> json) =>
     BalanceResponse(
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
       balances: (json['Balances'] as List<dynamic>?)
           ?.map((e) => BalanceItem.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -398,7 +398,7 @@ BalanceResponse _$BalanceResponseFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$BalanceResponseToJson(BalanceResponse instance) =>
     <String, dynamic>{
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
       'Balances': instance.balances,
       'UserID': instance.userID,
       'message': instance.message,
@@ -409,7 +409,7 @@ GetUserBalanceResponse _$GetUserBalanceResponseFromJson(
     GetUserBalanceResponse(
       tokens: json['Tokens'] as Map<String, dynamic>,
       userID: json['UserID'] as String,
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
     );
 
 Map<String, dynamic> _$GetUserBalanceResponseToJson(
@@ -417,7 +417,7 @@ Map<String, dynamic> _$GetUserBalanceResponseToJson(
     <String, dynamic>{
       'Tokens': instance.tokens,
       'UserID': instance.userID,
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
     };
 
 GasFeeItem _$GasFeeItemFromJson(Map<String, dynamic> json) => GasFeeItem(
@@ -498,7 +498,7 @@ SendResponse _$SendResponseFromJson(Map<String, dynamic> json) => SendResponse(
       transactionId: json['transaction_id'] as String,
       blockchainName: json['blockchain_name'] as String,
       expiresAt: json['expires_at'] as String,
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
     );
 
 Map<String, dynamic> _$SendResponseToJson(SendResponse instance) =>
@@ -507,7 +507,7 @@ Map<String, dynamic> _$SendResponseToJson(SendResponse instance) =>
       'transaction_id': instance.transactionId,
       'blockchain_name': instance.blockchainName,
       'expires_at': instance.expiresAt,
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
     };
 
 Transaction _$TransactionFromJson(Map<String, dynamic> json) => Transaction(
@@ -600,7 +600,7 @@ PrepareTransactionResponse _$PrepareTransactionResponseFromJson(
           TransactionDetails.fromJson(json['details'] as Map<String, dynamic>),
       expiresAt: json['expires_at'] as String,
       message: json['message'] as String,
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
       transactionId: json['transaction_id'] as String,
     );
 
@@ -610,7 +610,7 @@ Map<String, dynamic> _$PrepareTransactionResponseToJson(
       'details': instance.details,
       'expires_at': instance.expiresAt,
       'message': instance.message,
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
       'transaction_id': instance.transactionId,
     };
 
@@ -677,7 +677,7 @@ Map<String, dynamic> _$EstimateFeeResponseToJson(
 RegisterDeviceResponse _$RegisterDeviceResponseFromJson(
         Map<String, dynamic> json) =>
     RegisterDeviceResponse(
-      success: json['success'] as bool,
+      success: const BoolIntConverter().fromJson(json['success']),
       message: json['message'] as String?,
       deviceId: json['deviceId'] as String?,
     );
@@ -685,7 +685,7 @@ RegisterDeviceResponse _$RegisterDeviceResponseFromJson(
 Map<String, dynamic> _$RegisterDeviceResponseToJson(
         RegisterDeviceResponse instance) =>
     <String, dynamic>{
-      'success': instance.success,
+      'success': const BoolIntConverter().toJson(instance.success),
       'message': instance.message,
       'deviceId': instance.deviceId,
     };
@@ -693,7 +693,7 @@ Map<String, dynamic> _$RegisterDeviceResponseToJson(
 ConfirmTransactionResponse _$ConfirmTransactionResponseFromJson(
         Map<String, dynamic> json) =>
     ConfirmTransactionResponse(
-      success: json['success'] as bool?,
+      success: const NullableBoolIntConverter().fromJson(json['success']),
       message: json['message'] as String?,
       transactionHash: json['transaction_hash'] as String?,
       txHash: json['tx_hash'] as String?,
@@ -704,7 +704,7 @@ ConfirmTransactionResponse _$ConfirmTransactionResponseFromJson(
 Map<String, dynamic> _$ConfirmTransactionResponseToJson(
         ConfirmTransactionResponse instance) =>
     <String, dynamic>{
-      'success': instance.success,
+      'success': const NullableBoolIntConverter().toJson(instance.success),
       'message': instance.message,
       'transaction_hash': instance.transactionHash,
       'tx_hash': instance.txHash,

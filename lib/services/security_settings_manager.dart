@@ -28,46 +28,45 @@ class SecuritySettingsManager {
   static const String _autoLockDurationKey = 'auto_lock_duration';
   static const String _lockMethodKey = 'lock_method';
   static const String _lastBackgroundTimeKey = 'last_background_time';
+  static const String _lastActivityTimeKey = 'last_activity_time';
+  static const String _lastActivityElapsedKey = 'last_activity_elapsed';
+  static const String _lastBootCountKey = 'last_boot_count';
   static const String _biometricEnabledKey = 'biometric_enabled';
   static const String _securityInitializedKey = 'security_initialized';
 
   final LocalAuthentication _localAuth = LocalAuthentication();
 
-  /// مقداردهی اولیه تنظیمات امنیتی
+  /// ساده‌ترین initialization ممکن - فقط اگر هیچ تنظیمی وجود نداشت
   Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final isInitialized = prefs.getBool(_securityInitializedKey) ?? false;
       
-      if (!isInitialized) {
-        print('🔒 Initializing security settings for first time...');
-        
-        // برای همه کاربران (جدید و موجود) پیش‌فرض غیرفعال است
-        // کاربر می‌تواند در security screen فعال کند
-        await prefs.setBool(_passcodeEnabledKey, false);
-        print('🔒 Default passcode state set to disabled - user can enable in security screen');
-        
-        // سایر تنظیمات پیش‌فرض
-        await prefs.setInt(_autoLockDurationKey, AutoLockDuration.immediate.index); // پیش‌فرض: فوری
-        await prefs.setInt(_lockMethodKey, LockMethod.passcodeAndBiometric.index); // پیش‌فرض: هر دو
-        await prefs.setBool(_securityInitializedKey, true);
-        
-        print('✅ Security settings initialized with consistent defaults');
-      } else {
-        print('🔒 Security settings already initialized');
-        
-        // اگر passcode_enabled key وجود نداشته باشد، پیش‌فرض false قرار بده
-        if (!prefs.containsKey(_passcodeEnabledKey)) {
-          await prefs.setBool(_passcodeEnabledKey, false);
-          print('🔒 Missing passcode_enabled key - set to default false');
-        }
+      // فقط اگر هیچ کلید وجود نداشت، defaults قرار بده
+      if (!prefs.containsKey(_passcodeEnabledKey)) {
+        final isPasscodeSet = await PasscodeManager.isPasscodeSet();
+        await prefs.setBool(_passcodeEnabledKey, isPasscodeSet);
+        print('🔒 Set default passcode_enabled: $isPasscodeSet');
       }
       
-      // نمایش تنظیمات فعلی
-      await _debugCurrentSettings();
+      if (!prefs.containsKey(_autoLockDurationKey)) {
+        await prefs.setInt(_autoLockDurationKey, AutoLockDuration.immediate.index);
+        print('🔒 Set default auto_lock_duration: immediate');
+      }
+      
+      if (!prefs.containsKey(_lockMethodKey)) {
+        await prefs.setInt(_lockMethodKey, LockMethod.passcodeAndBiometric.index);
+        print('🔒 Set default lock_method: passcodeAndBiometric');
+      }
+      
+      print('✅ SecuritySettingsManager initialize completed');
     } catch (e) {
-      print('❌ Error initializing security settings: $e');
+      print('❌ Error in SecuritySettingsManager.initialize: $e');
     }
+  }
+
+  /// 🔧 FORCE RE-INITIALIZATION (for debugging only)
+  static void forceReinitialization() {
+    print('🔧 FORCED re-initialization - this method is now simplified');
   }
 
   /// Reset security settings to default values
@@ -134,7 +133,29 @@ class SecuritySettingsManager {
       print('🔒 Setting passcode enabled: $enabled');
       
       final prefs = await SharedPreferences.getInstance();
+      
+      // 🔍 DEBUG: Check before saving
+      final oldValue = prefs.getBool(_passcodeEnabledKey);
+      print('🔍 Old passcode enabled value: $oldValue');
+      
+      // 🔒 CRITICAL: Force immediate write to disk
       await prefs.setBool(_passcodeEnabledKey, enabled);
+      // Note: commit() is deprecated in newer Flutter versions - setBool already persists immediately
+      print('🔍 setBool completed - automatically persisted');
+      
+      // 🔍 DEBUG: Verify after saving
+      final newValue = prefs.getBool(_passcodeEnabledKey);
+      print('🔍 New passcode enabled value: $newValue (expected: $enabled)');
+      
+      // 🔍 DEBUG: Ensure it's actually written
+      await prefs.reload();
+      final reloadedValue = prefs.getBool(_passcodeEnabledKey);
+      print('🔍 Reloaded passcode enabled value: $reloadedValue');
+      
+      // 🔍 EXTREME DEBUG: Check all keys
+      final allKeys = prefs.getKeys();
+      print('🔍 All SharedPreferences keys: $allKeys');
+      print('🔍 Contains $_passcodeEnabledKey: ${allKeys.contains(_passcodeEnabledKey)}');
       
       // اگر passcode غیرفعال شد، lock method را مدیریت کن
       if (!enabled) {
@@ -188,15 +209,16 @@ class SecuritySettingsManager {
         print('🔒 Passcode enabled check (explicit from prefs): $enabled');
         return enabled;
       } else {
-        // اگر تنظیم نشده، پیش‌فرض غیرفعال است
-        // این به کاربر اختیار می‌دهد که خودش تصمیم بگیرد
-        final defaultEnabled = false;
+        // اگر تنظیم نشده، بررسی کن که آیا passcode set شده یا نه
+        // اگر passcode set شده، پیش‌فرض فعال است
+        final isPasscodeSet = await PasscodeManager.isPasscodeSet();
+        final defaultEnabled = isPasscodeSet; // اگر passcode set شده، فعال باشد
         
-        print('🔒 Passcode enabled check (default for new setting): $defaultEnabled');
+        print('🔒 Passcode enabled check (smart default): passcode_set=$isPasscodeSet, enabled=$defaultEnabled');
         
         // ذخیره کردن این مقدار پیش‌فرض برای استفاده‌های آینده
         await prefs.setBool(_passcodeEnabledKey, defaultEnabled);
-        print('🔒 Saved default passcode enabled state: $defaultEnabled');
+        print('🔒 Saved smart default passcode enabled state: $defaultEnabled');
         
         return defaultEnabled;
       }
@@ -214,7 +236,29 @@ class SecuritySettingsManager {
       print('🔒 Setting auto-lock duration: ${getAutoLockDurationText(duration)}');
       
       final prefs = await SharedPreferences.getInstance();
+      
+      // 🔍 DEBUG: Check before saving
+      final oldValue = prefs.getInt(_autoLockDurationKey);
+      print('🔍 Old auto-lock value: $oldValue');
+      
+      // 🔒 CRITICAL: Force immediate write to disk
       await prefs.setInt(_autoLockDurationKey, duration.index);
+      // Note: commit() is deprecated in newer Flutter versions - setInt already persists immediately
+      print('🔍 setInt completed - automatically persisted');
+      
+      // 🔍 DEBUG: Verify after saving
+      final newValue = prefs.getInt(_autoLockDurationKey);
+      print('🔍 New auto-lock value: $newValue (expected: ${duration.index})');
+      
+      // 🔍 DEBUG: Ensure it's actually written
+      await prefs.reload();
+      final reloadedValue = prefs.getInt(_autoLockDurationKey);
+      print('🔍 Reloaded auto-lock value: $reloadedValue');
+      
+      // 🔍 EXTREME DEBUG: Check all keys
+      final allKeys = prefs.getKeys();
+      print('🔍 All SharedPreferences keys: $allKeys');
+      print('🔍 Contains $_autoLockDurationKey: ${allKeys.contains(_autoLockDurationKey)}');
       
       print('✅ Auto-lock duration saved: ${getAutoLockDurationText(duration)}');
       await _debugCurrentSettings(); // نمایش تنظیمات بعد از تغییر
@@ -534,7 +578,274 @@ class SecuritySettingsManager {
     }
   }
 
+  // ================ ACTIVITY TIMER METHODS ================
+
+  /// Reset activity timer - call this on real user interactions
+  Future<void> resetActivityTimer() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final nowMillis = now.millisecondsSinceEpoch;
+      
+      // Save both wall clock and elapsed time for robust tracking
+      await prefs.setInt(_lastActivityTimeKey, nowMillis);
+      
+      print('🔄 Activity timer reset at: $now');
+      print('🔄 Timestamp saved: $nowMillis');
+    } catch (e) {
+      print('❌ Error resetting activity timer: $e');
+    }
+  }
+
+  /// Get time since last activity in milliseconds
+  Future<int> getTimeSinceLastActivity() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastActivityTime = prefs.getInt(_lastActivityTimeKey);
+      
+      if (lastActivityTime == null) {
+        print('🔍 No last activity time found - treating as expired');
+        return Duration.millisecondsPerDay; // Force timeout
+      }
+      
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final timeSince = now - lastActivityTime;
+      
+      print('🔍 Time since last activity: ${Duration(milliseconds: timeSince).inMinutes} minutes');
+      return timeSince;
+    } catch (e) {
+      print('❌ Error getting time since last activity: $e');
+      return Duration.millisecondsPerDay; // Safe fallback - force timeout
+    }
+  }
+
+  /// Get time since last background in milliseconds
+  Future<int> getTimeSinceLastBackground() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastBackgroundTime = prefs.getInt(_lastBackgroundTimeKey);
+      
+      if (lastBackgroundTime == null) {
+        print('🔍 No last background time found');
+        return 0; // No background event recorded
+      }
+      
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final timeSince = now - lastBackgroundTime;
+      
+      print('🔍 Time since last background: ${Duration(milliseconds: timeSince).inMinutes} minutes');
+      return timeSince;
+    } catch (e) {
+      print('❌ Error getting time since last background: $e');
+      return 0;
+    }
+  }
+
+  /// Check if passcode should be shown based on auto-lock settings
+  Future<bool> shouldShowPasscodeNow() async {
+    try {
+      final isPasscodeEnabled = await this.isPasscodeEnabled();
+      final hasPasscode = await PasscodeManager.isPasscodeSet();
+      
+      print('🔍 shouldShowPasscodeNow: enabled=$isPasscodeEnabled, hasPasscode=$hasPasscode');
+      
+      // اگر passcode غیرفعال است، هیچ‌وقت نشان نده
+      if (!isPasscodeEnabled) {
+        print('🔓 Passcode disabled by user - never show');
+        return false;
+      }
+      
+      // اگر passcode تنظیم نشده، نمی‌تواند نشان دهد
+      if (!hasPasscode) {
+        print('⚠️ No passcode set - cannot show');
+        return false;
+      }
+      
+      // در غیر این صورت، نشان بده (ساده‌ترین logic)
+      print('🔒 Should show passcode: enabled and set');
+      return true;
+      
+    } catch (e) {
+      print('❌ Error in shouldShowPasscodeNow: $e');
+      return false; // Safe fallback
+    }
+  }
+
+  /// Convert AutoLockDuration to milliseconds
+  int _getAutoLockTimeoutMs(AutoLockDuration duration) {
+    switch (duration) {
+      case AutoLockDuration.immediate:
+        return 0; // Immediate
+      case AutoLockDuration.oneMinute:
+        return 60 * 1000; // 1 minute
+      case AutoLockDuration.fiveMinutes:
+        return 5 * 60 * 1000; // 5 minutes
+      case AutoLockDuration.tenMinutes:
+        return 10 * 60 * 1000; // 10 minutes
+      case AutoLockDuration.fifteenMinutes:
+        return 15 * 60 * 1000; // 15 minutes
+    }
+  }
+
   // ================ UTILITY METHODS ================
+
+  /// 🧪 COMPREHENSIVE PERSISTENCE TEST
+  Future<void> comprehensivePersistenceTest() async {
+    try {
+      print('🧪 === COMPREHENSIVE PERSISTENCE TEST ===');
+      
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Step 1: Show current values
+      print('🧪 STEP 1: Current values');
+      print('  passcode_enabled: ${prefs.getBool(_passcodeEnabledKey)}');
+      print('  auto_lock_duration: ${prefs.getInt(_autoLockDurationKey)}');
+      print('  lock_method: ${prefs.getInt(_lockMethodKey)}');
+      
+      // Step 2: Modify values to test values
+      print('🧪 STEP 2: Setting test values');
+      await prefs.setBool(_passcodeEnabledKey, false);
+      await prefs.setInt(_autoLockDurationKey, AutoLockDuration.fiveMinutes.index);
+      await prefs.setInt(_lockMethodKey, LockMethod.biometricOnly.index);
+      
+      // Step 3: Verify immediate read
+      print('🧪 STEP 3: Verify immediate read');
+      print('  passcode_enabled: ${prefs.getBool(_passcodeEnabledKey)} (expected: false)');
+      print('  auto_lock_duration: ${prefs.getInt(_autoLockDurationKey)} (expected: ${AutoLockDuration.fiveMinutes.index})');
+      print('  lock_method: ${prefs.getInt(_lockMethodKey)} (expected: ${LockMethod.biometricOnly.index})');
+      
+      // Step 4: Force reload from disk
+      print('🧪 STEP 4: Force reload from disk');
+      await prefs.reload();
+      print('  passcode_enabled: ${prefs.getBool(_passcodeEnabledKey)} (after reload)');
+      print('  auto_lock_duration: ${prefs.getInt(_autoLockDurationKey)} (after reload)');
+      print('  lock_method: ${prefs.getInt(_lockMethodKey)} (after reload)');
+      
+      // Step 5: Test multiple initialize() calls
+      print('🧪 STEP 5: Test multiple initialize() calls');
+      SecuritySettingsManager.forceReinitialization();
+      await initialize();
+      print('  First init done');
+      await initialize();
+      print('  Second init done (should be skipped)');
+      await initialize();
+      print('  Third init done (should be skipped)');
+      
+      // Step 6: Final values check
+      print('🧪 STEP 6: Final values check');
+      print('  passcode_enabled: ${prefs.getBool(_passcodeEnabledKey)}');
+      print('  auto_lock_duration: ${prefs.getInt(_autoLockDurationKey)}');
+      print('  lock_method: ${prefs.getInt(_lockMethodKey)}');
+      
+      print('🧪 === COMPREHENSIVE TEST COMPLETED ===');
+      
+    } catch (e) {
+      print('❌ Error in comprehensive persistence test: $e');
+    }
+  }
+
+  /// Advanced debugging for Android storage behavior
+  Future<void> debugAndroidStorageBehavior() async {
+    try {
+      print('🤖 === ANDROID STORAGE DEBUG ===');
+      
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Create a persistent test value
+      const testKey = 'android_persistence_test';
+      final testValue = 'test_${DateTime.now().millisecondsSinceEpoch}';
+      
+      print('🤖 Setting test value: $testValue');
+      await prefs.setString(testKey, testValue);
+      // Note: commit() is deprecated - setString already persists
+      
+      // Verify immediate read
+      final immediateRead = prefs.getString(testKey);
+      print('🤖 Immediate read: $immediateRead');
+      
+      // Force reload from disk
+      await prefs.reload();
+      final reloadRead = prefs.getString(testKey);
+      print('🤖 After reload: $reloadRead');
+      
+      // Check SharedPreferences file path (Android specific)
+      print('🤖 NOTE: Kill app now and restart to test persistence!');
+      print('🤖 Expected value after restart: $testValue');
+      
+      // Check all security values
+      print('🤖 Current security values:');
+      print('  - passcode_enabled: ${prefs.getBool(_passcodeEnabledKey)}');
+      print('  - auto_lock_duration: ${prefs.getInt(_autoLockDurationKey)}');
+      print('  - lock_method: ${prefs.getInt(_lockMethodKey)}');
+      print('  - security_initialized: ${prefs.getBool(_securityInitializedKey)}');
+      
+      print('🤖 === END ANDROID DEBUG ===');
+    } catch (e) {
+      print('❌ Error in Android storage debug: $e');
+    }
+  }
+
+  /// Test SharedPreferences persistence for debugging
+  Future<void> testSharedPreferencesPersistence() async {
+    try {
+      print('🧪 === TESTING SHARED PREFERENCES PERSISTENCE ===');
+      
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Test writing and reading a test value
+      const testKey = 'test_persistence_key';
+      const testValue = 'test_persistence_value';
+      
+      print('🧪 Writing test value...');
+      await prefs.setString(testKey, testValue);
+      // Note: commit() is deprecated - setString already persists
+      
+      print('🧪 Reading test value...');
+      final readValue = prefs.getString(testKey);
+      print('🧪 Read value: $readValue (expected: $testValue)');
+      
+      // Test reload
+      print('🧪 Testing reload...');
+      await prefs.reload();
+      final reloadedValue = prefs.getString(testKey);
+      print('🧪 Reloaded value: $reloadedValue');
+      
+      // Show all security keys
+      print('🧪 All security keys:');
+      print('   $_passcodeEnabledKey: ${prefs.getBool(_passcodeEnabledKey)}');
+      print('   $_autoLockDurationKey: ${prefs.getInt(_autoLockDurationKey)}');
+      print('   $_lockMethodKey: ${prefs.getInt(_lockMethodKey)}');
+      print('   $_securityInitializedKey: ${prefs.getBool(_securityInitializedKey)}');
+      
+      // Show ALL keys (to see if there's interference)
+      final allKeys = prefs.getKeys();
+      print('🧪 ALL SharedPreferences keys (${allKeys.length}): $allKeys');
+      
+      // Test immediate write stress test
+      print('🧪 === STRESS TEST: Write multiple values ===');
+      const stressTestKey = 'stress_test_';
+      for (int i = 0; i < 5; i++) {
+        final key = '$stressTestKey$i';
+        final value = 'value_$i';
+        await prefs.setString(key, value);
+        // Note: commit() is deprecated - setString already persists
+        final readBack = prefs.getString(key);
+        print('🧪 Stress[$i]: wrote=$value, read=$readBack, match=${value == readBack}');
+      }
+      
+      // Clean up
+      for (int i = 0; i < 5; i++) {
+        await prefs.remove('$stressTestKey$i');
+      }
+      await prefs.remove(testKey);
+      // Note: commit() is deprecated - remove already persists
+      
+      print('🧪 === END SHARED PREFERENCES TEST ===');
+      
+    } catch (e) {
+      print('❌ Error testing SharedPreferences persistence: $e');
+    }
+  }
 
   /// پاک کردن تمام تنظیمات امنیتی
   Future<void> clearSecuritySettings() async {

@@ -11,10 +11,10 @@ CryptoToken _$CryptoTokenFromJson(Map<String, dynamic> json) => CryptoToken(
       symbol: json['symbol'] as String?,
       blockchainName: json['BlockchainName'] as String?,
       iconUrl: json['iconUrl'] as String? ??
-          "https://coinceeper.com/defualtIcons/coin.png",
-      isEnabled: json['isEnabled'] as bool,
+          "https://coinceeper.com/defaultIcons/coin.png",
+      isEnabled: const BoolIntConverter().fromJson(json['isEnabled']),
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
-      isToken: json['isToken'] as bool,
+      isToken: const BoolIntConverter().fromJson(json['isToken']),
       smartContractAddress: json['SmartContractAddress'] as String?,
     );
 
@@ -24,9 +24,9 @@ Map<String, dynamic> _$CryptoTokenToJson(CryptoToken instance) =>
       'symbol': instance.symbol,
       'BlockchainName': instance.blockchainName,
       'iconUrl': instance.iconUrl,
-      'isEnabled': instance.isEnabled,
+      'isEnabled': const BoolIntConverter().toJson(instance.isEnabled),
       'amount': instance.amount,
-      'isToken': instance.isToken,
+      'isToken': const BoolIntConverter().toJson(instance.isToken),
       'SmartContractAddress': instance.smartContractAddress,
     };
 

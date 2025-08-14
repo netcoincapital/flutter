@@ -6,6 +6,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
 import 'package:my_flutter_app/screens/receive_wallet_screen.dart'; // Added import for ReceiveWalletScreen
 import 'package:http/http.dart' as http;
+
 import '../services/secure_storage.dart';
 import '../providers/price_provider.dart';
 import '../utils/shared_preferences_utils.dart';
@@ -163,36 +164,122 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     }).toList();
   }
 
-  void _showTokenSelector() {
-    // Remove modal bottom sheet - token selector removed
+  void _showNetworkSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _safeTranslate('select_network', 'Select Network'),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...blockchains.map((blockchain) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: _blockchainIcon(blockchain),
+                    title: Text(blockchain),
+                    trailing: selectedNetwork == blockchain 
+                        ? const Icon(Icons.check, color: Colors.blue)
+                        : null,
+                    onTap: () {
+                      setState(() {
+                        selectedNetwork = blockchain;
+                      });
+                      Navigator.pop(context);
+                    },
+                  )).toList(),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
+
+
   Widget _blockchainIcon(String bc) {
+    Widget iconWidget;
     switch (bc) {
       case 'Bitcoin':
-        return Image.asset('assets/images/btc.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/btc.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Ethereum':
-        return Image.asset('assets/images/ethereum_logo.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/ethereum_logo.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Binance Smart Chain':
-        return Image.asset('assets/images/binance_logo.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/binance_logo.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Polygon':
-        return Image.asset('assets/images/pol.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/pol.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Tron':
-        return Image.asset('assets/images/tron.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/tron.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Arbitrum':
-        return Image.asset('assets/images/arb.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/arb.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'XRP':
-        return Image.asset('assets/images/xrp.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/xrp.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Avalanche':
-        return Image.asset('assets/images/avax.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/avax.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Polkadot':
-        return Image.asset('assets/images/dot.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/dot.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       case 'Solana':
-        return Image.asset('assets/images/sol.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/sol.png', width: 24, height: 24, fit: BoxFit.contain);
+        break;
       default:
-        return Image.asset('assets/images/all.png', width: 24, height: 24);
+        iconWidget = Image.asset('assets/images/all.png', width: 24, height: 24, fit: BoxFit.contain);
     }
+    
+    return ClipOval(
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+        ),
+        child: iconWidget,
+      ),
+    );
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -227,7 +314,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                   ),
                   const SizedBox(height: 12),
                   GestureDetector(
-                    onTap: _showTokenSelector,
+                    onTap: _showNetworkSelector,
                     child: Container(
                       width: 200,
                       height: 32,
@@ -258,22 +345,21 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                       itemBuilder: (context, index) {
                         final token = filteredTokens[index];
                         final address = token['address'] ?? '';
-                        void openReceiveWallet() {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ReceiveWalletScreen(
-                                cryptoName: token['name'],
-                                blockchainName: token['blockchain'],
-                                address: address,
-                                symbol: token['symbol'],
-                              ),
-                            ),
-                          );
-                        }
                         return InkWell(
                           borderRadius: BorderRadius.circular(8),
-                          onTap: openReceiveWallet,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ReceiveWalletScreen(
+                                  cryptoName: token['name'],
+                                  blockchainName: token['blockchain'],
+                                  address: address,
+                                  symbol: token['symbol'],
+                                ),
+                              ),
+                            );
+                          },
                           child: Container(
                             decoration: BoxDecoration(
                               color: const Color(0xFFF7F7F7),
@@ -282,11 +368,22 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
                             child: Row(
                               children: [
-                                Image.network(
-                                  token['icon'],
-                                  width: 30,
-                                  height: 30,
-                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                                ClipOval(
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Image.network(
+                                      token['icon'],
+                                      width: 40,
+                                      height: 40,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                                    ),
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -323,13 +420,31 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                                 const SizedBox(width: 8),
                                 IconButton(
                                   icon: const Icon(Icons.qr_code, color: Colors.grey),
-                                  onPressed: openReceiveWallet,
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ReceiveWalletScreen(
+                                          cryptoName: token['name'],
+                                          blockchainName: token['blockchain'],
+                                          address: address,
+                                          symbol: token['symbol'],
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.copy, color: Colors.grey),
                                   onPressed: () async {
                                     await Clipboard.setData(ClipboardData(text: address));
-                                    // Remove success message - copied silently
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(_safeTranslate('copied', 'Address copied to clipboard')),
+                                        duration: const Duration(seconds: 2),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
                                   },
                                 ),
                               ],

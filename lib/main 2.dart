@@ -473,7 +473,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ),
       ],
       child: MaterialApp(
-        title: 'laxce',
+        title: 'coinceeper',
         // ✅ اضافه کردن تنظیمات localization
         localizationsDelegates: context.localizationDelegates,
         supportedLocales: context.supportedLocales,

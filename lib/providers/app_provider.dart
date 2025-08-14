@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import '../services/secure_storage.dart';
 import '../services/lifecycle_manager.dart';
 import '../services/permission_manager.dart';
@@ -131,6 +132,63 @@ class AppProvider extends ChangeNotifier {
     
     // Additional synchronization to ensure tokens are loaded
     await tokenProvider.ensureTokensSynchronized();
+
+    // 🔁 Restore per-wallet active tokens and cached balances if available (app start case)
+    try {
+      if (_currentWalletName != null && _currentUserId != null) {
+        // Read active tokens directly without requiring mnemonic (iOS can restrict keychain reads)
+        final activeTokens = await SecureStorage.instance.getActiveTokens(
+          _currentWalletName!, _currentUserId!,
+        );
+        final balanceCache = await SecureStorage.instance.getWalletBalanceCache(
+          _currentWalletName!, _currentUserId!,
+        );
+
+        if (activeTokens.isNotEmpty) {
+          await _applyActiveTokensToProvider(tokenProvider, activeTokens);
+        }
+        if (balanceCache.isNotEmpty) {
+          print('🔍 AppProvider DEBUG: Applying balance cache: $balanceCache');
+          await _applyBalanceCacheToProvider(tokenProvider, balanceCache);
+          print('🔍 AppProvider DEBUG: Balance cache applied to TokenProvider');
+        } else {
+          print('🔍 AppProvider DEBUG: No balance cache found for wallet');
+          
+          // اگر هیچ موجودی cache شده‌ای نداریم، یک بار API balance فراخوانی کن
+          print('💰 AppProvider: No cached balances found, fetching from API once...');
+          try {
+            final balances = await tokenProvider.fetchBalancesForActiveTokens();
+            print('✅ AppProvider: Fresh balances fetched: $balances');
+          } catch (e) {
+            print('⚠️ AppProvider: Error fetching fresh balances: $e');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ AppProvider: Error restoring per-wallet data on init: $e');
+    }
+
+    // ⚠️ REMOVED: update-balance دیگر در startup فراخوانی نمی‌شود
+    // فقط در ImportWalletScreen بعد از import wallet فراخوانی می‌شود
+    print('ℹ️ AppProvider: Skipping startup update-balance - only called after wallet import');
+    
+    // 🏷️ بلافاصله قیمت‌ها را بارگذاری کن در PriceProvider (تا HomeScreen آن‌ها را ببیند)
+    print('💰 AppProvider: Fetching prices immediately for enabled tokens...');
+    try {
+      final enabledSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toList();
+      if (enabledSymbols.isNotEmpty) {
+        print('💰 AppProvider: Fetching prices for symbols: $enabledSymbols');
+        
+        // فقط TokenProvider را به‌روزرسانی کن - PriceProvider در HomeScreen به‌روزرسانی می‌شود
+        await tokenProvider.fetchPrices(activeSymbols: enabledSymbols);
+        
+        print('✅ AppProvider: Prices fetched successfully in both providers');
+      } else {
+        print('⚠️ AppProvider: No enabled tokens found for price fetching');
+      }
+    } catch (e) {
+      print('❌ AppProvider: Error fetching prices: $e');
+    }
     
     print('✅ AppProvider: TokenProvider fully synchronized for user: $userId');
     print('✅ AppProvider: Enabled tokens count: ${tokenProvider.enabledTokens.length}');
@@ -141,6 +199,9 @@ class AppProvider extends ChangeNotifier {
     
     return tokenProvider;
   }
+
+  // ⚠️ REMOVED: _startupUpdateBalanceWithRetry - دیگر در startup استفاده نمی‌شود
+  // update-balance فقط در ImportWalletScreen فراخوانی می‌شود
   
   /// Callback when TokenProvider state changes
   void _onTokenProviderChanged() {

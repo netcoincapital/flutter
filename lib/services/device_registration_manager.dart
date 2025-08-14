@@ -22,6 +22,7 @@ class DeviceRegistrationManager {
   static const int API_TIMEOUT = 15000; // میلی‌ثانیه
   static const int MAX_RETRY_ATTEMPTS = 3;
   static const int RETRY_DELAY = 3000; // میلی‌ثانیه
+  static const int RATE_LIMIT_DELAY = 60000; // 1 minute for rate limit
   
   /// بررسی کامل بودن اطلاعات ثبت
   bool _isProvisioningComplete(String? userId, String? walletId, String? deviceToken) {
@@ -172,7 +173,13 @@ class DeviceRegistrationManager {
           print('❌ Exception on attempt $attempt: $e');
           lastException = e as Exception;
           
-          if (attempt < MAX_RETRY_ATTEMPTS) {
+          // Check if it's a rate limit error
+          if (e.toString().contains('429') || e.toString().contains('Rate limit')) {
+            print('⚠️ Rate limit detected, waiting longer...');
+            if (attempt < MAX_RETRY_ATTEMPTS) {
+              await Future.delayed(Duration(milliseconds: RATE_LIMIT_DELAY));
+            }
+          } else if (attempt < MAX_RETRY_ATTEMPTS) {
             final delayTime = RETRY_DELAY * attempt;
             print('📱 Retrying in ${delayTime}ms...');
             await Future.delayed(Duration(milliseconds: delayTime));
@@ -279,7 +286,13 @@ class DeviceRegistrationManager {
           print('❌ Exception on attempt $attempt: $e');
           lastException = e as Exception;
           
-          if (attempt < MAX_RETRY_ATTEMPTS) {
+          // Check if it's a rate limit error
+          if (e.toString().contains('429') || e.toString().contains('Rate limit')) {
+            print('⚠️ Rate limit detected, waiting longer...');
+            if (attempt < MAX_RETRY_ATTEMPTS) {
+              await Future.delayed(Duration(milliseconds: RATE_LIMIT_DELAY));
+            }
+          } else if (attempt < MAX_RETRY_ATTEMPTS) {
             final delayTime = RETRY_DELAY * attempt;
             print('📱 Retrying in ${delayTime}ms...');
             await Future.delayed(Duration(milliseconds: delayTime));

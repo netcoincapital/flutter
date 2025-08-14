@@ -314,27 +314,8 @@ class _SendScreenState extends State<SendScreen> {
       } catch (apiError) {
         print('❌ API Error occurred: $apiError');
         
-        // تلاش برای to retry with updateBalance first
-        print('🔄 Attempting to update balance first...');
-        try {
-          await apiService.updateBalance(userId!);
-          print('✅ Balance updated, retrying getBalance...');
-          
-          response = await apiService.getBalance(
-            userId!,
-            currencyNames: [],
-            blockchain: {},
-          );
-          
-          print('📥 Retry API Response received:');
-          print('   Success: ${response.success}');
-          print('   UserID: ${response.userID}');
-          print('   Balances count: ${response.balances?.length ?? 0}');
-          
-        } catch (retryError) {
-          print('❌ Retry also failed: $retryError');
-          throw Exception('Failed to fetch balance after retry: $retryError');
-        }
+        // بدون نوشتن در دیتابیس: عدم استفاده از update-balance در retry
+        rethrow;
       }
       
       // بررسی پاسخ API
@@ -370,7 +351,7 @@ class _SendScreenState extends State<SendScreen> {
                     name: balanceItem.currencyName ?? balanceItem.symbol ?? 'Unknown',
                     symbol: balanceItem.symbol ?? 'Unknown',
                     blockchainName: balanceItem.blockchain ?? 'Unknown',
-                    iconUrl: 'https://coinceeper.com/defualtIcons/coin.png',
+                    iconUrl: 'https://coinceeper.com/defaultIcons/coin.png',
                     isEnabled: true,
                     amount: 0.0,
                     isToken: balanceItem.isToken ?? true,
@@ -803,47 +784,123 @@ class _TokenItem extends StatelessWidget {
       'SHIB': 'assets/images/shiba.png',
       'LTC': 'assets/images/litecoin_logo.png',
       'DOGE': 'assets/images/dogecoin.png',
+      'NCC': 'assets/images/ncc.png', // اضافه کردن NCC
     };
     
     final symbol = (token.symbol ?? '').toUpperCase();
     final assetIcon = assetIcons[symbol];
 
-    if (assetIcon != null) {
-      // استفاده از asset image برای توکن‌های معروف
-      return Image.asset(
-        assetIcon, 
-        width: 30, 
-        height: 30, 
-        errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
-      );
-    } else if ((token.iconUrl ?? '').startsWith('http')) {
-      // استفاده از network image برای سایر توکن‌ها
-      return CachedNetworkImage(
-        imageUrl: token.iconUrl ?? '',
-        width: 30,
-        height: 30,
-        errorWidget: (context, url, error) => const Icon(Icons.error),
-      );
-    } else if ((token.iconUrl ?? '').startsWith('assets/')) {
-      // استفاده از asset image اگر path مشخص شده
-      return Image.asset(
-        token.iconUrl ?? '', 
-        width: 30, 
-        height: 30, 
-        errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
-      );
-    } else {
-      // fallback آیکن پیش‌فرض
-      return const Icon(Icons.error);
+    // Debug log for NCC specifically
+    if (symbol == 'NCC') {
+      print('🔍 SendScreen NCC Debug:');
+      print('  - Symbol: $symbol');
+      print('  - AssetIcon path: $assetIcon');
+      print('  - Token iconUrl: ${token.iconUrl}');
+      print('  - Token name: ${token.name}');
+      print('  - Will use network: ${(symbol == 'NCC' && (token.iconUrl ?? '').startsWith('http'))}');
+      print('  - iconUrl starts with http: ${(token.iconUrl ?? '').startsWith('http')}');
     }
+
+    return ClipOval(
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: symbol == 'NCC' ? Colors.grey[100] : Colors.white, // Different background for NCC
+          shape: BoxShape.circle,
+        ),
+        child: (symbol == 'NCC' && (token.iconUrl ?? '').startsWith('http'))
+            ? CachedNetworkImage(
+                imageUrl: token.iconUrl ?? '',
+                width: 40,
+                height: 40,
+                fit: BoxFit.contain,
+                errorWidget: (context, url, error) {
+                  // Fallback to asset if network fails for NCC
+                  return assetIcon != null
+                      ? Image.asset(
+                          assetIcon,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                        )
+                      : const Icon(Icons.error);
+                },
+              )
+            : assetIcon != null
+                ? Image.asset(
+                    assetIcon, 
+                    width: 40, 
+                    height: 40, 
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      print('❌ Asset error for $symbol: $error');
+                      // Fallback to network image if asset fails
+                      if ((token.iconUrl ?? '').startsWith('http')) {
+                        return CachedNetworkImage(
+                          imageUrl: token.iconUrl ?? '',
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.contain,
+                          errorWidget: (context, url, error) => const Icon(Icons.error),
+                        );
+                      }
+                      return const Icon(Icons.error);
+                    },
+                  )
+                : (token.iconUrl ?? '').startsWith('http')
+                    ? CachedNetworkImage(
+                        imageUrl: token.iconUrl ?? '',
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.contain,
+                        errorWidget: (context, url, error) => const Icon(Icons.error),
+                      )
+                    : (token.iconUrl ?? '').startsWith('assets/')
+                        ? Image.asset(
+                            token.iconUrl ?? '', 
+                            width: 40, 
+                            height: 40, 
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.currency_bitcoin, size: 28, color: Colors.orange),
+                          )
+                        : Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.currency_bitcoin, 
+                              size: 28, 
+                              color: Colors.orange,
+                            ),
+                          ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final amount = token.amount;
-    final price = getSafeTokenPrice(token.symbol != null ? token.symbol! : '');
+    final amount = token.amount ?? 0.0;
+    final price = getSafeTokenPrice(token.symbol ?? '');
     final formattedAmount = formatAmount(amount, price);
     final dollarValue = calculateDollarValue(amount, price);
+    
+    // Debug log برای NCC
+    if ((token.symbol ?? '').toUpperCase() == 'NCC') {
+      print('🔍 SendScreen NCC Debug:');
+      print('   Symbol: ${token.symbol}');
+      print('   Name: ${token.name}');
+      print('   Amount: $amount');
+      print('   Price: $price');
+      print('   Blockchain: ${token.blockchainName}');
+      print('   IconUrl: ${token.iconUrl}');
+      print('   FormattedAmount: $formattedAmount');
+      print('   DollarValue: $dollarValue');
+    }
 
     return InkWell(
       borderRadius: BorderRadius.circular(8),

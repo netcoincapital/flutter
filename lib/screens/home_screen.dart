@@ -85,14 +85,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await priceProvider.loadSelectedCurrency();
       print('🏠 HomeScreen: Price provider currency loaded');
       
-      // بلافاصله نمایش صفحه با cached data
-      // UI will be shown immediately when AppProvider is ready
+      // بلافاصله قیمت‌ها را بارگذاری کن (همزمان با UI loading)
+      final tokenProvider = appProvider.tokenProvider;
+      if (tokenProvider != null) {
+        final enabledTokens = tokenProvider.enabledTokens;
+        print('🏠 HomeScreen: TokenProvider available, enabled tokens count: ${enabledTokens.length}');
+        if (enabledTokens.isNotEmpty) {
+          print('🏠 HomeScreen: Loading prices immediately for enabled tokens: ${enabledTokens.map((t) => t.symbol).toList()}');
+          _loadPricesForTokens(enabledTokens, priceProvider).then((_) {
+            print('✅ HomeScreen: Initial prices loaded successfully');
+          }).catchError((e) {
+            print('❌ HomeScreen: Error loading initial prices: $e');
+          });
+        } else {
+          print('⚠️ HomeScreen: No enabled tokens found for price loading');
+        }
+      } else {
+        print('⚠️ HomeScreen: TokenProvider is null, will wait for background loading');
+        // اگر TokenProvider هنوز آماده نیست، از AppProvider listener استفاده کن
+        appProvider.addListener(() {
+          final tp = appProvider.tokenProvider;
+          if (tp != null && tp.enabledTokens.isNotEmpty && mounted) {
+            print('🏠 HomeScreen: TokenProvider became ready, loading prices now');
+            _loadPricesForTokens(tp.enabledTokens, priceProvider).then((_) {
+              print('✅ HomeScreen: Delayed prices loaded successfully');
+            }).catchError((e) {
+              print('❌ HomeScreen: Error loading delayed prices: $e');
+            });
+            appProvider.removeListener(() {}); // Remove this specific listener
+          }
+        });
+      }
       
       // Register device in background
       _registerDeviceOnHome();
       print('🏠 HomeScreen: Device registration started');
       
-      // Background data loading - بدون await
+      // Background data loading - بدون await (برای موجودی‌ها)
       _loadDataInBackground(appProvider, priceProvider);
       
       // شروع periodic updates در background
@@ -150,44 +179,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // ✅ Balance caching is now handled per-wallet in WalletStateManager
       // Current balances are automatically saved when switching wallets
       
-      // تلاش برای به‌روزرسانی موجودی با timeout
-      final success = await tokenProvider.updateBalance().timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          print('⚠️ HomeScreen: Balance update timeout');
-          return false;
-        },
-      );
+      // مطابق گزارش Kotlin: هیچ API balance در startup فراخوانی نمی‌شود
+      // موجودی‌ها فقط بعد از import wallet یک بار فراخوانی می‌شوند
+      print('ℹ️ HomeScreen: Skipping balance API call - balances only fetched after wallet import');
       
-      if (success) {
-        print('✅ HomeScreen: Balances loaded successfully');
-        
-        // ✅ Save updated balances per-wallet automatically through AppProvider
-        final appProvider = Provider.of<AppProvider>(context, listen: false);
-        if (appProvider.currentWalletName != null && appProvider.currentUserId != null) {
-          final balanceCache = <String, double>{};
-          for (final token in tokenProvider.enabledTokens) {
-            if (token.amount > 0) {
-              balanceCache[token.symbol ?? ''] = token.amount;
-            }
-          }
-          if (balanceCache.isNotEmpty) {
-            await WalletStateManager.instance.saveBalanceCacheForWallet(
-              appProvider.currentWalletName!, 
-              appProvider.currentUserId!, 
-              balanceCache
-            );
-          }
-        }
-      } else {
-        print('⚠️ HomeScreen: Failed to load balances, keeping existing TokenProvider state');
-        // TokenProvider already has the correct cached balances from wallet selection
+      // Debug: نمایش موجودی‌های فعلی در TokenProvider
+      final enabledTokens = tokenProvider.enabledTokens;
+      print('🔍 HomeScreen DEBUG: Current enabled tokens with balances:');
+      for (final token in enabledTokens) {
+        print('   - ${token.symbol}: ${token.amount ?? 0.0}');
       }
       
     } catch (e) {
       print('❌ HomeScreen: Error loading balances: $e');
-      // بازگردانی موجودی‌ها از کش در صورت خطا
-      _restoreBalancesFromCache(tokenProvider);
     } finally {
       _isRefreshing = false;
     }
@@ -245,9 +249,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// تنظیم مجدد کش موجودی‌ها در صورت مشکل
   void _resetBalanceCache() {
-    _cachedBalances.clear();
-    _displayBalances.clear();
-    _saveCachedBalances();
+    // _cachedBalances.clear(); // ❌ Removed global cache
+    // _displayBalances.clear(); // ❌ Removed global cache
+    // _saveCachedBalances(); // ❌ Removed global cache
     print('🔄 HomeScreen: Balance cache reset');
   }
 
@@ -332,8 +336,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // فقط قیمت‌ها را refresh کن، موجودی‌ها فقط اگر لازم باشد
       await _loadPricesForTokens(enabledTokens, priceProvider);
       
-      // موجودی‌ها را فقط اگر کش خالی باشد یا قدیمی باشد
-      if (_cachedBalances.isEmpty || _shouldUpdateBalances()) {
+      // موجودی‌ها را فقط اگر لازم باشد
+      if (_shouldUpdateBalances()) {
         await _loadBalancesForEnabledTokens(appProvider.tokenProvider!);
       }
     } catch (e) {
@@ -343,8 +347,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// چک کن که آیا باید موجودی‌ها را به‌روزرسانی کرد
   bool _shouldUpdateBalances() {
-    // فقط در صورت خالی بودن کش یا اگر کش خیلی قدیمی باشد
-    return _cachedBalances.isEmpty;
+    // Always update balances as we use per-wallet cache now
+    return true;
   }
 
   void _refreshPricesForEnabledTokens() async {
@@ -735,7 +739,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final tokenProvider = appProvider.tokenProvider;
       if (tokenProvider != null) {
         // 1. نمایش وضعیت فعلی
-        await tokenProvider.tokenPreferences.debugTokenRecoveryStatus();
+        // await tokenProvider.tokenPreferences.debugTokenRecoveryStatus(); // Method not available in utils TokenPreferences
         
         // 2. اگر توکن‌های فعال کم هستند، force recovery کن
         final enabledCount = tokenProvider.enabledTokens.length;
@@ -776,7 +780,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             );
             
             // Force recovery
-            await tokenProvider.tokenPreferences.forceRecoveryFromSecureStorage();
+            // await tokenProvider.tokenPreferences.forceRecoveryFromSecureStorage(); // Method not available in utils TokenPreferences
             
             // اجبار به همگام‌سازی مجدد
             await tokenProvider.ensureTokensSynchronized();
@@ -1121,16 +1125,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _ActionButton(
-                          icon: Icons.send_rounded,
+                        _ActionButtonWithImage(
+                          imagePath: 'assets/images/send.png',
                           label: _safeTranslate('send', 'Send'),
                           onTap: () {
                             Navigator.pushNamed(context, '/send');
                           },
                           bgColor: const Color(0x80D7FBE7),
                         ),
-                        _ActionButton(
-                          icon: Icons.call_received_rounded,
+                        _ActionButtonWithImage(
+                          imagePath: 'assets/images/receive.png',
                           label: _safeTranslate('receive', 'Receive'),
                           onTap: () {
                             Navigator.pushNamed(context, '/receive');
@@ -1140,8 +1144,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         Consumer<HistoryProvider>(
                           builder: (context, historyProvider, child) {
                             final pendingCount = historyProvider.pendingTransactionCount;
-                            return _ActionButton(
-                              icon: Icons.history_rounded,
+                            return _ActionButtonWithImage(
+                              imagePath: 'assets/images/history.png',
                               label: _safeTranslate('history', 'History'),
                               onTap: () {
                                 Navigator.pushNamed(context, '/history');
@@ -1204,6 +1208,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           // غیرفعال کردن توکن در TokenProvider - مشابه Android
                                           await tokenProvider.toggleToken(token, false);
                                           
+                                          // ذخیره لیست active tokens برای والت فعلی (Persistence برای بعد از kill)
+                                          try {
+                                            final appProvider = Provider.of<AppProvider>(context, listen: false);
+                                            final walletName = appProvider.currentWalletName;
+                                            final userId = appProvider.currentUserId;
+                                            if (walletName != null && userId != null) {
+                                              final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
+                                              await WalletStateManager.instance.saveActiveTokensForWallet(
+                                                walletName,
+                                                userId,
+                                                activeSymbols,
+                                              );
+                                              print('💾 HomeScreen: Persisted active tokens after disable (${activeSymbols.length})');
+                                            }
+                                          } catch (persistError) {
+                                            print('⚠️ HomeScreen: Error persisting active tokens after disable: $persistError');
+                                          }
+
                                           // اطمینان از به‌روزرسانی کش add_token_screen
                                           await _updateAddTokenScreenCache(token);
                                           
@@ -1220,6 +1242,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                   // Re-enable the token
                                                   await tokenProvider.toggleToken(token, true);
                                                   await _updateAddTokenScreenCache(token);
+                                                   // ذخیره active tokens پس از فعال‌سازی مجدد
+                                                   try {
+                                                     final appProvider = Provider.of<AppProvider>(context, listen: false);
+                                                     final walletName = appProvider.currentWalletName;
+                                                     final userId = appProvider.currentUserId;
+                                                     if (walletName != null && userId != null) {
+                                                       final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
+                                                       await WalletStateManager.instance.saveActiveTokensForWallet(
+                                                         walletName,
+                                                         userId,
+                                                         activeSymbols,
+                                                       );
+                                                       print('💾 HomeScreen: Persisted active tokens after re-enable (${activeSymbols.length})');
+                                                     }
+                                                   } catch (persistError) {
+                                                     print('⚠️ HomeScreen: Error persisting active tokens after re-enable: $persistError');
+                                                   }
                                                   
                                                   // Refresh balance and price for re-enabled token
                                                   await _performTokenReactivation(token);
@@ -1248,7 +1287,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                             builder: (_) => CryptoDetailsScreen(
                                               tokenName: token.name ?? '',
                                               tokenSymbol: token.symbol ?? '',
-                                              iconUrl: token.iconUrl ?? 'https://coinceeper.com/defualtIcons/coin.png',
+                                              iconUrl: token.iconUrl ?? 'https://coinceeper.com/defaultIcons/coin.png',
                                               isToken: token.isToken,
                                               blockchainName: token.blockchainName ?? '',
                                               gasFee: 0.0, // TODO: دریافت از API
@@ -1299,10 +1338,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// دریافت موجودی نمایشی برای یک توکن
   double _getDisplayAmount(CryptoToken token) {
-    final symbol = token.symbol ?? '';
-    // اولویت: display balance, سپس actual amount, سپس cached balance
-    return _displayBalances[symbol] ?? 
-           (token.amount > 0 ? token.amount : (_cachedBalances[symbol] ?? 0.0));
+    // Use actual token amount directly
+    return token.amount > 0 ? token.amount : 0.0;
   }
 }
 
@@ -1340,6 +1377,79 @@ class _ActionButton extends StatelessWidget {
                     icon,
                     size: 24,
                     color: Colors.black87,
+                  ),
+                ),
+              ),
+              if (badge != null)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      badge!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionButtonWithImage extends StatelessWidget {
+  final String imagePath;
+  final String label;
+  final VoidCallback onTap;
+  final Color bgColor;
+  final String? badge;
+  const _ActionButtonWithImage({
+    required this.imagePath, 
+    required this.label, 
+    required this.onTap, 
+    required this.bgColor,
+    this.badge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Image.asset(
+                    imagePath,
+                    width: 24,
+                    height: 24,
+                    color: Colors.black87,
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      Icons.error,
+                      size: 24,
+                      color: Colors.black87,
+                    ),
                   ),
                 ),
               ),
@@ -1617,9 +1727,21 @@ class _TokenRow extends StatelessWidget {
       'SHIB': 'assets/images/shiba.png',
       'LTC': 'assets/images/litecoin_logo.png',
       'DOGE': 'assets/images/dogecoin.png',
+      'NCC': 'assets/images/ncc.png', // اضافه کردن NCC
     };
     final symbol = (token.symbol ?? '').toUpperCase();
     final assetIcon = assetIcons[symbol];
+    
+    // Debug log for NCC specifically
+    if (symbol == 'NCC') {
+      print('🔍 HomeScreen NCC Debug:');
+      print('  - Symbol: $symbol');
+      print('  - AssetIcon path: $assetIcon');
+      print('  - Token iconUrl: ${token.iconUrl}');
+      print('  - Token name: ${token.name}');
+      print('  - Will use network: ${(symbol == 'NCC' && (token.iconUrl ?? '').startsWith('http'))}');
+      print('  - iconUrl starts with http: ${(token.iconUrl ?? '').startsWith('http')}');
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -1629,30 +1751,77 @@ class _TokenRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
       child: Row(
         children: [
-          // Token icon - fixed to prevent cropping
-          assetIcon != null
-              ? Image.asset(
-                  assetIcon,
-                  width: 30,
-                  height: 30,
-                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
-                )
-              : (token.iconUrl ?? '').startsWith('http')
+          // Token icon - circular and larger size
+          ClipOval(
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: symbol == 'NCC' ? Colors.grey[100] : Colors.white, // Different background for NCC
+                shape: BoxShape.circle,
+              ),
+              child: (symbol == 'NCC' && (token.iconUrl ?? '').startsWith('http'))
                   ? CachedNetworkImage(
                       imageUrl: token.iconUrl ?? '',
-                      width: 30,
-                      height: 30,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.contain,
                       cacheManager: tokenLogoCacheManager,
-                      errorWidget: (context, url, error) => const Icon(Icons.error),
+                      errorWidget: (context, url, error) {
+                        // Fallback to asset if network fails for NCC
+                        return assetIcon != null
+                            ? Image.asset(
+                                assetIcon,
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                              )
+                            : const Icon(Icons.error);
+                      },
                     )
-                  : (token.iconUrl ?? '').startsWith('assets/')
+                  : assetIcon != null
                       ? Image.asset(
-                          token.iconUrl ?? '',
-                          width: 30,
-                          height: 30,
-                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                          assetIcon,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            print('❌ Asset error for $symbol: $error');
+                            // Fallback to network image if asset fails
+                            if ((token.iconUrl ?? '').startsWith('http')) {
+                              return CachedNetworkImage(
+                                imageUrl: token.iconUrl ?? '',
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.contain,
+                                cacheManager: tokenLogoCacheManager,
+                                errorWidget: (context, url, error) => const Icon(Icons.error),
+                              );
+                            }
+                            return const Icon(Icons.error);
+                          },
                         )
-                      : const Icon(Icons.error),
+                      : (token.iconUrl ?? '').startsWith('http')
+                          ? CachedNetworkImage(
+                              imageUrl: token.iconUrl ?? '',
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.contain,
+                              cacheManager: tokenLogoCacheManager,
+                              errorWidget: (context, url, error) => const Icon(Icons.error),
+                            )
+                          : (token.iconUrl ?? '').startsWith('assets/')
+                              ? Image.asset(
+                                  token.iconUrl ?? '',
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                                )
+                              : const Icon(Icons.error),
+            ),
+          ),
           const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,

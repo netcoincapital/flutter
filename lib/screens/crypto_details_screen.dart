@@ -11,6 +11,8 @@ import '../services/secure_storage.dart';
 import '../services/service_provider.dart';
 import '../providers/price_provider.dart';
 import '../utils/number_formatter.dart';
+import '../providers/app_provider.dart';
+import '../providers/token_provider.dart';
 
 class CryptoDetailsScreen extends StatefulWidget {
   final String tokenName;
@@ -43,6 +45,45 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
   String? errorMessage;
   double tokenBalance = 0.0;
   bool isLoadingBalance = true;
+  TokenProvider? _tokenProvider;
+  void _onTokenProviderChanged() {
+    if (_tokenProvider == null) return;
+    _syncBalanceFromProvider(_tokenProvider!);
+  }
+
+  void _syncBalanceFromProvider(TokenProvider tokenProvider) {
+    try {
+      final symbol = widget.tokenSymbol;
+      final blockchain = widget.blockchainName;
+      // Prefer enabled tokens, fallback to full list
+      CryptoToken? token = tokenProvider.enabledTokens.firstWhere(
+        (t) => (t.symbol ?? '').toUpperCase() == symbol.toUpperCase() &&
+               (t.blockchainName ?? '') == blockchain,
+        orElse: () => tokenProvider.currencies.firstWhere(
+          (t) => (t.symbol ?? '').toUpperCase() == symbol.toUpperCase() &&
+                 (t.blockchainName ?? '') == blockchain,
+          orElse: () => CryptoToken(
+            name: symbol,
+            symbol: symbol,
+            blockchainName: blockchain,
+            iconUrl: widget.iconUrl,
+            isEnabled: true,
+            amount: 0.0,
+            isToken: widget.isToken,
+            smartContractAddress: null,
+          ),
+        ),
+      );
+
+      if (token.amount != tokenBalance && mounted) {
+        setState(() {
+          tokenBalance = token.amount;
+        });
+      }
+    } catch (_) {
+      // Silent
+    }
+  }
 
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
@@ -59,6 +100,17 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
     _updatePalette(widget.iconUrl);
     _loadTransactions();
     _loadTokenBalance(); // اضافه کردن بارگذاری موجودی توکن
+    // Immediately show balance from TokenProvider if available, and listen for updates
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final appProvider = Provider.of<AppProvider>(context, listen: false);
+        _tokenProvider = appProvider.tokenProvider;
+        if (_tokenProvider != null) {
+          _syncBalanceFromProvider(_tokenProvider!);
+          _tokenProvider!.addListener(_onTokenProviderChanged);
+        }
+      } catch (_) {}
+    });
     
     // Load selected currency and fetch price for this token (مطابق با Kotlin crypto_details.kt)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -68,6 +120,12 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
       // دریافت قیمت این توکن خاص (مطابق با Kotlin crypto_details.kt)
       await priceProvider.fetchPrices([widget.tokenSymbol], currencies: [priceProvider.selectedCurrency]);
     });
+  }
+
+  @override
+  void dispose() {
+    _tokenProvider?.removeListener(_onTokenProviderChanged);
+    super.dispose();
   }
 
   /// ایجاد CryptoToken object برای ارسال به صفحه Send
@@ -138,7 +196,7 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
     }
   }
 
-  /// دریافت موجودی توکن خاص (مطابق با crypto_details.kt)
+  /// دریافت موجودی توکن خاص فقط با API update-balance
   Future<void> _loadTokenBalance() async {
     setState(() {
       isLoadingBalance = true;
@@ -152,10 +210,10 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
         
         final apiService = ServiceProvider.instance.apiService;
         
-        // استفاده از getBalance API مطابق با crypto_details.kt (توکن خاص)
+        // فقط خواندن: استفاده از getBalance برای یک توکن خاص
         final response = await apiService.getBalance(
           userId,
-          currencyNames: [widget.tokenSymbol], // فقط توکن خاص مانند کاتلین
+          currencyNames: [widget.tokenSymbol],
           blockchain: {},
         );
         
@@ -191,9 +249,16 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
             isLoadingBalance = false;
           });
         } else {
-          print('❌ CryptoDetails - No balance data received');
+          print('❌ CryptoDetails - No balance data received from getBalance');
+          // Fallback to provider's current amount if available (بدون فراخوانی API دیگر)
+          try {
+            final appProvider = Provider.of<AppProvider>(context, listen: false);
+            final tp = appProvider.tokenProvider;
+            if (tp != null) {
+              _syncBalanceFromProvider(tp);
+            }
+          } catch (_) {}
           setState(() {
-            tokenBalance = 0.0;
             isLoadingBalance = false;
           });
         }
@@ -206,8 +271,15 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
       }
     } catch (e) {
       print('❌ CryptoDetails - Error loading token balance: $e');
+      // Fallback to provider state on error as well (بدون استفاده از API balance)
+      try {
+        final appProvider = Provider.of<AppProvider>(context, listen: false);
+        final tp = appProvider.tokenProvider;
+        if (tp != null) {
+          _syncBalanceFromProvider(tp);
+        }
+      } catch (_) {}
       setState(() {
-        tokenBalance = 0.0;
         isLoadingBalance = false;
       });
     }

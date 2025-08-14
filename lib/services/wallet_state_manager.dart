@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'secure_storage.dart';
 import 'passcode_manager.dart';
 import 'security_settings_manager.dart';
@@ -53,6 +55,12 @@ class WalletStateManager {
       
       if (wallets.isEmpty) {
         print('❌ No wallets found in list');
+        
+        // iOS Fallback: Check SharedPreferences if keychain fails
+        if (Platform.isIOS) {
+          return await _checkValidWalletFallback();
+        }
+        
         return false;
       }
       
@@ -190,10 +198,27 @@ class WalletStateManager {
         await SecureStorage.instance.saveWalletsList(existingWallets);
       }
 
+      // CRITICAL: Mark that app has been used (prevent false fresh install detection)
+      await _markAppAsUsed();
+      
       print('✅ Wallet info saved successfully (including ${activeTokens?.length ?? 0} active tokens)');
     } catch (e) {
       print('❌ Error saving wallet info: $e');
       rethrow;
+    }
+  }
+
+  /// Mark app as used to prevent false fresh install detection
+  Future<void> _markAppAsUsed() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('app_has_been_used', true);
+      await prefs.setBool('wallet_imported', true);
+      await prefs.setString('last_wallet_action', DateTime.now().millisecondsSinceEpoch.toString());
+      
+      print('✅ App marked as used - fresh install detection will be more accurate');
+    } catch (e) {
+      print('❌ Error marking app as used: $e');
     }
   }
 
@@ -274,9 +299,42 @@ class WalletStateManager {
   /// Check if this is a fresh install (no existing data)
   Future<bool> isFreshInstall() async {
     try {
-      // First check if we have any secure storage keys at all
+      // CRITICAL FIX: More conservative approach to prevent data loss
+      // Check multiple sources to ensure we don't incorrectly detect fresh install
+      
+      // 1. Check SharedPreferences first (most reliable for app state)
+      final hasDataInPrefs = await _checkSharedPreferencesForData();
+      if (hasDataInPrefs) {
+        print('📱 Found data in SharedPreferences - NOT fresh install');
+        return false;
+      }
+      
+      // 2. Check keychain/secure storage
+      final hasSecureData = await _checkSecureStorageForData();
+      if (hasSecureData) {
+        print('🔐 Found data in SecureStorage - NOT fresh install');
+        return false;
+      }
+      
+      // 3. Check passcode specifically (critical indicator)
+      final hasPasscodeSet = await PasscodeManager.isPasscodeSet();
+      if (hasPasscodeSet) {
+        print('🔑 Found passcode - NOT fresh install');
+        return false;
+      }
+      
+      // Check if we have any secure storage keys at all
       final keys = await SecureStorage.instance.getAllKeys();
       if (keys.isEmpty) {
+        // iOS: If keychain is empty, double-check SharedPreferences
+        if (Platform.isIOS) {
+          final hasDataInPrefs = await _checkSharedPreferencesForData();
+          if (hasDataInPrefs) {
+            print('🍎 Keychain empty but SharedPreferences has data - NOT fresh install');
+            return false;
+          }
+        }
+        
         print('🆕 No secure storage keys found - fresh install');
         return true;
       }
@@ -319,8 +377,8 @@ class WalletStateManager {
       }
       
       // Check if passcode is set using PasscodeManager
-      final hasPasscodeSet = await PasscodeManager.isPasscodeSet();
-      if (hasPasscodeSet) {
+      final isPasscodeSet = await PasscodeManager.isPasscodeSet();
+      if (isPasscodeSet) {
         print('🔑 Found passcode - NOT fresh install');
         return false;
       }
@@ -329,14 +387,171 @@ class WalletStateManager {
       print('⚠️ Has ${keys.length} keys but no valid wallet or important data');
       print('🔑 Keys found: ${keys.take(5).join(', ')}${keys.length > 5 ? '...' : ''}');
       
-      // If we have any data but no valid wallet or important data, treat as fresh install
-      // This ensures that corrupted or incomplete data doesn't prevent fresh install
-      print('🆕 Treating as fresh install due to no valid wallet or important data');
+      // If we have any data at all, it's NOT a fresh install
+      // Even if data is corrupted, the app was previously installed
+      if (keys.isNotEmpty) {
+        print('📊 Found ${keys.length} keys - NOT fresh install (app was previously installed)');
+        return false;
+      }
+      
+      // Only if we have absolutely no keys, treat as fresh install
+      print('🆕 No keys found - treating as fresh install');
       return true;
       
     } catch (e) {
       print('❌ Error checking fresh install: $e');
       return false; // Assume NOT fresh install on error to be safe
+    }
+  }
+
+  /// Check SecureStorage for any critical app data
+  Future<bool> _checkSecureStorageForData() async {
+    try {
+      // Check for critical keys that indicate app usage
+      final criticalKeys = [
+        'selected_wallet',
+        'UserID',
+        'WalletID', 
+        'app_last_initialized',
+        'passcode_hash_secure',
+        'passcode_salt_secure',
+      ];
+      
+      for (final key in criticalKeys) {
+        try {
+          final value = await SecureStorage.instance.getSecureData(key);
+          if (value != null && value.isNotEmpty) {
+            print('🔐 Found SecureStorage key: $key');
+            return true;
+          }
+        } catch (e) {
+          // Continue checking other keys if one fails
+          print('🔐 Error checking key $key: $e');
+        }
+      }
+      
+      // Check wallet list
+      try {
+        final wallets = await SecureStorage.instance.getWalletsList();
+        if (wallets.isNotEmpty) {
+          print('🔐 Found ${wallets.length} wallets in SecureStorage');
+          return true;
+        }
+      } catch (e) {
+        print('🔐 Error checking wallet list: $e');
+      }
+      
+      // Check all keys as last resort
+      try {
+        final allKeys = await SecureStorage.instance.getAllKeys();
+        if (allKeys.isNotEmpty) {
+          print('🔐 Found ${allKeys.length} keys in SecureStorage');
+          return true;
+        }
+      } catch (e) {
+        print('🔐 Error getting all keys: $e');
+      }
+      
+      print('🔐 No data found in SecureStorage');
+      return false;
+      
+    } catch (e) {
+      print('🔐 Error checking SecureStorage: $e');
+      return false;
+    }
+  }
+
+  /// Check SharedPreferences for any app data (iOS resilience)
+  Future<bool> _checkSharedPreferencesForData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Check for any key that indicates the app was used before
+      final indicatorKeys = [
+        'selected_wallet',
+        'UserID', 
+        'WalletID',
+        'passcode_hash',
+        'passcode_salt',
+        'wallet_list',
+        'app_initialized',
+        'user_preferences',
+        'last_background_time',
+        'auto_lock_timeout',
+        'security_settings',
+        'first_run_completed',
+        'app_has_been_used',     // NEW: Critical flag
+        'wallet_imported',       // NEW: Wallet import flag
+        'last_wallet_action',    // NEW: Last activity timestamp
+        'passcode_set',          // NEW: Passcode set flag
+        'last_passcode_action',  // NEW: Last passcode activity
+      ];
+      
+      for (final key in indicatorKeys) {
+        if (prefs.containsKey(key)) {
+          final value = prefs.get(key);
+          if (value != null) {
+            print('🍎 Found SharedPreferences key: $key');
+            return true;
+          }
+        }
+      }
+      
+      // Check if we have any keys at all
+      final allKeys = prefs.getKeys();
+      if (allKeys.isNotEmpty) {
+        print('🍎 Found ${allKeys.length} SharedPreferences keys: ${allKeys.take(5).join(", ")}${allKeys.length > 5 ? "..." : ""}');
+        return true;
+      }
+      
+      print('🍎 No data found in SharedPreferences');
+      return false;
+      
+    } catch (e) {
+      print('🍎 Error checking SharedPreferences: $e');
+      return false;
+    }
+  }
+
+  /// iOS Fallback: Check for valid wallet in SharedPreferences
+  Future<bool> _checkValidWalletFallback() async {
+    try {
+      print('🍎 iOS: Checking SharedPreferences for wallet fallback...');
+      
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Check for common wallet indicators in SharedPreferences
+      final hasWalletData = prefs.containsKey('selected_wallet') ||
+                           prefs.containsKey('UserID') ||
+                           prefs.containsKey('WalletID') ||
+                           prefs.containsKey('passcode_hash');
+      
+      if (hasWalletData) {
+        print('🍎 iOS: Found wallet indicators in SharedPreferences');
+        
+        // Try to get specific wallet data
+        final selectedWallet = prefs.getString('selected_wallet');
+        final userId = prefs.getString('UserID');
+        final walletId = prefs.getString('WalletID');
+        
+        print('🍎 iOS: selectedWallet: ${selectedWallet != null ? "EXISTS" : "NULL"}');
+        print('🍎 iOS: userId: ${userId != null ? "EXISTS" : "NULL"}');
+        print('🍎 iOS: walletId: ${walletId != null ? "EXISTS" : "NULL"}');
+        
+        // If we have basic wallet info, consider it valid for routing
+        // The actual mnemonic might be in keychain but not accessible
+        if (selectedWallet != null || userId != null) {
+          print('🍎 iOS: Valid wallet found in SharedPreferences fallback');
+          return true;
+        }
+      }
+      
+      print('🍎 iOS: No valid wallet found in SharedPreferences fallback');
+      return false;
+      
+    } catch (e) {
+      print('🍎 iOS: Error in SharedPreferences fallback: $e');
+      return false;
     }
   }
 

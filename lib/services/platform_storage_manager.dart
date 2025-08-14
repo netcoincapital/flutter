@@ -17,8 +17,10 @@ class PlatformStorageManager {
       storageCipherAlgorithm: StorageCipherAlgorithm.AES_GCM_NoPadding,
     ),
     iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock_this_device,
+      accessibility: KeychainAccessibility.first_unlock,
       synchronizable: false, // جلوگیری از sync با iCloud
+      accountName: 'com.coinceeper.app', // مشخص کردن App-specific storage
+      groupId: null, // عدم استفاده از shared keychain group
     ),
   );
 

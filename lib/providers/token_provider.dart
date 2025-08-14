@@ -7,7 +7,7 @@ import 'dart:io';
 import '../models/crypto_token.dart';
 import '../models/price_data.dart';
 import '../services/api_service.dart';
-import '../utils/token_preferences.dart';
+import '../services/token_preferences.dart';
 import '../services/secure_storage.dart';
 
 class TokenProvider extends ChangeNotifier {
@@ -47,7 +47,10 @@ class TokenProvider extends ChangeNotifier {
 
   // گترهای سازگاری با کد موجود
   List<CryptoToken> get tokens => _activeTokens;
-  List<CryptoToken> get enabledTokens => _activeTokens.where((t) => t.isEnabled).toList();
+  List<CryptoToken> get enabledTokens {
+    final enabled = _activeTokens.where((t) => t.isEnabled).toList();
+    return sortTokensByDollarValue(enabled);
+  }
   
   // Getter to check if TokenProvider is fully initialized
   bool get isInitialized => !_isLoading && _currencies.isNotEmpty;
@@ -56,7 +59,6 @@ class TokenProvider extends ChangeNotifier {
   bool get isFullyReady {
     return !_isLoading && 
            _currencies.isNotEmpty && 
-           tokenPreferences.isCacheInitialized &&
            _activeTokens.isNotEmpty;
   }
   
@@ -67,7 +69,7 @@ class TokenProvider extends ChangeNotifier {
     print('Is Loading: $_isLoading');
     print('Is Initialized: $isInitialized');
     print('Is Fully Ready: $isFullyReady');
-    print('Cache Initialized: ${tokenPreferences.isCacheInitialized}');
+    // print('Cache Initialized: ${tokenPreferences.isCacheInitialized}'); // Property not available in utils TokenPreferences
     print('Total Currencies: ${_currencies.length}');
     print('Active Tokens: ${_activeTokens.length}');
     print('Active Tokens List: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
@@ -78,7 +80,7 @@ class TokenProvider extends ChangeNotifier {
   Future<void> debugTokenPreferences() async {
     print('=== TokenPreferences Debug ===');
     print('User ID: $_userId');
-    print('Cache Initialized: ${tokenPreferences.isCacheInitialized}');
+    // print('Cache Initialized: ${tokenPreferences.isCacheInitialized}'); // Property not available in utils TokenPreferences
     
     // Validate userId
     if (_userId.isEmpty) {
@@ -89,7 +91,7 @@ class TokenProvider extends ChangeNotifier {
     // Check default tokens
     final defaultTokens = ['BTC', 'ETH', 'TRX'];
     for (final symbol in defaultTokens) {
-      final state = tokenPreferences.getTokenStateSync(symbol, symbol, null);
+      final state = tokenPreferences.getTokenStateFromParams(symbol, symbol, null);
       print('Token $symbol state: $state');
     }
     
@@ -132,6 +134,10 @@ class TokenProvider extends ChangeNotifier {
       // 3. Load cached tokens immediately
       await _loadCachedTokensQuickly();
       print('✅ TokenProvider: Cached tokens loaded quickly');
+      
+      // 3.5. Load balance cache from SecureStorage
+      await _loadBalanceCacheFromSecureStorage();
+      print('✅ TokenProvider: Balance cache loaded from SecureStorage');
       
       // 4. Force smart load to ensure we have all tokens
       await smartLoadTokens(forceRefresh: false);
@@ -180,9 +186,8 @@ class TokenProvider extends ChangeNotifier {
     // Load tokens with smart caching
     await smartLoadTokens(forceRefresh: false);
     
-    // Load balances for active tokens مطابق با Kotlin
-    print('🔄 TokenProvider: Loading balances for active tokens...');
-    await fetchBalancesForActiveTokens();
+    // مطابق گزارش Kotlin: موجودی‌ها فقط بعد از import wallet فراخوانی می‌شوند
+    print('ℹ️ TokenProvider: Skipping balance fetch in initialization - balances only fetched after wallet import');
     
     print('✅ TokenProvider: Initialized successfully for user: $_userId');
   }
@@ -194,7 +199,7 @@ class TokenProvider extends ChangeNotifier {
         name: 'Bitcoin',
         symbol: 'BTC',
         blockchainName: 'Bitcoin',
-        iconUrl: 'https://coinceeper.com/defualtIcons/bitcoin.png',
+        iconUrl: 'https://coinceeper.com/defaultIcons/bitcoin.png',
         isEnabled: true,
         isToken: false,
         smartContractAddress: null,
@@ -203,7 +208,7 @@ class TokenProvider extends ChangeNotifier {
         name: 'Ethereum',
         symbol: 'ETH',
         blockchainName: 'Ethereum',
-        iconUrl: 'https://coinceeper.com/defualtIcons/ethereum.png',
+        iconUrl: 'https://coinceeper.com/defaultIcons/ethereum.png',
         isEnabled: true,
         isToken: false,
         smartContractAddress: null,
@@ -212,7 +217,7 @@ class TokenProvider extends ChangeNotifier {
         name: 'Tron',
         symbol: 'TRX',
         blockchainName: 'Tron',
-        iconUrl: 'https://coinceeper.com/defualtIcons/tron.png',
+        iconUrl: 'https://coinceeper.com/defaultIcons/tron.png',
         isEnabled: true,
         isToken: false,
         smartContractAddress: null,
@@ -235,13 +240,75 @@ class TokenProvider extends ChangeNotifier {
       
       if (jsonStr != null) {
         final List<dynamic> list = json.decode(jsonStr);
-        final cachedTokens = list.map((e) => CryptoToken.fromJson(e)).toList();
+        
+        // Enhanced parsing with better error handling
+        List<CryptoToken> cachedTokens = [];
+        int successfulQuickParsedCount = 0;
+        
+        for (int i = 0; i < list.length; i++) {
+          try {
+            final item = list[i] as Map<String, dynamic>;
+            
+            // Pre-process boolean fields for quick cache loading
+            if (item.containsKey('isEnabled')) {
+              final isEnabledValue = item['isEnabled'];
+              if (isEnabledValue is String) {
+                item['isEnabled'] = isEnabledValue.toLowerCase() == 'true' || isEnabledValue == '1';
+              } else if (isEnabledValue is int) {
+                item['isEnabled'] = isEnabledValue != 0;
+              }
+            }
+            
+            if (item.containsKey('isToken')) {
+              final isTokenValue = item['isToken'];
+              if (isTokenValue is String) {
+                item['isToken'] = isTokenValue.toLowerCase() == 'true' || isTokenValue == '1';
+              } else if (isTokenValue is int) {
+                item['isToken'] = isTokenValue != 0;
+              }
+            }
+            
+            final token = CryptoToken.fromJson(item);
+            cachedTokens.add(token);
+            successfulQuickParsedCount++;
+          } catch (e) {
+            print('❌ Error parsing quick cache item $i: $e');
+            
+            // Try fallback parsing for quick cache
+            try {
+              final item = list[i] as Map<String, dynamic>;
+              final fallbackToken = CryptoToken(
+                name: item['name']?.toString() ?? 'Unknown',
+                symbol: item['symbol']?.toString() ?? 'UNK',
+                blockchainName: item['blockchainName']?.toString() ?? item['BlockchainName']?.toString() ?? 'Unknown',
+                iconUrl: item['iconUrl']?.toString() ?? 'https://coinceeper.com/defaultIcons/coin.png',
+                isEnabled: false, // Safe default for quick load
+                isToken: true, // Safe default
+                smartContractAddress: item['smartContractAddress']?.toString() ?? item['SmartContractAddress']?.toString(),
+                amount: 0.0, // Safe default
+              );
+              cachedTokens.add(fallbackToken);
+              print('⚠️ Created fallback token in quick cache for item $i: ${fallbackToken.symbol}');
+            } catch (fallbackError) {
+              print('❌ Could not create fallback token in quick cache for item $i: $fallbackError');
+              // Skip this item and continue
+            }
+          }
+        }
+        
+        if (cachedTokens.isEmpty) {
+          print('⚠️ TokenProvider: No valid tokens in quick cache, clearing');
+          await _clearAllCache(prefs);
+          return;
+        }
+        
+        print('✅ TokenProvider: Quick parsed $successfulQuickParsedCount/${list.length} tokens from cache');
         
         print('🔄 TokenProvider: Found ${cachedTokens.length} cached tokens');
         
         // به‌روزرسانی state توکن‌ها از TokenPreferences
         final updatedTokens = cachedTokens.map((token) {
-          final isEnabled = tokenPreferences.getTokenStateSync(
+          final isEnabled = tokenPreferences.getTokenStateFromParams(
             token.symbol ?? '', 
             token.blockchainName ?? '', 
             token.smartContractAddress
@@ -275,19 +342,95 @@ class TokenProvider extends ChangeNotifier {
       print('❌ TokenProvider: Could not load cached tokens: $e');
     }
   }
+
+  /// بارگذاری کش موجودی از SecureStorage
+  Future<void> _loadBalanceCacheFromSecureStorage() async {
+    try {
+      print('🔄 TokenProvider: Loading balance cache from SecureStorage...');
+      
+      // دریافت نام کیف پول فعلی
+      final currentWallet = await SecureStorage.instance.getSelectedWallet();
+      if (currentWallet == null) {
+        print('⚠️ TokenProvider: No selected wallet found');
+        return;
+      }
+      
+      // بارگذاری کش موجودی برای کیف پول فعلی
+      final balanceCache = await SecureStorage.instance.getWalletBalanceCache(currentWallet, _userId);
+      
+      if (balanceCache.isNotEmpty) {
+        print('💾 TokenProvider: Found cached balances: $balanceCache');
+        
+        // اعمال موجودی‌های cached به توکن‌های موجود
+        _currencies = _currencies.map((token) {
+          final symbol = token.symbol ?? '';
+          final cachedBalance = balanceCache[symbol] ?? 0.0;
+          if (cachedBalance > 0.0) {
+            print('   💰 Applied cached balance to ${token.symbol}: $cachedBalance');
+            return token.copyWith(amount: cachedBalance);
+          }
+          return token;
+        }).toList();
+        
+        // به‌روزرسانی active tokens با موجودی‌های cached
+        _activeTokens = _activeTokens.map((token) {
+          final symbol = token.symbol ?? '';
+          final cachedBalance = balanceCache[symbol] ?? 0.0;
+          if (cachedBalance > 0.0) {
+            return token.copyWith(amount: cachedBalance);
+          }
+          return token;
+        }).toList();
+        
+        // اضافه کردن توکن‌هایی که موجودی دارند اما در لیست نیستند
+        for (final symbol in balanceCache.keys) {
+          final balance = balanceCache[symbol] ?? 0.0;
+          if (balance > 0.0) {
+            final existsInActive = _activeTokens.any((t) => t.symbol == symbol);
+            if (!existsInActive) {
+              // بررسی وضعیت enabled بودن از preferences
+              final isEnabled = tokenPreferences.getTokenStateFromParams(symbol, 'Tron', null) ?? true;
+              
+              if (isEnabled) {
+                final newToken = CryptoToken(
+                  name: symbol,
+                  symbol: symbol,
+                  blockchainName: 'Tron',
+                  iconUrl: 'https://coinceeper.com/defaultIcons/coin.png',
+                  isEnabled: true,
+                  amount: balance,
+                  isToken: true,
+                );
+                
+                _activeTokens.add(newToken);
+                _currencies.add(newToken);
+                print('   ✅ Added cached token to active list: $symbol = $balance');
+              }
+            }
+          }
+        }
+        
+        notifyListeners();
+        print('✅ TokenProvider: Balance cache applied successfully');
+      } else {
+        print('⚠️ TokenProvider: No cached balances found');
+      }
+    } catch (e) {
+      print('❌ TokenProvider: Error loading balance cache: $e');
+    }
+  }
   
   // اجرای tasks در background
   void _runBackgroundTasks() {
     print('🔄 TokenProvider: Starting background tasks...');
     
-    // Add a delay before starting background tasks to avoid blocking startup
-    Future.delayed(const Duration(seconds: 2), () {
-      // Fetch gas fees (non-critical)
+    // Fetch gas fees (non-critical) a bit later
+    Future.delayed(const Duration(seconds: 1), () {
       _fetchGasFees();
     });
     
-    // Load fresh tokens from API with delay
-    Future.delayed(const Duration(seconds: 3), () {
+    // Load fresh tokens from API with small delay
+    Future.delayed(const Duration(seconds: 2), () {
       smartLoadTokens(forceRefresh: false).then((_) {
         print('✅ TokenProvider: Fresh tokens loaded from API');
       }).catchError((e) {
@@ -295,14 +438,8 @@ class TokenProvider extends ChangeNotifier {
       });
     });
     
-    // Load balances with even more delay to avoid overwhelming the system
-    Future.delayed(const Duration(seconds: 5), () {
-      fetchBalancesForActiveTokens().then((_) {
-        print('✅ TokenProvider: Balances loaded in background');
-      }).catchError((e) {
-        print('❌ TokenProvider: Error loading balances: $e');
-      });
-    });
+    // مطابق گزارش Kotlin: موجودی‌ها فقط بعد از import wallet فراخوانی می‌شوند
+    print('ℹ️ TokenProvider: Skipping background balance fetch - balances only fetched after wallet import');
   }
   
   /// مقداردهی اولیه توکن‌های پیش‌فرض - مشابه Kotlin
@@ -313,7 +450,7 @@ class TokenProvider extends ChangeNotifier {
           name: 'Bitcoin',
           symbol: 'BTC',
           blockchainName: 'Bitcoin',
-          iconUrl: 'https://coinceeper.com/defualtIcons/bitcoin.png',
+          iconUrl: 'https://coinceeper.com/defaultIcons/bitcoin.png',
           isEnabled: true,
           isToken: false,
           smartContractAddress: null,
@@ -322,7 +459,7 @@ class TokenProvider extends ChangeNotifier {
           name: 'Ethereum',
           symbol: 'ETH',
           blockchainName: 'Ethereum',
-          iconUrl: 'https://coinceeper.com/defualtIcons/ethereum.png',
+          iconUrl: 'https://coinceeper.com/defaultIcons/ethereum.png',
           isEnabled: true,
           isToken: false,
           smartContractAddress: null,
@@ -331,7 +468,7 @@ class TokenProvider extends ChangeNotifier {
           name: 'Tron',
           symbol: 'TRX',
           blockchainName: 'Tron',
-          iconUrl: 'https://coinceeper.com/defualtIcons/tron.png',
+          iconUrl: 'https://coinceeper.com/defaultIcons/tron.png',
           isEnabled: true,
           isToken: false,
           smartContractAddress: null,
@@ -346,7 +483,7 @@ class TokenProvider extends ChangeNotifier {
       if (isFirstRun) {
         // اولین اجرا - ذخیره tokens پیش‌فرض
         for (final token in defaultTokens) {
-          await tokenPreferences.saveTokenState(
+          await tokenPreferences.saveTokenStateFromParams(
             token.symbol ?? '',
             token.blockchainName ?? '',
             token.smartContractAddress,
@@ -366,7 +503,7 @@ class TokenProvider extends ChangeNotifier {
         final existingTokens = <CryptoToken>[];
         
         for (final token in defaultTokens) {
-          final enabled = await tokenPreferences.getTokenState(
+          final enabled = tokenPreferences.getTokenStateFromParams(
             token.symbol ?? '',
             token.blockchainName ?? '',
             token.smartContractAddress,
@@ -383,7 +520,7 @@ class TokenProvider extends ChangeNotifier {
         // اطمینان از حداقل یک token فعال
         if (existingTokens.isEmpty) {
           print('⚠️ TokenProvider - No enabled default tokens, re-enabling Bitcoin');
-          await tokenPreferences.saveTokenState('BTC', 'Bitcoin', null, true);
+          await tokenPreferences.saveTokenStateFromParams('BTC', 'Bitcoin', null, true);
           existingTokens.add(defaultTokens[0]); // Bitcoin
         }
         
@@ -462,12 +599,85 @@ class TokenProvider extends ChangeNotifier {
     final jsonStr = prefs.getString('cachedUserTokens_$_userId');
     if (jsonStr == null) return false;
     try {
+      print('🔄 TokenProvider: Attempting to load cache for user: $_userId');
       final List<dynamic> list = json.decode(jsonStr);
-      final tokens = list.map((e) => CryptoToken.fromJson(e)).toList();
+      print('📁 TokenProvider: Cache contains ${list.length} items');
+      
+      // Try to parse with enhanced error handling
+      List<CryptoToken> tokens = [];
+      int successfulParsedCount = 0;
+      
+      for (int i = 0; i < list.length; i++) {
+        try {
+          final item = list[i] as Map<String, dynamic>;
+          print('🔄 Parsing cache item $i: ${item.keys.toList()}');
+          
+          // Pre-process boolean fields to ensure compatibility
+          if (item.containsKey('isEnabled')) {
+            final isEnabledValue = item['isEnabled'];
+            print('   isEnabled: $isEnabledValue (${isEnabledValue.runtimeType})');
+            
+            // Convert to proper boolean if needed
+            if (isEnabledValue is String) {
+              item['isEnabled'] = isEnabledValue.toLowerCase() == 'true' || isEnabledValue == '1';
+            } else if (isEnabledValue is int) {
+              item['isEnabled'] = isEnabledValue != 0;
+            }
+          }
+          
+          if (item.containsKey('isToken')) {
+            final isTokenValue = item['isToken'];
+            print('   isToken: $isTokenValue (${isTokenValue.runtimeType})');
+            
+            // Convert to proper boolean if needed
+            if (isTokenValue is String) {
+              item['isToken'] = isTokenValue.toLowerCase() == 'true' || isTokenValue == '1';
+            } else if (isTokenValue is int) {
+              item['isToken'] = isTokenValue != 0;
+            }
+          }
+          
+          final token = CryptoToken.fromJson(item);
+          tokens.add(token);
+          successfulParsedCount++;
+          print('✅ Successfully parsed cache item $i: ${token.symbol}');
+        } catch (e) {
+          print('❌ Error parsing cache item $i: $e');
+          print('   Item data: ${list[i]}');
+          
+          // Try to create a fallback token from raw data
+          try {
+            final item = list[i] as Map<String, dynamic>;
+            final fallbackToken = CryptoToken(
+              name: item['name']?.toString() ?? 'Unknown',
+              symbol: item['symbol']?.toString() ?? 'UNK',
+              blockchainName: item['blockchainName']?.toString() ?? item['BlockchainName']?.toString() ?? 'Unknown',
+              iconUrl: item['iconUrl']?.toString() ?? 'https://coinceeper.com/defaultIcons/coin.png',
+              isEnabled: false, // Safe default
+              isToken: true, // Safe default
+              smartContractAddress: item['smartContractAddress']?.toString() ?? item['SmartContractAddress']?.toString(),
+              amount: 0.0, // Safe default
+            );
+            tokens.add(fallbackToken);
+            print('⚠️ Created fallback token for item $i: ${fallbackToken.symbol}');
+          } catch (fallbackError) {
+            print('❌ Could not create fallback token for item $i: $fallbackError');
+            // Skip this item completely
+          }
+        }
+      }
+      
+      if (tokens.isEmpty) {
+        print('⚠️ TokenProvider: No valid tokens found in cache, clearing');
+        await _clearAllCache(prefs);
+        return false;
+      }
+      
+      print('✅ TokenProvider: Successfully parsed $successfulParsedCount/${list.length} tokens from cache');
       
       // به‌روزرسانی state توکن‌ها از preferences
       final updatedTokens = tokens.map((token) {
-        final isEnabled = tokenPreferences.getTokenStateSync(
+        final isEnabled = tokenPreferences.getTokenStateFromParams(
           token.symbol ?? '', 
           token.blockchainName ?? '', 
           token.smartContractAddress
@@ -479,31 +689,108 @@ class TokenProvider extends ChangeNotifier {
       _activeTokens = updatedTokens.where((t) => t.isEnabled).toList();
       notifyListeners();
       return true;
-    } catch (_) {
+    } catch (e) {
+      print('❌ TokenProvider: Unexpected error in _loadFromCache: $e');
+      await _clearAllCache(prefs);
       return false;
+    }
+  }
+
+  /// پاک کردن کامل cache
+  Future<void> _clearAllCache(SharedPreferences prefs) async {
+    try {
+      print('🗑️ TokenProvider: Clearing all cache for user: $_userId');
+      await prefs.remove('cachedUserTokens_$_userId');
+      await prefs.remove('cache_timestamp_$_userId');
+      await prefs.remove('add_token_cached_tokens');
+      
+      // Clear any other related cache keys
+      final keys = prefs.getKeys().where((key) => key.contains(_userId)).toList();
+      for (final key in keys) {
+        if (key.contains('cached') || key.contains('timestamp')) {
+          await prefs.remove(key);
+          print('🗑️ Removed cache key: $key');
+        }
+      }
+      
+      print('✅ TokenProvider: All cache cleared for user: $_userId');
+    } catch (e) {
+      print('❌ Error clearing cache: $e');
     }
   }
 
   // بارگذاری از API
   Future<void> _loadFromApi(SharedPreferences prefs) async {
     try {
+      print('🔄 TokenProvider: Loading from API...');
       final response = await apiService.getAllCurrencies();
+      print('📥 TokenProvider: getAllCurrencies response success: ${response.success}');
+      print('📥 TokenProvider: currencies count: ${response.currencies.length}');
+      
       if (response.success) {
         final tokens = response.currencies.map<CryptoToken>((token) {
-          final isEnabled = tokenPreferences.getTokenStateSync(
+          print('🔄 Processing token: ${token.symbol} (IsToken: ${token.isToken}, type: ${token.isToken.runtimeType})');
+          
+          final isEnabled = tokenPreferences.getTokenStateFromParams(
             token.symbol ?? '',
             token.blockchainName ?? '',
             token.smartContractAddress,
           ) ?? false;
-          return CryptoToken(
-            name: token.currencyName,
-            symbol: token.symbol,
-            blockchainName: token.blockchainName,
-            iconUrl: token.icon ?? 'https://coinceeper.com/defualtIcons/coin.png',
-            isEnabled: isEnabled,
-            isToken: token.isToken ?? true,
-            smartContractAddress: token.smartContractAddress,
-          );
+          
+          try {
+            // Use the API model's isToken field which already has proper conversion
+            // The NullableBoolIntConverter should handle the conversion
+            final isTokenBool = token.isToken ?? true; // Use null-aware operator with default fallback
+            
+            final cryptoToken = CryptoToken(
+              name: token.currencyName,
+              symbol: token.symbol,
+              blockchainName: token.blockchainName,
+              iconUrl: token.icon ?? 'https://coinceeper.com/defaultIcons/coin.png',
+              isEnabled: isEnabled,
+              isToken: isTokenBool,
+              smartContractAddress: token.smartContractAddress,
+            );
+            print('✅ Successfully created CryptoToken for ${token.symbol} (isToken: $isTokenBool)');
+            return cryptoToken;
+          } catch (e) {
+            print('❌ Error creating CryptoToken for ${token.symbol}: $e');
+            print('   token.isToken value: ${token.isToken}');
+            print('   token.isToken type: ${token.isToken.runtimeType}');
+            
+            // Enhanced fallback: create token with safer boolean handling
+            bool safeIsToken = true; // Default fallback
+            
+            // Try manual conversion if the converter failed
+            if (token.isToken != null) {
+              try {
+                if (token.isToken is bool) {
+                  safeIsToken = token.isToken!;
+                } else if (token.isToken is int) {
+                  safeIsToken = token.isToken != 0;
+                } else if (token.isToken is String) {
+                  final stringValue = token.isToken.toString().toLowerCase();
+                  safeIsToken = stringValue == 'true' || stringValue == '1';
+                } else {
+                  print('⚠️ Unexpected isToken type: ${token.isToken.runtimeType}, using default');
+                }
+              } catch (conversionError) {
+                print('❌ Manual conversion also failed: $conversionError');
+              }
+            }
+            
+            final fallbackToken = CryptoToken(
+              name: token.currencyName ?? 'Unknown',
+              symbol: token.symbol ?? 'UNK',
+              blockchainName: token.blockchainName ?? 'Unknown',
+              iconUrl: token.icon ?? 'https://coinceeper.com/defaultIcons/coin.png',
+              isEnabled: isEnabled,
+              isToken: safeIsToken,
+              smartContractAddress: token.smartContractAddress,
+            );
+            print('⚠️ Created fallback CryptoToken for ${token.symbol} with isToken: $safeIsToken');
+            return fallbackToken;
+          }
         }).toList();
         final ordered = _maintainTokenOrder(tokens);
         await _saveToCache(prefs, ordered);
@@ -514,6 +801,7 @@ class TokenProvider extends ChangeNotifier {
         _errorMessage = 'Failed to load tokens';
       }
     } catch (e) {
+      print('❌ TokenProvider: API error in _loadFromApi: $e');
       _errorMessage = 'API error: ${e.toString()}';
     }
   }
@@ -527,7 +815,7 @@ class TokenProvider extends ChangeNotifier {
 
   // حفظ ترتیب توکن‌ها بر اساس ذخیره قبلی
   List<CryptoToken> _maintainTokenOrder(List<CryptoToken> tokens) {
-    final List<String> savedOrder = (tokenPreferences.getTokenOrderSync() ?? []).map((e) => e ?? '').toList();
+    final List<String> savedOrder = tokenPreferences.getTokenOrder();
     if (savedOrder.isEmpty) return tokens;
     final tokenMap = {for (var t in tokens) '${t.symbol ?? ''}_${t.name ?? ''}': t};
     final orderedTokens = <CryptoToken>[];
@@ -550,14 +838,33 @@ class TokenProvider extends ChangeNotifier {
   Future<void> fetchPrices({List<String>? activeSymbols, List<String>? fiatCurrencies}) async {
     activeSymbols ??= _activeTokens.map((t) => t.symbol).whereType<String>().toList();
     fiatCurrencies ??= ['USD', 'EUR', 'IRR'];
-    if (activeSymbols.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
-    if (_isPriceCacheValid(prefs)) {
-      await loadPricesFromCache(prefs);
+    if (activeSymbols.isEmpty) {
+      print('⚠️ TokenProvider.fetchPrices: No active symbols to fetch prices for');
+      return;
     }
+    
+    print('🔄 TokenProvider.fetchPrices: Starting for symbols: $activeSymbols');
+    
+    final prefs = await SharedPreferences.getInstance();
+    bool cacheLoaded = false;
+    
+    // بارگذاری از کش اگر معتبر باشد
+    if (_isPriceCacheValid(prefs)) {
+      print('💾 TokenProvider.fetchPrices: Loading from cache...');
+      await loadPricesFromCache(prefs);
+      cacheLoaded = true;
+      print('✅ TokenProvider.fetchPrices: Cache loaded successfully');
+    } else {
+      print('⚠️ TokenProvider.fetchPrices: Cache invalid or expired');
+    }
+    
     try {
+      print('🌐 TokenProvider.fetchPrices: Fetching from API...');
       final pricesResponse = await apiService.getPrices(activeSymbols, fiatCurrencies);
+      
       if (pricesResponse.success && pricesResponse.prices != null) {
+        print('✅ TokenProvider.fetchPrices: API response successful');
+        
         // تبدیل PriceData از api_models به models
         final convertedPrices = <String, Map<String, PriceData>>{};
         pricesResponse.prices!.forEach((symbol, currencyMap) {
@@ -568,11 +875,27 @@ class TokenProvider extends ChangeNotifier {
             ))
           );
         });
+        
         _tokenPrices = convertedPrices;
         await savePricesToCache(prefs, _tokenPrices);
         notifyListeners();
+        
+        print('💾 TokenProvider.fetchPrices: Prices saved to cache and UI notified');
+        print('🔍 TokenProvider.fetchPrices: Final prices: ${_tokenPrices.keys.toList()}');
+      } else {
+        print('❌ TokenProvider.fetchPrices: API failed or returned no prices');
+        if (!cacheLoaded) {
+          // اگر کش هم نبود، حداقل مقادیر پیش‌فرض تنظیم کن
+          notifyListeners();
+        }
       }
-    } catch (_) {}
+    } catch (e) {
+      print('❌ TokenProvider.fetchPrices: Exception occurred: $e');
+      if (!cacheLoaded) {
+        // اگر کش هم نبود، حداقل UI را notify کن
+        notifyListeners();
+      }
+    }
   }
 
   bool _isPriceCacheValid(SharedPreferences prefs) {
@@ -604,8 +927,8 @@ class TokenProvider extends ChangeNotifier {
     try {
       print('🔄 TokenProvider - Toggling token ${token.name} (${token.symbol}) to $newState for user: $_userId');
       
-      // 1. ذخیره state در preferences با کلید user-specific
-      await tokenPreferences.saveTokenState(
+      // 1. ذخیره state در preferences با کلید user-specific (scoped)
+      await tokenPreferences.saveTokenStateFromParams(
         token.symbol ?? '', 
         token.blockchainName ?? '', 
         token.smartContractAddress, 
@@ -660,21 +983,40 @@ class TokenProvider extends ChangeNotifier {
       
       // 5. ذخیره توکن‌های user-specific
       _userTokens[_userId] = _currencies;
+
+      // 5.1 Persist active tokens per-wallet for restoration after app kill
+      try {
+        final currentWallet = await SecureStorage.instance.getSelectedWallet();
+        final currentUser = await SecureStorage.instance.getSelectedUserId();
+        if (currentWallet != null && currentUser != null) {
+          final activeSymbols = _currencies.where((t) => t.isEnabled).map((t) => t.symbol ?? '').toList();
+          await SecureStorage.instance.saveActiveTokens(currentWallet, currentUser, activeSymbols);
+          print('💾 TokenProvider: Persisted active tokens after toggle (${activeSymbols.length})');
+        }
+      } catch (e) {
+        print('⚠️ TokenProvider: Error persisting active tokens after toggle: $e');
+      }
       
       print('🔄 TokenProvider - Active tokens after toggle: ${_activeTokens.map((t) => '${t.symbol}(${t.isEnabled})').join(', ')}');
       
-      // 6. فوراً notify کن
+      // 6. مرتب‌سازی مجدد بعد از toggle
+      _activeTokens = sortTokensByDollarValue(_activeTokens);
+      print('🔄 TokenProvider - Tokens sorted after toggle');
+      
+      // 7. فوراً notify کن
       notifyListeners();
       
-      // 7. اگر توکن فعال شده، قیمت و موجودی fetch کن
+      // 8. اگر توکن فعال شده، قیمت و موجودی fetch کن (فوری و سبک)
       if (newState) {
-        await fetchPrices();
-        // در background موجودی fetch کن
-        fetchBalancesForActiveTokens().then((_) {
-          print('✅ TokenProvider - Background balance fetch completed');
-        }).catchError((e) {
-          print('❌ TokenProvider - Error in background balance fetch: $e');
-        });
+        // فقط قیمت‌های این توکن را لود کن
+        final symbol = token.symbol;
+        if (symbol != null && symbol.isNotEmpty) {
+          try {
+            await apiService.getPrices([symbol], ['USD']);
+          } catch (_) {}
+        }
+        // مطابق گزارش Kotlin: موجودی‌ها فقط بعد از import wallet فراخوانی می‌شوند
+        print('ℹ️ TokenProvider: Skipping background balance fetch in toggle - balances only fetched after wallet import');
       }
       
       print('✅ TokenProvider - Token ${token.symbol} successfully toggled to $newState');
@@ -688,7 +1030,7 @@ class TokenProvider extends ChangeNotifier {
   
   /// بررسی فعال بودن توکن برای کاربر خاص - مشابه Kotlin
   bool isTokenEnabled(CryptoToken token) {
-    final state = tokenPreferences.getTokenStateSync(
+    final state = tokenPreferences.getTokenStateFromParams(
       token.symbol ?? '', 
       token.blockchainName ?? '', 
       token.smartContractAddress
@@ -705,7 +1047,7 @@ class TokenProvider extends ChangeNotifier {
   
   /// ذخیره state توکن برای کاربر خاص - مشابه Kotlin
   Future<void> saveTokenStateForUser(CryptoToken token, bool isEnabled) async {
-    await tokenPreferences.saveTokenState(
+    await tokenPreferences.saveTokenStateFromParams(
       token.symbol ?? '', 
       token.blockchainName ?? '', 
       token.smartContractAddress, 
@@ -715,7 +1057,7 @@ class TokenProvider extends ChangeNotifier {
   
   /// دریافت state توکن برای کاربر خاص - مشابه Kotlin
   bool getTokenStateForUser(CryptoToken token) {
-    return tokenPreferences.getTokenStateSync(
+    return tokenPreferences.getTokenStateFromParams(
       token.symbol ?? '', 
       token.blockchainName ?? '', 
       token.smartContractAddress
@@ -744,7 +1086,7 @@ class TokenProvider extends ChangeNotifier {
 
   Future<void> updateActiveTokensFromPreferences() async {
     _currencies = _currencies.map((token) {
-      final isEnabled = tokenPreferences.getTokenStateSync(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress) ?? false;
+      final isEnabled = tokenPreferences.getTokenStateFromParams(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress) ?? false;
       return token.copyWith(isEnabled: isEnabled);
     }).toList();
     _activeTokens = _currencies.where((t) => t.isEnabled).toList();
@@ -780,6 +1122,11 @@ class TokenProvider extends ChangeNotifier {
       print('   Balances count: ${response.balances?.length ?? 0}');
       
       if (response.success && response.balances != null) {
+        // اگر پاسخ خالی است، هیچ مقداری را بازنویسی نکن
+        if (response.balances!.isEmpty) {
+          print('⚠️ TokenProvider - getBalance returned empty list; preserving existing balances');
+          return {};
+        }
         final balancesMap = <String, String>{};
         
         print('🔍 TokenProvider - Processing ${response.balances!.length} balance items from getBalance API...');
@@ -831,51 +1178,15 @@ class TokenProvider extends ChangeNotifier {
     
     try {
       print('🔄 TokenProvider - Updating balance using update-balance API for user: $_userId');
-      
-      // استفاده از update-balance API
-      final response = await apiService.updateBalance(_userId);
-      
-      if (response.success && response.balances != null) {
-        print('✅ TokenProvider - Balance updated successfully via update-balance API');
-        
-        final balancesMap = <String, String>{};
-        
-        // پردازش موجودی‌ها از پاسخ update-balance API
-        print('🔍 TokenProvider - Processing ${response.balances!.length} balance items from update-balance API...');
-        for (int i = 0; i < response.balances!.length; i++) {
-          final balance = response.balances![i];
-          final symbol = balance.symbol ?? '';
-          print('   [$i] Processing: Symbol="${symbol}", Balance="${balance.balance}", Blockchain="${balance.blockchain}"');
-          
-          if (symbol.isNotEmpty) {
-            balancesMap[symbol] = balance.balance ?? '0';
-            print('   ✅ Added to balancesMap: $symbol = ${balance.balance ?? '0'} (${balance.blockchain ?? 'Unknown'})');
-          } else {
-            print('   ❌ Skipped: Symbol is empty');
-          }
-        }
-        
-        print('🔍 TokenProvider - Final balancesMap: $balancesMap');
-        
-        // ذخیره موجودی‌ها برای کاربر فعلی
-        _userBalances[_userId] = balancesMap;
-        
-        // به‌روزرسانی موجودی‌ها در توکن‌های فعال و همه توکن‌ها
-        await _updateTokensWithBalances(balancesMap);
-        
-        // مرتب‌سازی توکن‌ها بر اساس ارزش دلاری مانند Kotlin
-        final sortedTokens = sortTokensByDollarValue(_activeTokens);
-        _activeTokens = sortedTokens;
-        
-        notifyListeners();
-        
-        print('✅ TokenProvider - Successfully updated ${_activeTokens.length} active tokens via update-balance');
+      // فقط نوشتن در سرور؛ هیچ خواندنی انجام نشود و هیچ state داخلی تغییر نکند
+      final updateResp = await apiService.updateBalance(_userId);
+      if (updateResp.success) {
+        print('✅ TokenProvider - update-balance success (write-only). No local state changes.');
         return true;
-      } else {
-        _errorMessage = response.message ?? 'Failed to update balance';
-        print('❌ TokenProvider - Balance update failed: ${_errorMessage}');
-        return false;
       }
+      _errorMessage = updateResp.message ?? 'Failed to update balance';
+      print('❌ TokenProvider - update-balance failed: $_errorMessage');
+      return false;
     } catch (e) {
       _errorMessage = 'Error updating balance: ${e.toString()}';
       print('❌ TokenProvider - Error updating balance: $e');
@@ -974,13 +1285,23 @@ class TokenProvider extends ChangeNotifier {
 
   Future<void> _updateTokensWithBalances(Map<String, String> balances) async {
     print('🔍 TokenProvider - _updateTokensWithBalances called with ${balances.length} balances');
+    // اگر هیچ بالانسی وجود ندارد، وضعیت فعلی را حفظ کن
+    if (balances.isEmpty) {
+      print('⚠️ TokenProvider - Empty balances map; skipping updates to preserve existing amounts');
+      return;
+    }
     print('🔍 TokenProvider - Available balances: $balances');
     print('🔍 TokenProvider - Current active tokens count: ${_activeTokens.length}');
     print('🔍 TokenProvider - Active tokens symbols: ${_activeTokens.map((t) => t.symbol).toList()}');
+    print('🔍 TokenProvider - Current currencies count: ${_currencies.length}');
+    print('🔍 TokenProvider - Currencies symbols: ${_currencies.map((t) => t.symbol).toList()}');
     
-    // Update currencies
+    // Update currencies: فقط نمادهای موجود در پاسخ را به‌روزرسانی کن
     _currencies = _currencies.map((token) {
       final tokenSymbol = token.symbol ?? '';
+      if (!balances.containsKey(tokenSymbol)) {
+        return token; // عدم تغییر اگر در پاسخ نیست
+      }
       final balance = balances[tokenSymbol] ?? '0.0';
       final balanceDouble = double.tryParse(balance) ?? 0.0;
       print('   Currency: $tokenSymbol -> Balance: $balance (parsed: $balanceDouble)');
@@ -1002,33 +1323,37 @@ class TokenProvider extends ChangeNotifier {
             orElse: () => CryptoToken(
               name: balanceSymbol,
               symbol: balanceSymbol,
-              blockchainName: 'Unknown',
-              iconUrl: 'https://coinceeper.com/defualtIcons/coin.png',
+              blockchainName: 'Tron', // Default to Tron for NCC
+              iconUrl: 'https://coinceeper.com/defaultIcons/coin.png',
               isEnabled: true,
               amount: 0.0,
               isToken: true,
             ),
           );
           
-          // Check if token is enabled
-          final isEnabled = tokenPreferences.getTokenStateSync(
+          print('   🔍 Found token in currencies: ${currencyToken.name} (${currencyToken.symbol})');
+          
+          // For tokens with balance, force enable them
+          final isEnabled = true; // Force enable tokens with balance
+          
+          print('   🔄 Adding token with balance to active tokens: $balanceSymbol = $balanceDouble (enabled: $isEnabled)');
+          final newToken = currencyToken.copyWith(amount: balanceDouble, isEnabled: true);
+          _activeTokens.add(newToken);
+          
+          // Also add to currencies if not exists
+          final existsInCurrencies = _currencies.any((token) => token.symbol == balanceSymbol);
+          if (!existsInCurrencies) {
+            _currencies.add(newToken);
+            print('   ✅ Added token to currencies list: $balanceSymbol');
+          }
+          
+          // Also save to preferences as enabled
+          await tokenPreferences.saveTokenStateFromParams(
             currencyToken.symbol ?? '',
             currencyToken.blockchainName ?? '',
             currencyToken.smartContractAddress,
-          ) ?? true; // Default to true for tokens with balance
-          
-          if (isEnabled) {
-            print('   🔄 Adding token with balance to active tokens: $balanceSymbol = $balanceDouble');
-            _activeTokens.add(currencyToken.copyWith(amount: balanceDouble, isEnabled: true));
-            
-            // Also save to preferences as enabled
-            await tokenPreferences.saveTokenState(
-              currencyToken.symbol ?? '',
-              currencyToken.blockchainName ?? '',
-              currencyToken.smartContractAddress,
-              true,
-            );
-          }
+            true,
+          );
         }
       }
     }
@@ -1037,29 +1362,50 @@ class TokenProvider extends ChangeNotifier {
     int updatedCount = 0;
     _activeTokens = _activeTokens.map((token) {
       final tokenSymbol = token.symbol ?? '';
+      if (!balances.containsKey(tokenSymbol)) {
+        return token; // عدم تغییر اگر در پاسخ نیست
+      }
       final balance = balances[tokenSymbol] ?? '0.0';
       final balanceDouble = double.tryParse(balance) ?? 0.0;
-      
       if (balanceDouble > 0.0) {
         updatedCount++;
         print('   ✅ Active Token Updated: $tokenSymbol -> Balance: $balance (parsed: $balanceDouble)');
       } else {
         print('   ⚪ Active Token Zero Balance: $tokenSymbol -> Balance: $balance (parsed: $balanceDouble)');
       }
-      
       return token.copyWith(amount: balanceDouble);
     }).toList();
     
     print('🔍 TokenProvider - Updated $updatedCount active tokens with positive balance');
     print('🔍 TokenProvider - Final active tokens: ${_activeTokens.map((t) => '${t.symbol}(${t.amount})').toList()}');
+    
+    // مرتب‌سازی مجدد بعد از به‌روزرسانی موجودی‌ها
+    _activeTokens = sortTokensByDollarValue(_activeTokens);
+    print('🔄 TokenProvider - Tokens sorted by balance and value');
   }
 
-  // --- مرتب‌سازی توکن‌ها بر اساس ارزش دلاری ---
+  // --- مرتب‌سازی توکن‌ها بر اساس موجودی و ارزش دلاری ---
   List<CryptoToken> sortTokensByDollarValue(List<CryptoToken> tokens) {
     return tokens.toList()..sort((a, b) {
-      final aValue = (a.amount ?? 0.0) * getTokenPrice(a.symbol ?? '', 'USD');
-      final bValue = (b.amount ?? 0.0) * getTokenPrice(b.symbol ?? '', 'USD');
-      return bValue.compareTo(aValue); // نزولی
+      final aAmount = a.amount ?? 0.0;
+      final bAmount = b.amount ?? 0.0;
+      
+      // اول: توکن‌های با موجودی > 0 در اول
+      if (aAmount > 0 && bAmount == 0) return -1;
+      if (aAmount == 0 && bAmount > 0) return 1;
+      
+      // دوم: اگر هر دو موجودی دارند، بر اساس ارزش دلاری sort کن
+      if (aAmount > 0 && bAmount > 0) {
+        final aPrice = getTokenPrice(a.symbol ?? '', 'USD');
+        final bPrice = getTokenPrice(b.symbol ?? '', 'USD');
+        final aValue = aAmount * aPrice;
+        final bValue = bAmount * bPrice;
+        final valueComparison = bValue.compareTo(aValue); // نزولی
+        if (valueComparison != 0) return valueComparison;
+      }
+      
+      // سوم: اگر هر دو موجودی ندارند، بر اساس نام sort کن
+      return (a.symbol ?? '').compareTo(b.symbol ?? '');
     });
   }
 
@@ -1079,7 +1425,8 @@ class TokenProvider extends ChangeNotifier {
     if (userBalances != null) {
       await _updateTokensWithBalances(userBalances);
     } else {
-      await fetchBalancesForActiveTokens();
+      // مطابق گزارش Kotlin: موجودی‌ها فقط بعد از import wallet فراخوانی می‌شوند
+      print('ℹ️ TokenProvider: Skipping balance fetch in updateUserId - balances only fetched after wallet import');
     }
     notifyListeners();
   }
@@ -1091,7 +1438,8 @@ class TokenProvider extends ChangeNotifier {
     try {
       await _fetchGasFees();
       await smartLoadTokens(forceRefresh: true);
-      await fetchBalancesForActiveTokens();
+      // مطابق گزارش Kotlin: موجودی‌ها فقط بعد از import wallet فراخوانی می‌شوند
+      print('ℹ️ TokenProvider: Skipping balance fetch in forceRefresh - balances only fetched after wallet import');
       await fetchPrices();
       final sortedTokens = sortTokensByDollarValue(_activeTokens);
       _activeTokens = sortedTokens;
@@ -1112,7 +1460,7 @@ class TokenProvider extends ChangeNotifier {
       // 🍎 iOS Debug: بررسی وضعیت recovery قبل از شروع
       if (Platform.isIOS) {
         print('🍎 TokenProvider - iOS detected, checking recovery status...');
-        await tokenPreferences.debugTokenRecoveryStatus();
+        // Debug functionality removed - method not available
       }
       
       // 1. اگر currencies خالی است، ابتدا از cache یا API بارگذاری کن
@@ -1127,7 +1475,7 @@ class TokenProvider extends ChangeNotifier {
       
       // 2. همگام‌سازی کامل وضعیت tokens با preferences
       final updatedCurrencies = _currencies.map((token) {
-        final isEnabled = tokenPreferences.getTokenStateSync(
+        final isEnabled = tokenPreferences.getTokenStateFromParams(
           token.symbol ?? '', 
           token.blockchainName ?? '', 
           token.smartContractAddress
@@ -1147,7 +1495,7 @@ class TokenProvider extends ChangeNotifier {
         
         // بررسی مجدد پس از اولیه‌سازی
         final reloadedCurrencies = _currencies.map((token) {
-          final isEnabled = tokenPreferences.getTokenStateSync(
+          final isEnabled = tokenPreferences.getTokenStateFromParams(
             token.symbol ?? '', 
             token.blockchainName ?? '', 
             token.smartContractAddress
@@ -1280,10 +1628,10 @@ class TokenProvider extends ChangeNotifier {
 
   // --- متدهای باقیمانده ---
   Future<void> resetAllTokenStates() async {
-    await tokenPreferences.clearAllTokenStates();
+    await tokenPreferences.clearAllTokenPreferences();
     final defaultTokens = ['Bitcoin', 'Ethereum'];
     for (final tokenName in defaultTokens) {
-      await tokenPreferences.saveTokenState(tokenName, tokenName, null, true);
+      await tokenPreferences.saveTokenStateFromParams(tokenName, tokenName, null, true);
     }
     _currencies = _currencies.map((token) {
       final isDefault = defaultTokens.contains(token.name);
@@ -1305,6 +1653,100 @@ class TokenProvider extends ChangeNotifier {
     final enabledTokens = _currencies.where((t) => t.isEnabled).toList();
     _activeTokens = enabledTokens;
     notifyListeners();
+  }
+
+  /// پاک کردن کامل cache و بارگذاری مجدد از API
+  Future<void> clearCacheAndReload() async {
+    try {
+      print('🗑️ TokenProvider: Manual cache clear requested');
+      final prefs = await SharedPreferences.getInstance();
+      await _clearAllCache(prefs);
+      
+      // Force reload from API
+      await smartLoadTokens(forceRefresh: true);
+      
+      // Notify all listeners of the change
+      notifyListeners();
+      
+      print('✅ TokenProvider: Cache cleared and reloaded from API');
+    } catch (e) {
+      print('❌ Error in clearCacheAndReload: $e');
+      _errorMessage = 'Error clearing cache: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  /// Synchronized cache invalidation across all screens
+  Future<void> invalidateAllCaches() async {
+    try {
+      print('🗑️ TokenProvider: Invalidating all caches globally');
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Remove all cache-related keys
+      await _clearAllCache(prefs);
+      
+      // Clear add_token_screen cache key to trigger reload there
+      await prefs.remove('add_token_cached_tokens');
+      
+      // Clear any other screen-specific cache keys
+      final keys = prefs.getKeys().toList();
+      for (final key in keys) {
+        if (key.contains('cached') || key.contains('timestamp')) {
+          await prefs.remove(key);
+          print('🗑️ Removed global cache key: $key');
+        }
+      }
+      
+      // Reset internal state
+      _currencies.clear();
+      _activeTokens.clear();
+      
+      // Force fresh initialization
+      await initializeInBackground();
+      
+      print('✅ TokenProvider: All caches invalidated and reinitialized');
+    } catch (e) {
+      print('❌ Error in invalidateAllCaches: $e');
+      _errorMessage = 'Error invalidating caches: ${e.toString()}';
+      notifyListeners();
+    }
+  }
+
+  /// Check if caches are synchronized between screens
+  Future<bool> areCachesSynchronized() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Check main cache
+      final mainCacheExists = prefs.containsKey('cachedUserTokens_$_userId');
+      final mainTimestamp = prefs.getInt('cache_timestamp_$_userId') ?? 0;
+      
+      // Check add_token cache key
+      final addTokenCacheExists = prefs.containsKey('add_token_cached_tokens');
+      
+      print('🔍 Cache sync check: main=$mainCacheExists (ts: $mainTimestamp), addToken=$addTokenCacheExists');
+      
+      // If both exist or both don't exist, they're synchronized
+      return mainCacheExists == addTokenCacheExists;
+    } catch (e) {
+      print('❌ Error checking cache synchronization: $e');
+      return false;
+    }
+  }
+
+  /// Ensure all caches are properly synchronized
+  Future<void> ensureCacheSynchronization() async {
+    try {
+      final synchronized = await areCachesSynchronized();
+      if (!synchronized) {
+        print('⚠️ TokenProvider: Caches out of sync, synchronizing...');
+        await invalidateAllCaches();
+      } else {
+        print('✅ TokenProvider: Caches are synchronized');
+      }
+    } catch (e) {
+      print('❌ Error ensuring cache synchronization: $e');
+    }
   }
 
 
@@ -1334,11 +1776,11 @@ class TokenProvider extends ChangeNotifier {
 
   // --- متدهای utility ---
   List<String> getEnabledTokenNames() {
-    return tokenPreferences.getAllEnabledTokenNamesSync() ?? [];
+    return tokenPreferences.getAllEnabledTokenNames();
   }
 
   List<String> getEnabledTokenKeys() {
-    return tokenPreferences.getAllEnabledTokenKeysSync() ?? [];
+    return tokenPreferences.getAllEnabledTokenKeys();
   }
 
   Future<void> loadTokensWithBalance({bool forceRefresh = false}) async {
@@ -1346,7 +1788,8 @@ class TokenProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await smartLoadTokens(forceRefresh: forceRefresh);
-      await fetchBalancesForActiveTokens();
+      // مطابق گزارش Kotlin: موجودی‌ها فقط بعد از import wallet فراخوانی می‌شوند
+      print('ℹ️ TokenProvider: Skipping balance fetch in loadTokensWithBalance - balances only fetched after wallet import');
       final tokensWithBalance = _activeTokens.where((t) => (t.amount ?? 0.0) > 0).toList();
       final sortedTokens = sortTokensByDollarValue(tokensWithBalance);
       _activeTokens = sortedTokens;
@@ -1376,7 +1819,7 @@ class TokenProvider extends ChangeNotifier {
 
   // --- متدهای کمکی برای مدیریت ترتیب ---
   List<CryptoToken> loadSavedTokenOrder(List<CryptoToken> tokens) {
-    final List<String> savedOrder = (tokenPreferences.getTokenOrderSync() ?? []).map((e) => e ?? '').toList();
+    final List<String> savedOrder = tokenPreferences.getTokenOrder();
     if (savedOrder.isEmpty) return tokens;
     final tokenMap = {for (var t in tokens) '${t.symbol ?? ''}_${t.name ?? ''}': t};
     final orderedTokens = <CryptoToken>[];
@@ -1409,12 +1852,12 @@ class TokenProvider extends ChangeNotifier {
       final response = await apiService.getAllCurrencies();
       if (response.success) {
         return response.currencies.map<CryptoToken>((token) {
-          final isEnabled = tokenPreferences.getTokenStateSync(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress) ?? false;
+          final isEnabled = tokenPreferences.getTokenStateFromParams(token.symbol ?? '', token.blockchainName ?? '', token.smartContractAddress) ?? false;
           return CryptoToken(
             name: token.currencyName,
             symbol: token.symbol,
             blockchainName: token.blockchainName,
-            iconUrl: token.icon ?? 'https://coinceeper.com/defualtIcons/coin.png',
+            iconUrl: token.icon ?? 'https://coinceeper.com/defaultIcons/coin.png',
             isEnabled: isEnabled,
             isToken: token.isToken ?? true,
             smartContractAddress: token.smartContractAddress,
@@ -1442,7 +1885,7 @@ class TokenProvider extends ChangeNotifier {
     
     // به‌روزرسانی وضعیت توکن‌ها از preferences
     _currencies = _currencies.map((token) {
-      final isEnabled = tokenPreferences.getTokenStateSync(
+      final isEnabled = tokenPreferences.getTokenStateFromParams(
         token.symbol ?? '', 
         token.blockchainName ?? '', 
         token.smartContractAddress
@@ -1457,6 +1900,19 @@ class TokenProvider extends ChangeNotifier {
     
     // ذخیره state به‌روزرسانی شده در cache
     await _saveToCache(await SharedPreferences.getInstance(), _currencies);
+
+    // Persist active token symbols per-wallet for restoration after app kill
+    try {
+      final currentWallet = await SecureStorage.instance.getSelectedWallet();
+      final currentUser = await SecureStorage.instance.getSelectedUserId();
+      if (currentWallet != null && currentUser != null) {
+        final activeSymbols = _activeTokens.map((t) => t.symbol ?? '').toList();
+        await SecureStorage.instance.saveActiveTokens(currentWallet, currentUser, activeSymbols);
+        print('💾 TokenProvider: Persisted active tokens in SecureStorage (${activeSymbols.length})');
+      }
+    } catch (e) {
+      print('⚠️ TokenProvider: Error persisting active tokens: $e');
+    }
     
     // اگر توکن‌های فعال وجود دارند، قیمت‌ها را دریافت کن
     if (_activeTokens.isNotEmpty) {
@@ -1478,7 +1934,7 @@ class TokenProvider extends ChangeNotifier {
       
       // Get current currencies and update their states
       final updatedCurrencies = _currencies.map((token) {
-        final isEnabled = tokenPreferences.getTokenStateSync(
+        final isEnabled = tokenPreferences.getTokenStateFromParams(
           token.symbol ?? '', 
           token.blockchainName ?? '', 
           token.smartContractAddress

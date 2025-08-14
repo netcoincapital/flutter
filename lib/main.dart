@@ -1,8 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+// import 'package:firebase_core/firebase_core.dart';
+// import 'firebase_options.dart';
 
 import 'services/service_provider.dart';
 import 'services/device_registration_manager.dart';
@@ -42,11 +45,28 @@ import 'screens/security_screen.dart';
 import 'layout/network_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/wallets_screen.dart';
+import 'screens/debug_wallet_state_screen.dart';
 import 'services/passcode_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
+
+  // Initialize Firebase first - temporarily disabled
+  try {
+    // TODO: Add real GoogleService-Info.plist and enable Firebase
+    // await Firebase.initializeApp(
+    //   options: DefaultFirebaseOptions.currentPlatform,
+    // );
+    print('⚠️ Firebase temporarily disabled - need real GoogleService-Info.plist');
+  } catch (e) {
+    print('❌ Firebase initialization failed: $e');
+  }
+
+  // 🔍 iOS keychain orphaned data check disabled - was causing data loss
+  // This was incorrectly clearing wallet data when app was killed from background
+  // SharedPreferences being empty != fresh install
+  print('📱 iOS: Keychain orphaned data check disabled to prevent data loss');
 
   // 🚀 Initialize critical services in parallel for faster startup
   await Future.wait([
@@ -209,19 +229,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // App comes to foreground
       print('📱 App resumed from background');
       
-      // بررسی اینکه آیا passcode فعال است
+      // 🔒 CRITICAL: Check if passcode is enabled and set
       final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+      final hasPasscode = await PasscodeManager.isPasscodeSet();
       
       if (!isPasscodeEnabled) {
-        print('🔓 Passcode disabled - no auto-lock needed');
+        print('⚠️ SECURITY WARNING: Passcode disabled - crypto wallet unprotected!');
         return;
       }
       
-      // Check if we should show passcode screen
-      final shouldShowPasscode = await _securityManager.shouldShowPasscodeAfterBackground();
+      if (!hasPasscode) {
+        print('⚠️ SECURITY WARNING: No passcode set - crypto wallet unprotected!');
+        return;
+      }
+      
+      // 🔒 PRIORITY 1: Check if app passcode should be shown  
+      final shouldShowPasscode = await _securityManager.shouldShowPasscodeNow();
       
       if (shouldShowPasscode) {
-        print('🔒 Auto-lock triggered - showing passcode screen');
+        print('🔒 SECURITY: Auto-lock triggered - requiring passcode for crypto wallet access');
         SchedulerBinding.instance.addPostFrameCallback((_) {
           Navigator.of(context).pushNamedAndRemoveUntil(
             '/enter-passcode',
@@ -229,7 +255,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           );
         });
       } else {
-        print('🔓 No auto-lock needed - app remains unlocked');
+        print('🔓 SECURITY: Auto-lock not triggered - within configured time limit or disabled');
+        
+        // 🔄 IMPORTANT: If no lock required, reset activity timer for foreground event
+        await _securityManager.resetActivityTimer();
       }
     }
   }
@@ -275,30 +304,93 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       
       // بررسی وجود کیف پول و فعال بودن passcode
       final hasWallet = await WalletStateManager.instance.hasWallet();
+      final hasValidWallet = await WalletStateManager.instance.hasValidWallet();
       final hasPasscode = await WalletStateManager.instance.hasPasscode();
       final isPasscodeEnabled = await _securityManager.isPasscodeEnabled();
+      final isFreshInstall = await WalletStateManager.instance.isFreshInstall();
       
-      print('🔍 === ROUTE DETERMINATION DEBUG ===');
-      print('🔍 hasWallet: $hasWallet');
+      // Debug iOS specific issues
+      await _debugiOSKeychainAccess();
+      
+      print('🔍 === ENHANCED ROUTE DETERMINATION DEBUG ===');
+      print('🔍 isFreshInstall: $isFreshInstall');
+      print('🔍 hasWallet (simple): $hasWallet');
+      print('🔍 hasValidWallet (detailed): $hasValidWallet');
       print('🔍 hasPasscode: $hasPasscode');
       print('🔍 isPasscodeEnabled: $isPasscodeEnabled');
       
-      // اگر کیف پول وجود دارد و passcode تنظیم شده است
-      if (hasWallet && hasPasscode) {
-        // اگر passcode تنظیم شده، همیشه به enter-passcode برود (صرف نظر از toggle)
-        initialRoute = '/enter-passcode';
-        print('🎯 ✅ Wallet and passcode exist -> going to enter-passcode');
-      } else {
-        // در غیر این صورت از WalletStateManager استفاده کن
-        initialRoute = await WalletStateManager.instance.getInitialScreen();
-        print('🎯 ❌ Conditions not met -> using WalletStateManager route: $initialRoute');
-        
-        // اضافه کردن جزئیات بیشتر برای debugging
-        if (!hasWallet) {
-          print('🔍 → Reason: No wallet found');
+      // Debug wallet list
+      try {
+        final wallets = await SecureStorage.instance.getWalletsList();
+        print('🔍 Found ${wallets.length} wallets in list:');
+        for (int i = 0; i < wallets.length; i++) {
+          final wallet = wallets[i];
+          final walletName = wallet["walletName"];
+          final userId = wallet["userID"];
+          print('🔍   Wallet $i: $walletName (userId: $userId)');
+          
+          // Check if mnemonic exists for this wallet
+          if (walletName != null && userId != null) {
+            try {
+              final mnemonic = await SecureStorage.instance.getMnemonic(walletName, userId);
+              print('🔍     Mnemonic: ${mnemonic != null ? "EXISTS" : "MISSING"}');
+            } catch (e) {
+              print('🔍     Mnemonic check error: $e');
+            }
+          }
         }
-        if (!hasPasscode) {
-          print('🔍 → Reason: No passcode set');
+        
+        // Debug all keys
+        final allKeys = await SecureStorage.instance.getAllKeys();
+        print('🔍 Total secure storage keys: ${allKeys.length}');
+        print('🔍 Keys: ${allKeys.take(10).join(", ")}${allKeys.length > 10 ? "..." : ""}');
+        
+      } catch (e) {
+        print('🔍 Error getting wallet list: $e');
+      }
+      
+      // 🔒 CRITICAL SECURITY FIX: Enhanced crypto wallet routing logic with activity timer
+      if (isFreshInstall) {
+        initialRoute = '/import-create';
+        print('🎯 🆕 Fresh install -> going to import-create');
+      } else {
+        // 🔒 PRIORITY 1: App Passcode Check (before any wallet checks)
+        final shouldShowPasscode = await _securityManager.shouldShowPasscodeNow();
+        
+        if (shouldShowPasscode) {
+          // 🔒 CRITICAL: Passcode required - don't check wallet until after passcode
+          initialRoute = '/enter-passcode';
+          print('🎯 🔒 PRIORITY 1: App passcode required -> REQUIRING passcode entry');
+        } else if (hasValidWallet && hasPasscode && !isPasscodeEnabled) {
+          // ⚠️ INSECURE BUT USER CHOICE: User explicitly disabled passcode
+          initialRoute = '/home';
+          print('🎯 ⚠️ INSECURE: User disabled passcode -> going to home (USER CHOICE)');
+        } else if (hasValidWallet && !hasPasscode) {
+          // 🔑 SETUP REQUIRED: Valid wallet but no passcode -> force setup
+          initialRoute = '/passcode-setup';
+          print('🎯 🔑 SETUP: Valid wallet but no passcode -> FORCING passcode setup');
+        } else if (!hasValidWallet && hasPasscode) {
+          // 🔄 INCONSISTENT STATE: Passcode exists but no wallet -> import-create
+          initialRoute = '/import-create';
+          print('🎯 🔄 INCONSISTENT: Passcode exists but no wallet -> going to import-create');
+        } else {
+          // 🔄 FALLBACK: Use WalletStateManager fallback
+          initialRoute = await WalletStateManager.instance.getInitialScreen();
+          print('🎯 🔄 FALLBACK: Using WalletStateManager route: $initialRoute');
+          
+          // اضافه کردن جزئیات بیشتر برای debugging
+          if (!hasWallet) {
+            print('🔍 → Reason: No wallet found (simple check)');
+          }
+          if (!hasValidWallet) {
+            print('🔍 → Reason: No valid wallet found (detailed check)');
+          }
+          if (!hasPasscode) {
+            print('🔍 → Reason: No passcode set');
+          }
+          if (hasPasscode && !isPasscodeEnabled) {
+            print('🔍 → Reason: Passcode set but disabled');
+          }
         }
       }
       
@@ -365,6 +457,69 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     return isConnected;
   }
   
+  /// Debug iOS keychain access issues
+  Future<void> _debugiOSKeychainAccess() async {
+    if (!Platform.isIOS) return;
+    
+    try {
+      print('🍎 === iOS KEYCHAIN DEBUG ===');
+      
+      // Test direct keychain access
+      const storage = FlutterSecureStorage(
+        iOptions: IOSOptions(
+          accessibility: KeychainAccessibility.first_unlock,
+          synchronizable: false,
+          accountName: 'com.coinceeper.app',
+          groupId: null,
+        ),
+      );
+      
+      // Test write/read cycle
+      final testKey = 'ios_keychain_test_${DateTime.now().millisecondsSinceEpoch}';
+      final testValue = 'test_value_${DateTime.now().millisecondsSinceEpoch}';
+      
+      print('🍎 Testing keychain write...');
+      await storage.write(key: testKey, value: testValue);
+      
+      print('🍎 Testing keychain read...');
+      final readValue = await storage.read(key: testKey);
+      
+      if (readValue == testValue) {
+        print('🍎 ✅ Keychain access working correctly');
+      } else {
+        print('🍎 ❌ Keychain access failed - read: $readValue, expected: $testValue');
+      }
+      
+      // Clean up test key
+      await storage.delete(key: testKey);
+      
+      // Test SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final prefsTestKey = 'ios_prefs_test_${DateTime.now().millisecondsSinceEpoch}';
+      final prefsTestValue = 'prefs_test_value_${DateTime.now().millisecondsSinceEpoch}';
+      
+      print('🍎 Testing SharedPreferences write...');
+      await prefs.setString(prefsTestKey, prefsTestValue);
+      
+      print('🍎 Testing SharedPreferences read...');
+      final prefsReadValue = prefs.getString(prefsTestKey);
+      
+      if (prefsReadValue == prefsTestValue) {
+        print('🍎 ✅ SharedPreferences access working correctly');
+      } else {
+        print('🍎 ❌ SharedPreferences access failed - read: $prefsReadValue, expected: $prefsTestValue');
+      }
+      
+      // Clean up test key
+      await prefs.remove(prefsTestKey);
+      
+      print('🍎 === END iOS KEYCHAIN DEBUG ===');
+      
+    } catch (e) {
+      print('🍎 ❌ iOS keychain debug error: $e');
+    }
+  }
+
   /// Helper method for passcode debugging
   Future<void> _checkPasscodeDebug() async {
     try {
@@ -444,7 +599,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ),
       ],
       child: MaterialApp(
-        title: 'laxce',
+        title: 'coinceeper',
         // ✅ اضافه کردن تنظیمات localization
         localizationsDelegates: context.localizationDelegates,
         supportedLocales: context.supportedLocales,
@@ -514,6 +669,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             return SendScreen(qrArguments: args);
           },
           '/dex': (context) => const DexScreen(),
+          '/debug-wallet-state': (context) => const DebugWalletStateScreen(),
         },
         onGenerateRoute: (settings) {
           if (settings.name != null && settings.name!.startsWith('/backup')) {

@@ -35,7 +35,7 @@ class _DexScreenState extends State<DexScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(_safeTranslate('laxce_dex', 'LAXCE DEX'), style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(_safeTranslate('coinceeper_dex', 'COINCEEPER DEX'), style: const TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,

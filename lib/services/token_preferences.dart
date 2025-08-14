@@ -24,18 +24,16 @@ class TokenPreferences {
 
   /// مقداردهی توکن‌های پیش‌فرض
   void _initializeDefaultTokens() {
-    final defaultTokens = ['Bitcoin', 'Ethereum', 'Netcoincapital'];
-    bool needsCommit = false;
-
-    for (final token in defaultTokens) {
-      if (!_prefs.containsKey(token)) {
-        _prefs.setBool(token, true);
-        needsCommit = true;
+    // Use user-scoped keys for defaults
+    final defaults = [
+      getTokenKeyFromParams('BTC', 'Bitcoin', null),
+      getTokenKeyFromParams('ETH', 'Ethereum', null),
+      getTokenKeyFromParams('TRX', 'Tron', null),
+    ];
+    for (final key in defaults) {
+      if (!_prefs.containsKey(key)) {
+        _prefs.setBool(key, true);
       }
-    }
-
-    if (needsCommit) {
-      _prefs.commit();
     }
   }
 
@@ -61,12 +59,17 @@ class TokenPreferences {
 
   /// تولید کلید منحصر به فرد برای هر توکن (شامل SmartContractAddress)
   String getTokenKey(CryptoToken token) {
-    return "${token.symbol}_${token.blockchainName ?? 'Unknown'}_${token.smartContractAddress ?? ""}";
+    return _scopedKey(token.symbol ?? '', token.blockchainName ?? 'Unknown', token.smartContractAddress);
   }
 
   /// تولید کلید منحصر به فرد با پارامترهای جداگانه
   String getTokenKeyFromParams(String symbol, String blockchainName, String? contract) {
-    return "${symbol}_${blockchainName}_${contract ?? ""}";
+    return _scopedKey(symbol, blockchainName, contract);
+  }
+
+  String _scopedKey(String symbol, String blockchainName, String? contract) {
+    final normalized = "${symbol}_${blockchainName}_${contract ?? ""}";
+    return "${_prefsPrefix}${userId}_$normalized";
   }
 
   /// ذخیره ترتیب توکن‌ها
@@ -110,13 +113,17 @@ class TokenPreferences {
     if (_isCacheValid() && _enabledTokensCache?.containsKey(tokenKey) == true) {
       return _enabledTokensCache![tokenKey] ?? false;
     }
-    final isEnabled = _prefs.getBool(tokenKey) ?? false;
-    if (_enabledTokensCache == null) {
-      _loadEnabledTokensCache();
-    } else {
-      _enabledTokensCache![tokenKey] = isEnabled;
+    // Try scoped key first
+    bool? isEnabled = _prefs.getBool(tokenKey);
+    // Fallback to legacy unscoped key for backward compatibility
+    if (isEnabled == null) {
+      final legacyKey = tokenKey.replaceFirst("${_prefsPrefix}${userId}_", "");
+      isEnabled = _prefs.getBool(legacyKey);
     }
-    return isEnabled;
+    final result = isEnabled ?? false;
+    _enabledTokensCache ??= <String, bool>{};
+    _enabledTokensCache![tokenKey] = result;
+    return result;
   }
 
   /// دریافت وضعیت توکن با پارامترهای جداگانه
@@ -139,8 +146,9 @@ class TokenPreferences {
     }
     
     // استفاده از کش داخلی برای بهینه‌سازی
+    final userPrefix = "${_prefsPrefix}${userId}_";
     return _enabledTokensCache?.entries
-        .where((entry) => entry.value)
+        .where((entry) => entry.value && entry.key.startsWith(userPrefix))
         .map((entry) => entry.key)
         .toList() ?? [];
   }
@@ -279,7 +287,7 @@ class TokenPreferences {
       name: apiCurrency['CurrencyName'] ?? '',
       symbol: symbol,
       blockchainName: blockchainName,
-      iconUrl: apiCurrency['Icon'] ?? 'https://coinceeper.com/defualtIcons/coin.png',
+      iconUrl: apiCurrency['Icon'] ?? 'https://coinceeper.com/defaultIcons/coin.png',
       isEnabled: isEnabled,
       amount: 0.0,
       isToken: apiCurrency['IsToken'] ?? true,
@@ -295,7 +303,7 @@ extension ApiCurrencyExtension on Map<String, dynamic> {
       name: this['CurrencyName'] ?? '',
       symbol: this['Symbol'] ?? '',
       blockchainName: this['BlockchainName'] ?? '',
-      iconUrl: this['Icon'] ?? 'https://coinceeper.com/defualtIcons/coin.png',
+      iconUrl: this['Icon'] ?? 'https://coinceeper.com/defaultIcons/coin.png',
       isEnabled: false,
       amount: 0.0,
       isToken: this['IsToken'] ?? true,

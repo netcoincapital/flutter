@@ -143,11 +143,11 @@ class _BottomMenuState extends State<BottomMenu> {
             onTap: () => _navigateTo('/home'),
             isDisabled: _isNavigating,
           ),
-          _MenuIcon(
-            icon: Icons.swap_horiz_rounded,
-            onTap: () => _navigateTo('/dex'),
-            isDisabled: _isNavigating,
-          ),
+          // _MenuIcon(
+          //   icon: Icons.swap_horiz_rounded,
+          //   onTap: () => _navigateTo('/dex'),
+          //   isDisabled: _isNavigating,
+          // ),
           _MenuIcon(
             icon: Icons.qr_code_scanner_rounded,
             onTap: () async {

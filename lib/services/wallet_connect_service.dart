@@ -1,0 +1,299 @@
+import 'dart:convert';
+import 'package:walletconnect_flutter_v2/walletconnect_flutter_v2.dart';
+import 'package:logger/logger.dart';
+import 'package:web3dart/web3dart.dart';
+import 'web3_service.dart';
+
+/// سرویس WalletConnect برای اتصال کیف پول‌های خارجی
+class WalletConnectService {
+  static WalletConnectService? _instance;
+  static WalletConnectService get instance => _instance ??= WalletConnectService._();
+  WalletConnectService._();
+
+  Web3App? _web3App;
+  SessionData? _currentSession;
+  
+  // اطلاعات پروژه
+  static const String projectId = 'YOUR_PROJECT_ID'; // باید از WalletConnect Cloud دریافت شود
+  static const String bundleId = 'com.coinceeper.adl';
+  static const String appName = 'COINCEEPER DEX';
+  static const String appDescription = 'Decentralized Exchange';
+  static const String appUrl = 'https://coinceeper.com';
+  static const String appIcon = 'https://coinceeper.com/icon.png';
+
+  // ==================== INITIALIZATION ====================
+
+  /// مقداردهی اولیه WalletConnect
+  Future<void> initialize() async {
+    try {
+      _web3App = await Web3App.createInstance(
+        projectId: projectId,
+        logLevel: Level.error,
+        metadata: const PairingMetadata(
+          name: appName,
+          description: appDescription,
+          url: appUrl,
+          icons: [appIcon],
+          redirect: Redirect(
+            native: '$bundleId://',
+            universal: 'https://coinceeper.com/app',
+          ),
+        ),
+      );
+
+      // تنظیم event listeners
+      _setupEventListeners();
+      
+      // بررسی session های موجود
+      await _checkExistingSessions();
+      
+      print('✅ WalletConnect initialized successfully');
+    } catch (e) {
+      print('❌ Error initializing WalletConnect: $e');
+      rethrow;
+    }
+  }
+
+  /// تنظیم event listeners
+  void _setupEventListeners() {
+    _web3App?.onSessionConnect.subscribe(_onSessionConnect);
+    _web3App?.onSessionDelete.subscribe(_onSessionDelete);
+    _web3App?.onSessionEvent.subscribe(_onSessionEvent);
+    _web3App?.onSessionUpdate.subscribe(_onSessionUpdate);
+  }
+
+  /// بررسی session های موجود
+  Future<void> _checkExistingSessions() async {
+    final sessions = _web3App?.sessions.getAll();
+    if (sessions != null && sessions.isNotEmpty) {
+      _currentSession = sessions.first;
+      print('🔗 Found existing session: ${_currentSession?.topic}');
+    }
+  }
+
+  // ==================== CONNECTION MANAGEMENT ====================
+
+  /// اتصال به کیف پول
+  Future<String> connect() async {
+    try {
+      if (_web3App == null) {
+        throw Exception('WalletConnect not initialized');
+      }
+
+      // پاک کردن session های قدیمی
+      final sessions = _web3App!.sessions.getAll();
+      for (final session in sessions) {
+        await _web3App!.disconnectSession(
+          topic: session.topic,
+          reason: const WalletConnectError(
+            code: 6000,
+            message: 'User disconnected',
+          ),
+        );
+      }
+
+      // ایجاد namespace جدید
+      final namespace = {
+        'eip155': const RequiredNamespace(
+          chains: ['eip155:31337'], // Hardhat local network
+          methods: [
+            'eth_sendTransaction',
+            'eth_signTransaction',
+            'eth_sign',
+            'personal_sign',
+            'eth_signTypedData',
+          ],
+          events: ['chainChanged', 'accountsChanged'],
+        ),
+      };
+
+      // ایجاد session جدید
+      final ConnectResponse connectResponse = await _web3App!.connect(
+        requiredNamespaces: namespace,
+      );
+
+      final uri = connectResponse.uri;
+      if (uri == null) {
+        throw Exception('Failed to generate connection URI');
+      }
+
+      print('🔗 Connection URI generated: $uri');
+      
+      // انتظار برای تایید اتصال
+      final SessionData session = await connectResponse.session.future;
+      _currentSession = session;
+      
+      print('✅ WalletConnect session established');
+      return _getConnectedAddress();
+      
+    } catch (e) {
+      print('❌ Error connecting wallet: $e');
+      rethrow;
+    }
+  }
+
+  /// قطع اتصال
+  Future<void> disconnect() async {
+    try {
+      if (_currentSession != null) {
+        await _web3App?.disconnectSession(
+          topic: _currentSession!.topic,
+          reason: const WalletConnectError(
+            code: 6000,
+            message: 'User disconnected',
+          ),
+        );
+        _currentSession = null;
+        print('✅ WalletConnect session disconnected');
+      }
+    } catch (e) {
+      print('❌ Error disconnecting wallet: $e');
+      rethrow;
+    }
+  }
+
+  // ==================== GETTERS ====================
+
+  /// آیا متصل است
+  bool get isConnected => _currentSession != null;
+
+  /// دریافت آدرس متصل شده
+  String _getConnectedAddress() {
+    if (_currentSession == null) return '';
+    
+    final accounts = _currentSession!.namespaces['eip155']?.accounts;
+    if (accounts == null || accounts.isEmpty) return '';
+    
+    // استخراج آدرس از فرمت: eip155:chainId:address
+    final accountString = accounts.first;
+    final addressPart = accountString.split(':').last;
+    return addressPart;
+  }
+
+  /// دریافت آدرس کیف پول
+  String? get connectedAddress => isConnected ? _getConnectedAddress() : null;
+
+  // ==================== TRANSACTION METHODS ====================
+
+  /// ارسال تراکنش
+  Future<String> sendTransaction({
+    required String to,
+    required String value,
+    String? data,
+    String? gasLimit,
+    String? gasPrice,
+  }) async {
+    try {
+      if (!isConnected) {
+        throw Exception('Wallet not connected');
+      }
+
+      final transaction = {
+        'from': _getConnectedAddress(),
+        'to': to,
+        'value': value,
+        if (data != null) 'data': data,
+        if (gasLimit != null) 'gas': gasLimit,
+        if (gasPrice != null) 'gasPrice': gasPrice,
+      };
+
+      final result = await _web3App!.request(
+        topic: _currentSession!.topic,
+        chainId: 'eip155:31337',
+        request: SessionRequestParams(
+          method: 'eth_sendTransaction',
+          params: [transaction],
+        ),
+      );
+
+      return result.toString();
+    } catch (e) {
+      print('❌ Error sending transaction: $e');
+      rethrow;
+    }
+  }
+
+  /// امضای پیام
+  Future<String> signMessage(String message) async {
+    try {
+      if (!isConnected) {
+        throw Exception('Wallet not connected');
+      }
+
+      final result = await _web3App!.request(
+        topic: _currentSession!.topic,
+        chainId: 'eip155:31337',
+        request: SessionRequestParams(
+          method: 'personal_sign',
+          params: [message, _getConnectedAddress()],
+        ),
+      );
+
+      return result.toString();
+    } catch (e) {
+      print('❌ Error signing message: $e');
+      rethrow;
+    }
+  }
+
+  // ==================== EVENT HANDLERS ====================
+
+  void _onSessionConnect(SessionConnect? event) {
+    print('🔗 Session connected: ${event?.session.topic}');
+  }
+
+  void _onSessionDelete(SessionDelete? event) {
+    print('❌ Session deleted: ${event?.topic}');
+    _currentSession = null;
+  }
+
+  void _onSessionEvent(SessionEvent? event) {
+    print('📡 Session event: ${event?.name}');
+  }
+
+  void _onSessionUpdate(SessionUpdate? event) {
+    print('🔄 Session updated: ${event?.topic}');
+  }
+
+  // ==================== UTILITY METHODS ====================
+
+  /// دریافت URI برای اتصال
+  Future<String> getConnectionUri() async {
+    try {
+      if (_web3App == null) {
+        throw Exception('WalletConnect not initialized');
+      }
+
+      final namespace = {
+        'eip155': const RequiredNamespace(
+          chains: ['eip155:31337'], // Hardhat local network
+          methods: [
+            'eth_sendTransaction',
+            'eth_signTransaction',
+            'eth_sign',
+            'personal_sign',
+            'eth_signTypedData',
+          ],
+          events: ['chainChanged', 'accountsChanged'],
+        ),
+      };
+
+      final ConnectResponse connectResponse = await _web3App!.connect(
+        requiredNamespaces: namespace,
+      );
+
+      return connectResponse.uri?.toString() ?? '';
+    } catch (e) {
+      print('❌ Error generating connection URI: $e');
+      rethrow;
+    }
+  }
+
+  /// پاک کردن منابع
+  void dispose() {
+    _web3App?.onSessionConnect.unsubscribe(_onSessionConnect);
+    _web3App?.onSessionDelete.unsubscribe(_onSessionDelete);
+    _web3App?.onSessionEvent.unsubscribe(_onSessionEvent);
+    _web3App?.onSessionUpdate.unsubscribe(_onSessionUpdate);
+  }
+} 

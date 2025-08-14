@@ -90,38 +90,9 @@ class PermissionManager {
     }
   }
   
-  /// Check and request storage permission
+  /// Storage permission is not required; always return true
   Future<bool> requestStoragePermission() async {
-    try {
-      if (Platform.isAndroid) {
-        final androidInfo = await _deviceInfo.androidInfo;
-        if (androidInfo.version.sdkInt >= 30) {
-          // For Android 11+ no storage permission needed
-          return true;
-        }
-        
-        final status = await Permission.storage.status;
-        
-        if (status.isGranted) {
-          return true;
-        }
-        
-        if (status.isDenied) {
-          final result = await Permission.storage.request();
-          return result.isGranted;
-        }
-        
-        if (status.isPermanentlyDenied) {
-          await openAppSettings();
-          return false;
-        }
-      }
-      
-      return true; // For iOS
-    } catch (e) {
-      print('Error requesting storage permission: $e');
-      return false;
-    }
+    return true;
   }
   
   /// Check and request microphone permission
@@ -209,7 +180,7 @@ class PermissionManager {
     permissions['camera'] = await Permission.camera.isGranted;
     permissions['notification'] = await Permission.notification.isGranted;
     permissions['biometric'] = await Permission.sensors.isGranted;
-    permissions['storage'] = await Permission.storage.isGranted;
+    permissions['storage'] = true;
     permissions['microphone'] = await Permission.microphone.isGranted;
     permissions['location'] = await Permission.location.isGranted;
     permissions['bluetooth'] = await Permission.bluetooth.isGranted;
@@ -224,7 +195,7 @@ class PermissionManager {
     results['camera'] = await requestCameraPermission();
     results['notification'] = await requestNotificationPermission();
     results['biometric'] = await requestBiometricPermission();
-    results['storage'] = await requestStoragePermission();
+    results['storage'] = true;
     results['microphone'] = await requestMicrophonePermission();
     results['location'] = await requestLocationPermission();
     results['bluetooth'] = await requestBluetoothPermission();

@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import '../utils/json_converters.dart';
 
 part 'api_models.g.dart';
 
@@ -422,6 +423,7 @@ class GetUserBalanceRequest {
 /// پاسخ ایجاد کیف پول
 @JsonSerializable()
 class GenerateWalletResponse {
+  @BoolIntConverter()
   final bool success;
   
   @JsonKey(name: 'UserID')
@@ -510,6 +512,7 @@ class PriceData {
 /// پاسخ قیمت‌ها
 @JsonSerializable()
 class PricesResponse {
+  @BoolIntConverter()
   final bool success;
   final Map<String, Map<String, PriceData>>? prices;
 
@@ -544,6 +547,7 @@ class ApiCurrency {
   final String? smartContractAddress;
   
   @JsonKey(name: 'IsToken')
+  @NullableBoolIntConverter()
   final bool? isToken;
   
   @JsonKey(name: 'DecimalPlaces')
@@ -568,6 +572,7 @@ class ApiCurrency {
 @JsonSerializable()
 class ApiResponse {
   final List<ApiCurrency> currencies;
+  @BoolIntConverter()
   final bool success;
 
   const ApiResponse({
@@ -582,6 +587,7 @@ class ApiResponse {
 /// پاسخ دریافت آدرس
 @JsonSerializable()
 class ReceiveResponse {
+  @BoolIntConverter()
   final bool success;
   
   @JsonKey(name: 'PublicAddress')
@@ -601,16 +607,17 @@ class ReceiveResponse {
 /// آیتم موجودی
 @JsonSerializable()
 class BalanceItem {
-  @JsonKey(name: 'Balance')
+  @JsonKey(name: 'balance')
   final String? balance;
   
-  @JsonKey(name: 'Blockchain')
+  @JsonKey(name: 'blockchain')
   final String? blockchain;
   
-  @JsonKey(name: 'IsToken')
+  @JsonKey(name: 'is_token')
+  @NullableBoolIntConverter()
   final bool? isToken;
   
-  @JsonKey(name: 'Symbol')
+  @JsonKey(name: 'symbol')
   final String? symbol;
   
   @JsonKey(name: 'currency_name')
@@ -624,13 +631,40 @@ class BalanceItem {
     this.currencyName,
   });
 
-  factory BalanceItem.fromJson(Map<String, dynamic> json) => _$BalanceItemFromJson(json);
+  /// سفارشی: پشتیبانی از هر دو فرمت کلیدها (lowercase و UpperCamelCase)
+  factory BalanceItem.fromJson(Map<String, dynamic> json) {
+    final dynamic rawBalance = json['balance'] ?? json['Balance'];
+    final dynamic rawBlockchain = json['blockchain'] ?? json['Blockchain'];
+    final dynamic rawIsToken = json['is_token'] ?? json['IsToken'];
+    final dynamic rawSymbol = json['symbol'] ?? json['Symbol'];
+    final dynamic rawCurrencyName = json['currency_name'] ?? json['CurrencyName'];
+
+    bool? parsedIsToken;
+    if (rawIsToken is bool) {
+      parsedIsToken = rawIsToken;
+    } else if (rawIsToken is int) {
+      parsedIsToken = rawIsToken != 0;
+    } else if (rawIsToken is String) {
+      final v = rawIsToken.toLowerCase();
+      parsedIsToken = v == 'true' || v == '1';
+    }
+
+    return BalanceItem(
+      balance: rawBalance?.toString(),
+      blockchain: rawBlockchain?.toString(),
+      isToken: parsedIsToken,
+      symbol: rawSymbol?.toString(),
+      currencyName: rawCurrencyName?.toString(),
+    );
+  }
+
   Map<String, dynamic> toJson() => _$BalanceItemToJson(this);
 }
 
 /// پاسخ موجودی
 @JsonSerializable()
 class BalanceResponse {
+  @BoolIntConverter()
   final bool success;
   
   @JsonKey(name: 'Balances')
@@ -660,6 +694,7 @@ class GetUserBalanceResponse {
   @JsonKey(name: 'UserID')
   final String userID;
   
+  @BoolIntConverter()
   final bool success;
 
   const GetUserBalanceResponse({
@@ -736,6 +771,7 @@ class SendResponse {
   
   @JsonKey(name: 'expires_at')
   final String expiresAt;
+  @BoolIntConverter()
   final bool success;
 
   const SendResponse({
@@ -885,6 +921,7 @@ class PrepareTransactionResponse {
   @JsonKey(name: 'expires_at')
   final String expiresAt;
   final String message;
+  @BoolIntConverter()
   final bool success;
   
   @JsonKey(name: 'transaction_id')
@@ -976,6 +1013,7 @@ class EstimateFeeResponse {
 /// پاسخ ثبت دستگاه
 @JsonSerializable()
 class RegisterDeviceResponse {
+  @BoolIntConverter()
   final bool success;
   final String? message;
   
@@ -995,6 +1033,7 @@ class RegisterDeviceResponse {
 /// پاسخ تایید تراکنش
 @JsonSerializable()
 class ConfirmTransactionResponse {
+  @NullableBoolIntConverter()
   final bool? success;
   final String? message;
   
@@ -1036,6 +1075,7 @@ class ConfirmTransactionResponse {
 
 /// کلاس برای مدیریت نتایج API
 class ApiResult<T> {
+  @BoolIntConverter()
   final bool success;
   final T? data;
   final String? error;

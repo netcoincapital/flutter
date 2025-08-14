@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_models.dart';
 import '../utils/shared_preferences_utils.dart';
+import 'secure_storage.dart';
 
 /// API service for server communication
 /// This class manages all API requests
@@ -68,17 +69,40 @@ class ApiService {
     ));
   }
   
-  /// دریافت UserID از SharedPreferences
+  /// دریافت UserID از SecureStorage (مطابق با AppProvider)
   Future<String?> _getUserId() async {
     try {
+      // First try to get from SecureStorage (current selected wallet)
+      final userId = await SecureStorage.instance.getUserIdForSelectedWallet();
+      if (userId != null && userId.isNotEmpty) {
+        return userId;
+      }
+      
+      // Fallback to SharedPreferences for compatibility
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString('UserID');
+      final sharedPrefsUserId = prefs.getString('UserID');
+      
+      print('🔍 ApiService: SecureStorage UserID: $userId');
+      print('🔍 ApiService: SharedPreferences UserID: $sharedPrefsUserId');
+      
+      return sharedPrefsUserId;
     } catch (e) {
       print('Error getting User ID: $e');
       return null;
     }
   }
   
+  /// همگام‌سازی UserID بین SecureStorage و SharedPreferences
+  Future<void> syncUserIdToSharedPreferences(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('UserID', userId);
+      print('✅ ApiService: Synced UserID to SharedPreferences: $userId');
+    } catch (e) {
+      print('❌ ApiService: Error syncing UserID to SharedPreferences: $e');
+    }
+  }
+
   /// اضافه کردن UserID به headers اگر موجود باشد
   Future<Map<String, String>> _getHeaders() async {
     final userId = await _getUserId();
@@ -90,6 +114,9 @@ class ApiService {
     
     if (userId != null) {
       headers['UserID'] = userId;
+      print('🔍 ApiService: Using UserID in headers: $userId');
+    } else {
+      print('⚠️ ApiService: No UserID found for headers');
     }
     
     return headers;

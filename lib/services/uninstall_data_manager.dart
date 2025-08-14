@@ -12,25 +12,20 @@ class UninstallDataManager {
   /// بررسی و پاکسازی داده‌ها در صورت fresh install
   static Future<void> checkAndCleanupOnFreshInstall() async {
     try {
-      print('🔍 Checking for fresh install...');
+      print('🔍 iOS: Checking for fresh install...');
       
       // بررسی وجود داده‌های باقی‌مانده
       final hasRemainingData = await _hasRemainingData();
       
+      // Do NOT perform cleanup automatically on app launch; only log status.
       if (!hasRemainingData) {
-        print('✅ No remaining data found - clean fresh install');
-        return;
+        print('✅ iOS: No remaining data found - clean install state');
+      } else {
+        print('⚠️ iOS: Remaining data detected (will not auto-clear). Use settings reset if needed.');
       }
-      
-      print('⚠️ Remaining data detected, performing cleanup...');
-      await _performCompleteCleanup();
       
       // بررسی مجدد بعد از پاکسازی
-      final hasRemainingDataAfterCleanup = await _hasRemainingData();
-      if (hasRemainingDataAfterCleanup) {
-        print('⚠️ Still has remaining data after cleanup, performing additional cleanup...');
-        await _performCompleteCleanup();
-      }
+      // (Cleanup disabled by default to avoid wiping user token preferences.)
       
     } catch (e) {
       print('❌ Error during fresh install cleanup: $e');

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
@@ -51,6 +52,7 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
   ];
 
   Timer? _lockoutTimer;
+  Timer? _navigationTimeout;
 
   // Safe translate method with fallback
   String _safeTranslate(String key, String fallback) {
@@ -159,12 +161,17 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
   }
 
   void _onNumberTap(String number) {
-    if (isLocked) return;
+    if (isLocked || isConfirmed) return; // جلوگیری از ورودی اضافی
     
     if (enteredCode.length < 6) {
       setState(() {
         enteredCode += number;
         HapticFeedback.lightImpact();
+        
+        // پاک کردن پیام خطا هنگام تایپ جدید
+        if (errorMessage.isNotEmpty) {
+          errorMessage = '';
+        }
       });
     }
   }
@@ -256,6 +263,7 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
   @override
   void dispose() {
     _lockoutTimer?.cancel();
+    _navigationTimeout?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -272,15 +280,36 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // منطق بررسی پس‌کد
-    if (enteredCode.length == 6 && !isConfirmed && !isLocked) {
-      Future.microtask(() async {
-        switch (widget.title) {
-          case 'Choose Passcode':
-            // به صفحه تایید برو و پس‌کد را منتقل کن
-            Navigator.pushReplacement(
+  void _handlePasscodeComplete() async {
+    if (isConfirmed || isLocked) return; // جلوگیری از اجرای مجدد
+    
+    setState(() {
+      isConfirmed = true; // فلگ برای جلوگیری از تکرار
+    });
+
+    print('🔐 Passcode complete: ${widget.title}');
+    
+    // Timeout fallback - reset state if navigation doesn't complete
+    _navigationTimeout?.cancel();
+    _navigationTimeout = Timer(const Duration(seconds: 10), () {
+      print('⚠️ Navigation timeout - resetting state');
+      if (mounted && isConfirmed) {
+        setState(() {
+          isConfirmed = false;
+          errorMessage = 'Navigation failed. Please try again.';
+          enteredCode = '';
+        });
+      }
+    });
+    
+    try {
+      switch (widget.title) {
+        case 'Choose Passcode':
+          print('🔐 Navigating to Confirm Passcode');
+          // به صفحه تایید برو و پس‌کد را منتقل کن
+          if (mounted) {
+            _navigationTimeout?.cancel(); // Cancel timeout on successful navigation
+            await Navigator.pushReplacement(
               context,
               MaterialPageRoute(
                 builder: (_) => PasscodeScreen(
@@ -291,73 +320,148 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
                 ),
               ),
             );
-            break;
-          case 'Confirm Passcode':
-            if (widget.firstPasscode == enteredCode) {
-              try {
-                // ذخیره پس‌کد
-                final success = await PasscodeManager.setPasscode(enteredCode);
-                if (success) {
-                  // موفقیت: رفتن به صفحه بعد
-                  if (widget.onSuccess != null) {
-                    widget.onSuccess!();
-                  } else {
-                    // Check if we have wallet data to go to backup, otherwise go to home
-                    final hasWallet = await WalletStateManager.instance.hasWallet();
+          }
+          break;
+          
+        case 'Confirm Passcode':
+          print('🔐 Confirming passcode: ${widget.firstPasscode} == $enteredCode');
+          if (widget.firstPasscode == enteredCode) {
+            try {
+              print('🔐 Setting passcode...');
+              // ذخیره پس‌کد
+              final success = await PasscodeManager.setPasscode(enteredCode);
+              print('🔐 Passcode set success: $success');
+              
+              if (success) {
+                print('🔐 Passcode saved successfully');
+                // موفقیت: رفتن به صفحه بعد
+                _navigationTimeout?.cancel(); // Cancel timeout on successful navigation
+                if (widget.onSuccess != null) {
+                  print('🔐 Calling onSuccess callback');
+                  widget.onSuccess!();
+                } else {
+                  print('🔐 No callback, checking wallet state');
+                  // Check if we have wallet data to go to backup, otherwise go to home
+                  final hasWallet = await WalletStateManager.instance.hasWallet();
+                  print('🔐 Has wallet: $hasWallet, walletName: ${widget.walletName}');
+                  
+                  if (mounted) {
                     if (hasWallet && widget.walletName != null) {
+                      print('🔐 Navigating to backup screen');
                       Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
                     } else {
+                      print('🔐 Navigating to home screen');
                       Navigator.pushReplacementNamed(context, '/home');
                     }
                   }
-                } else {
+                }
+              } else {
+                print('❌ Failed to set passcode');
+                if (mounted) {
                   setState(() {
                     errorMessage = _safeTranslate('failed_to_set_passcode', 'Failed to set passcode. Please try again.');
                     enteredCode = '';
+                    isConfirmed = false;
                   });
                 }
-              } catch (e) {
+              }
+            } catch (e) {
+              print('❌ Error setting passcode: $e');
+              if (mounted) {
                 setState(() {
                   errorMessage = _safeTranslate('error_setting_passcode', 'Error setting passcode: {error}').replaceAll('{error}', e.toString());
                   enteredCode = '';
+                  isConfirmed = false;
                 });
               }
-            } else {
+            }
+          } else {
+            print('❌ Passcode mismatch');
+            if (mounted) {
               setState(() {
                 errorMessage = _safeTranslate('passcode_mismatch', 'The passcode entered is not the same');
                 enteredCode = '';
+                isConfirmed = false;
               });
             }
-            break;
-          case 'Enter Passcode':
-            try {
-              final isValid = await PasscodeManager.verifyPasscode(enteredCode);
-              if (isValid) {
-                if (widget.onSuccess != null) {
-                  widget.onSuccess!();
-                } else {
-                  // Use a smoother navigation approach to prevent black screen
-                  // Navigate with proper transition and clear stack
+          }
+          break;
+          
+        case 'Enter Passcode':
+          print('🔐 Verifying passcode...');
+          try {
+            final isValid = await PasscodeManager.verifyPasscode(enteredCode);
+            print('🔐 Passcode valid: $isValid');
+            
+            if (isValid) {
+              print('🔐 Passcode verification successful');
+              
+              // 🔄 CRITICAL: Reset activity timer on successful passcode entry
+              try {
+                await SecuritySettingsManager.instance.resetActivityTimer();
+                print('🔄 Activity timer reset after successful passcode entry');
+              } catch (e) {
+                print('❌ Error resetting activity timer: $e');
+              }
+              
+              _navigationTimeout?.cancel(); // Cancel timeout on successful navigation
+              if (widget.onSuccess != null) {
+                print('🔐 Calling onSuccess callback');
+                widget.onSuccess!();
+              } else {
+                print('🔐 Navigating to home');
+                if (mounted) {
                   Navigator.pushReplacementNamed(context, '/home');
                 }
-              } else {
-                await _checkLockStatus();
-                final attemptsRemaining = remainingAttempts > 0 
-                  ? _safeTranslate('attempts_remaining', '{count} attempts remaining').replaceAll('{count}', remainingAttempts.toString())
-                  : _safeTranslate('wallet_locked', 'Wallet is locked');
+              }
+            } else {
+              print('❌ Invalid passcode');
+              await _checkLockStatus();
+              final attemptsRemaining = remainingAttempts > 0 
+                ? _safeTranslate('attempts_remaining', '{count} attempts remaining').replaceAll('{count}', remainingAttempts.toString())
+                : _safeTranslate('wallet_locked', 'Wallet is locked');
+              
+              if (mounted) {
                 setState(() {
                   errorMessage = _safeTranslate('incorrect_passcode', 'Incorrect passcode. {attemptsRemaining}').replaceAll('{attemptsRemaining}', attemptsRemaining);
                   enteredCode = '';
+                  isConfirmed = false;
                 });
               }
-            } catch (e) {
-              await _checkLockStatus();
+            }
+          } catch (e) {
+            print('❌ Error verifying passcode: $e');
+            await _checkLockStatus();
+            if (mounted) {
               setState(() {
                 errorMessage = e.toString();
                 enteredCode = '';
+                isConfirmed = false;
               });
             }
-            break;
+          }
+          break;
+      }
+    } catch (e) {
+      print('❌ General error in _handlePasscodeComplete: $e');
+      if (mounted) {
+        setState(() {
+          errorMessage = 'An error occurred. Please try again.';
+          enteredCode = '';
+          isConfirmed = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // منطق بررسی پس‌کد - فقط یک بار اجرا شود
+    if (enteredCode.length == 6 && !isConfirmed && !isLocked) {
+      // استفاده از WidgetsBinding برای اجرای محفوظ
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !isConfirmed) {
+          _handlePasscodeComplete();
         }
       });
     }
@@ -375,6 +479,24 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
+            // Debug info (only in debug mode)
+            if (kDebugMode)
+              Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Text('Debug: ${widget.title}', style: const TextStyle(fontSize: 10)),
+                    Text('Length: ${enteredCode.length}/6', style: const TextStyle(fontSize: 10)),
+                    Text('Confirmed: $isConfirmed', style: const TextStyle(fontSize: 10)),
+                    Text('Locked: $isLocked', style: const TextStyle(fontSize: 10)),
+                  ],
+                ),
+              ),
             if (errorMessage.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),

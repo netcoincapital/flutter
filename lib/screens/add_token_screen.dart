@@ -7,6 +7,7 @@ import '../models/crypto_token.dart';
 import '../services/service_provider.dart';
 import '../layout/main_layout.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/wallet_state_manager.dart';
 
 class CustomSwitch extends StatelessWidget {
   final bool checked;
@@ -120,26 +121,34 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   /// بررسی invalidation کش و refresh در صورت نیاز
   Future<void> _checkCacheInvalidation() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cacheExists = prefs.containsKey('add_token_cached_tokens');
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final tokenProvider = appProvider.tokenProvider;
       
-      // اگر cache وجود نداشته باشد (یعنی در home حذف شده)، نیاز به refresh است
-      if (!cacheExists && _cachedTokens != null) {
-        print('🔄 AddTokenScreen: Cache invalidated, refreshing data...');
+      if (tokenProvider == null) {
+        print('❌ AddTokenScreen: TokenProvider is null during cache check');
+        return;
+      }
+      
+      // Check if caches are synchronized using TokenProvider method
+      final synchronized = await tokenProvider.areCachesSynchronized();
+      
+      if (!synchronized) {
+        print('🔄 AddTokenScreen: Caches not synchronized, refreshing data...');
         _needsRefresh = true;
         _cachedTokens = null; // پاک کردن cache محلی
+        
+        // Force synchronization
+        await tokenProvider.ensureCacheSynchronization();
         
         // اگر widget ساخته شده، refresh کن
         if (mounted) {
           await _loadTokens(forceRefresh: true);
         }
-      }
-      
-      // همیشه state توکن‌ها را از preferences به‌روزرسانی کن
-      if (mounted) {
-        final appProvider = Provider.of<AppProvider>(context, listen: false);
-        final tokenProvider = appProvider.tokenProvider;
-        if (tokenProvider != null) {
+      } else {
+        print('✅ AddTokenScreen: Caches are synchronized');
+        
+        // همیشه state توکن‌ها را از preferences به‌روزرسانی کن
+        if (mounted) {
           // Ensure TokenPreferences is initialized
           await tokenProvider.tokenPreferences.initialize();
           await tokenProvider.forceUpdateTokenStates();
@@ -165,10 +174,10 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       await tokenProvider.tokenPreferences.initialize();
       
       // بررسی اینکه آیا cache مقداردهی اولیه شده است
-      if (!tokenProvider.tokenPreferences.isCacheInitialized) {
-        print('⚠️ TokenPreferences cache not initialized - refreshing...');
-        await tokenProvider.tokenPreferences.refreshCache();
-      }
+      // if (!tokenProvider.tokenPreferences.isCacheInitialized) { // Property not available in utils TokenPreferences
+      //   print('⚠️ TokenPreferences cache not initialized - refreshing...');
+      //   await tokenProvider.tokenPreferences.refreshCache();
+      // }
       
       // بررسی اینکه آیا state توکن‌ها از SharedPreferences load شده‌اند
       final enabledTokenKeys = await tokenProvider.tokenPreferences.getAllEnabledTokenKeys();
@@ -253,8 +262,80 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       
     } catch (e) {
       print('❌ AddTokenScreen: Error loading tokens: $e');
+      
+      // Enhanced error handling for different error types
+      if (e.toString().contains('type \'String\' is not a subtype of type \'bool') ||
+          e.toString().contains('type \'int\' is not a subtype of type \'bool') ||
+          e.toString().contains('type casting') ||
+          e.toString().contains('subtype')) {
+        print('🔄 AddTokenScreen: Type casting error detected, clearing cache and retrying...');
+        try {
+          final appProvider = Provider.of<AppProvider>(context, listen: false);
+          final tokenProvider = appProvider.tokenProvider;
+          
+          if (tokenProvider != null) {
+            // Clear cache and force reload from API
+            await tokenProvider.clearCacheAndReload();
+            
+            // Wait a moment for the reload to complete
+            await Future.delayed(const Duration(milliseconds: 500));
+            
+            // Try again after cache clear
+            final tokens = tokenProvider.currencies;
+            if (tokens.isNotEmpty) {
+              setState(() {
+                allTokens = tokens;
+                _filterTokens();
+                isLoading = false;
+                errorMessage = null;
+              });
+              await _saveCacheKey();
+              print('✅ AddTokenScreen: Successfully loaded after cache clear');
+              return;
+            } else {
+              print('⚠️ AddTokenScreen: No tokens available even after cache clear, forcing API reload...');
+              // Force another API call
+              await tokenProvider.smartLoadTokens(forceRefresh: true);
+              
+              final freshTokens = tokenProvider.currencies;
+              if (freshTokens.isNotEmpty) {
+                setState(() {
+                  allTokens = freshTokens;
+                  _filterTokens();
+                  isLoading = false;
+                  errorMessage = null;
+                });
+                await _saveCacheKey();
+                print('✅ AddTokenScreen: Successfully loaded after forced API reload');
+                return;
+              }
+            }
+          }
+        } catch (retryError) {
+          print('❌ AddTokenScreen: Error even after cache clear and retry: $retryError');
+        }
+      }
+      
+      // Provide user-friendly error messages
+      String userFriendlyError;
+      if (e.toString().contains('SocketException') || e.toString().contains('NetworkException')) {
+        userFriendlyError = _safeTranslate('network_error', 'Network connection error. Please check your internet connection.');
+      } else if (e.toString().contains('TimeoutException')) {
+        userFriendlyError = _safeTranslate('timeout_error', 'Request timeout. Please try again.');
+      } else if (e.toString().contains('FormatException') || e.toString().contains('type casting')) {
+        userFriendlyError = _safeTranslate('data_format_error', 'Data format error. Clearing cache and retrying...');
+        // Automatically try to fix format errors
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            _loadTokens(forceRefresh: true);
+          }
+        });
+      } else {
+        userFriendlyError = _safeTranslate('error_loading_tokens', 'Error loading tokens') + ': ${e.toString().length > 100 ? e.toString().substring(0, 100) + '...' : e.toString()}';
+      }
+      
       setState(() {
-        errorMessage = _safeTranslate('error_loading_tokens', 'Error loading tokens') + ': $e';
+        errorMessage = userFriendlyError;
         isLoading = false;
       });
     }
@@ -264,10 +345,32 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   Future<void> _saveCacheKey() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('add_token_cached_tokens', DateTime.now().millisecondsSinceEpoch.toString());
-      print('✅ AddTokenScreen: Cache key saved for synchronization');
+      final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      await prefs.setString('add_token_cached_tokens', timestamp);
+      
+      // Get userId from TokenProvider
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final tokenProvider = appProvider.tokenProvider;
+      if (tokenProvider != null) {
+        final userId = tokenProvider.getCurrentUserId();
+        // Also update the main cache timestamp to keep them in sync
+        await prefs.setInt('cache_timestamp_$userId', DateTime.now().millisecondsSinceEpoch);
+      }
+      
+      print('✅ AddTokenScreen: Cache key saved for synchronization (timestamp: $timestamp)');
     } catch (e) {
       print('❌ AddTokenScreen: Error saving cache key: $e');
+    }
+  }
+
+  /// Clear cache key to trigger refresh in other screens
+  Future<void> _clearCacheKey() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('add_token_cached_tokens');
+      print('✅ AddTokenScreen: Cache key cleared');
+    } catch (e) {
+      print('❌ AddTokenScreen: Error clearing cache key: $e');
     }
   }
 
@@ -327,7 +430,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       }
       
       print('=== TOKEN PERSISTENCE DEBUG ===');
-      print('Cache initialized: ${tokenProvider.tokenPreferences.isCacheInitialized}');
+      // print('Cache initialized: ${tokenProvider.tokenPreferences.isCacheInitialized}'); // Property not available in utils TokenPreferences
       
       final enabledTokenKeys = await tokenProvider.tokenPreferences.getAllEnabledTokenKeys();
       print('Enabled tokens in storage: ${enabledTokenKeys.length}');
@@ -343,12 +446,13 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       if (allTokens.isNotEmpty) {
         for (int i = 0; i < allTokens.take(3).length; i++) {
           final token = allTokens[i];
-          final storedState = await tokenProvider.tokenPreferences.getTokenState(
+          // Use services/TokenPreferences API (3-param sync method)
+          final storedState = tokenProvider.tokenPreferences.getTokenStateFromParams(
             token.symbol ?? '',
             token.blockchainName ?? '',
             token.smartContractAddress,
           );
-          final syncState = tokenProvider.tokenPreferences.getTokenStateSync(
+          final syncState = tokenProvider.tokenPreferences.getTokenStateFromParams(
             token.symbol ?? '',
             token.blockchainName ?? '',
             token.smartContractAddress,
@@ -403,32 +507,23 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       
       if (tokenProvider == null) {
         print('❌ AddTokenScreen: TokenProvider is null');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_safeTranslate('token_provider_not_available', 'Token provider not available')),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
         return;
       }
       
       final newState = !token.isEnabled;
       print('🔄 AddTokenScreen: Toggle token ${token.symbol}: ${token.isEnabled} -> $newState');
       
-      // 1. مستقیماً از TokenProvider برای toggle استفاده کن
-      await tokenProvider.toggleToken(token, newState);
-      
-      // 2. یک کمی صبر کن تا state ذخیره شود
-      await Future.delayed(const Duration(milliseconds: 100));
-      
-      // 3. تأیید اینکه state درست ذخیره شده است
-      final verifyState = tokenProvider.isTokenEnabled(token);
-      if (verifyState != newState) {
-        print('❌ AddTokenScreen: Token state verification failed for ${token.symbol}');
-        // تلاش مجدد برای ذخیره
-        await tokenProvider.saveTokenStateForUser(token, newState);
-        print('🔄 AddTokenScreen: Retried saving token state for ${token.symbol}');
-      } else {
-        print('✅ AddTokenScreen: Token state verified for ${token.symbol}: $newState');
-      }
-      
-      // 4. به‌روزرسانی local state
+      // Show loading indicator for this specific token
       setState(() {
-        // Update token in allTokens
+        // Temporarily update UI to show the toggle is in progress
         final tokenIndex = allTokens.indexWhere((t) => 
           t.symbol == token.symbol && 
           t.blockchainName == token.blockchainName &&
@@ -439,7 +534,6 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           allTokens[tokenIndex] = allTokens[tokenIndex].copyWith(isEnabled: newState);
         }
         
-        // Update token in filteredTokens
         final filteredIndex = filteredTokens.indexWhere((t) => 
           t.symbol == token.symbol && 
           t.blockchainName == token.blockchainName &&
@@ -449,8 +543,34 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
         if (filteredIndex != -1) {
           filteredTokens[filteredIndex] = filteredTokens[filteredIndex].copyWith(isEnabled: newState);
         }
+      });
+      
+      try {
+        // 1. مستقیماً از TokenProvider برای toggle استفاده کن
+        await tokenProvider.toggleToken(token, newState);
         
-        // Update cache
+        // 2. یک کمی صبر کن تا state ذخیره شود
+        await Future.delayed(const Duration(milliseconds: 200));
+        
+        // 3. تأیید اینکه state درست ذخیره شده است
+        final verifyState = tokenProvider.isTokenEnabled(token);
+        if (verifyState != newState) {
+          print('❌ AddTokenScreen: Token state verification failed for ${token.symbol}, retrying...');
+          // تلاش مجدد برای ذخیره
+          await tokenProvider.saveTokenStateForUser(token, newState);
+          await Future.delayed(const Duration(milliseconds: 100));
+          
+          // بررسی مجدد
+          final retryVerifyState = tokenProvider.isTokenEnabled(token);
+          if (retryVerifyState != newState) {
+            throw Exception('Token state could not be saved after retry');
+          }
+          print('🔄 AddTokenScreen: Token state saved after retry for ${token.symbol}');
+        } else {
+          print('✅ AddTokenScreen: Token state verified for ${token.symbol}: $newState');
+        }
+        
+        // 4. به‌روزرسانی cache
         if (_cachedTokens != null) {
           final cacheIndex = _cachedTokens!.indexWhere((t) => 
             t.symbol == token.symbol && 
@@ -462,19 +582,92 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
             _cachedTokens![cacheIndex] = _cachedTokens![cacheIndex].copyWith(isEnabled: newState);
           }
         }
-      });
-      
-      // 5. در صورت فعال بودن توکن، قیمت fetch کن
-      if (newState && priceProvider != null) {
-        print('✅ AddTokenScreen: Token ${token.symbol} activated - fetching price');
-        final symbols = [token.symbol ?? ''];
-        priceProvider.fetchPrices(symbols);
+        
+        // 5. در صورت فعال بودن توکن، قیمت و موجودی fetch کن
+        if (newState) {
+          print('✅ AddTokenScreen: Token ${token.symbol} activated - fetching price and balance');
+          
+          // Fetch price in background
+          if (priceProvider != null) {
+            final symbols = [token.symbol ?? ''];
+            priceProvider.fetchPrices(symbols).catchError((e) {
+              print('⚠️ AddTokenScreen: Error fetching price for ${token.symbol}: $e');
+            });
+          }
+          
+          // Fetch balance in background
+          _fetchSingleTokenBalance(token, tokenProvider).catchError((e) {
+            print('⚠️ AddTokenScreen: Error fetching balance for ${token.symbol}: $e');
+          });
+        }
+        
+        // 6. ذخیره cache key برای synchronization
+        await _saveCacheKey();
+
+        // 6.5 Persist per-wallet active tokens for fast restoration after app kill
+        try {
+          final walletName = appProvider.currentWalletName;
+          final userId = appProvider.currentUserId;
+          if (walletName != null && userId != null) {
+            final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
+            await WalletStateManager.instance.saveActiveTokensForWallet(
+              walletName,
+              userId,
+              activeSymbols,
+            );
+            print('💾 Persisted active tokens for wallet $walletName: ${activeSymbols.length}');
+          }
+        } catch (persistError) {
+          print('⚠️ Could not persist active tokens to WalletStateManager: $persistError');
+        }
+        
+        print('✅ AddTokenScreen: Token ${token.symbol} toggled successfully');
+        
+        // Show success feedback
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                newState 
+                  ? _safeTranslate('token_enabled', 'Token ${token.symbol} enabled')
+                      .replaceAll('\${token.symbol}', token.symbol ?? '')
+                  : _safeTranslate('token_disabled', 'Token ${token.symbol} disabled')
+                      .replaceAll('\${token.symbol}', token.symbol ?? ''),
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 1),
+            ),
+          );
+        }
+        
+      } catch (toggleError) {
+        print('❌ AddTokenScreen: Error in toggle operation for ${token.symbol}: $toggleError');
+        
+        // Revert UI state on error
+        setState(() {
+          final tokenIndex = allTokens.indexWhere((t) => 
+            t.symbol == token.symbol && 
+            t.blockchainName == token.blockchainName &&
+            t.smartContractAddress == token.smartContractAddress
+          );
+          
+          if (tokenIndex != -1) {
+            allTokens[tokenIndex] = allTokens[tokenIndex].copyWith(isEnabled: !newState);
+          }
+          
+          final filteredIndex = filteredTokens.indexWhere((t) => 
+            t.symbol == token.symbol && 
+            t.blockchainName == token.blockchainName &&
+            t.smartContractAddress == token.smartContractAddress
+          );
+          
+          if (filteredIndex != -1) {
+            filteredTokens[filteredIndex] = filteredTokens[filteredIndex].copyWith(isEnabled: !newState);
+          }
+        });
+        
+        throw toggleError; // Re-throw to be caught by outer catch
       }
-      
-      // 6. ذخیره cache key برای synchronization
-      await _saveCacheKey();
-      
-      print('✅ AddTokenScreen: Token ${token.symbol} toggled successfully');
       
     } catch (e) {
       print('❌ AddTokenScreen: Error toggling token ${token.symbol}: $e');
@@ -482,8 +675,9 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('خطا در تغییر وضعیت توکن: ${e.toString()}'),
+            content: Text(_safeTranslate('error_toggle_token', 'Error changing token state: ${e.toString()}')),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -530,8 +724,8 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       
       // موازی: دریافت موجودی‌ها و قیمت‌ها
       await Future.wait<void>([
-        // دریافت موجودی‌های همه توکن‌ها
-        tokenProvider.updateBalance().then((_) => null), // convert Future<bool> to Future<void>
+        // مطابق گزارش Kotlin: موجودی‌ها فقط بعد از import wallet فراخوانی می‌شوند
+        Future<void>.value(), // placeholder برای Future.wait
         // دریافت قیمت‌های همه توکن‌ها
         _fetchPricesForEnabledTokens(enabledTokens, priceProvider),
       ]);
@@ -787,26 +981,34 @@ class _TokenItem extends StatelessWidget {
         children: [
           // Token icon
           Container(
-            width: 35,
-            height: 35,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: Colors.grey.withOpacity(0.10),
               shape: BoxShape.circle,
             ),
             child: ClipOval(
-              child: (token.iconUrl ?? '').startsWith('http')
-                  ? Image.network(
-                      token.iconUrl ?? '',
-                      width: 32,
-                      height: 32,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(Icons.currency_bitcoin, size: 24, color: Colors.orange);
-                      },
-                    )
-                  : (token.iconUrl ?? '').startsWith('assets/')
-                      ? Image.asset(token.iconUrl ?? '', width: 32, height: 32, fit: BoxFit.cover)
-                      : const Icon(Icons.currency_bitcoin, size: 24, color: Colors.orange),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: (token.iconUrl ?? '').startsWith('http')
+                    ? Image.network(
+                        token.iconUrl ?? '',
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.currency_bitcoin, size: 28, color: Colors.orange);
+                        },
+                      )
+                    : (token.iconUrl ?? '').startsWith('assets/')
+                        ? Image.asset(token.iconUrl ?? '', width: 40, height: 40, fit: BoxFit.contain)
+                        : const Icon(Icons.currency_bitcoin, size: 28, color: Colors.orange),
+              ),
             ),
           ),
           const SizedBox(width: 12),

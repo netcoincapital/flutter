@@ -24,14 +24,10 @@ class FirebaseMessagingService {
     try {
       print('📱 FirebaseMessagingService: Starting initialization...');
       
-      // Check if Firebase is already initialized
-      if (Firebase.apps.isEmpty) {
-        print('🔥 Initializing Firebase...');
-        await Firebase.initializeApp();
-        print('✅ Firebase initialized successfully');
-      } else {
-        print('🔥 Firebase already initialized');
-      }
+      // Temporarily disabled - Firebase not configured
+      print('⚠️ FirebaseMessagingService: Temporarily disabled - Firebase not configured');
+      print('📱 App will work without push notifications until Firebase is properly configured');
+      return;
       
       // Initialize Firebase Messaging
       _messaging = FirebaseMessaging.instance;

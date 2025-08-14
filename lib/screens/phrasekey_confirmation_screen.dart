@@ -78,7 +78,7 @@ class _PhraseKeyConfirmationScreenState extends State<PhraseKeyConfirmationScree
               const SizedBox(height: 16),
               _CheckBoxWithText(
                 isChecked: checkbox1,
-                text: _safeTranslate('laxce_wallet_no_copy', 'Laxce Wallet does not keep a copy of your secret phrase.'),
+                text: _safeTranslate('coinceeper_wallet_no_copy', 'Coinceeper Wallet does not keep a copy of your secret phrase.'),
                 onChanged: (v) => setState(() => checkbox1 = v),
               ),
               _CheckBoxWithText(

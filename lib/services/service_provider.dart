@@ -67,7 +67,7 @@ class ServiceProvider {
           symbol: token.symbol ?? '',
           blockchainName: token.blockchainName ?? '',
           iconUrl: (token.icon == null || token.icon!.isEmpty)
-              ? 'https://coinceeper.com/defualtIcons/coin.png'
+              ? 'https://coinceeper.com/defaultIcons/coin.png'
               : token.icon!,
           isEnabled: false,
           isToken: token.isToken ?? true,
@@ -88,7 +88,7 @@ class ServiceProvider {
 
 /// Class for managing application settings
 class AppConfig {
-  static const String appName = 'Laxce Wallet';
+  static const String appName = 'Coinceeper Wallet';
   static const String appVersion = '1.0.0';
   static const String buildNumber = '1';
   

@@ -6,8 +6,8 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    // Google Services plugin for Firebase
-    id("com.google.gms.google-services")
+    // Google Services plugin for Firebase - temporarily disabled for development
+    // id("com.google.gms.google-services")
 }
 
 // Load keystore properties
@@ -18,7 +18,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.laxce.my_flutter_app"
+    namespace = "com.coinceeper.adl"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
@@ -51,7 +51,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.laxce.my_flutter_app"
+        applicationId = "com.coinceeper.adl"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdk = 26

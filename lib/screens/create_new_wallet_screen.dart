@@ -416,7 +416,7 @@ class _WalletOptionItemNewState extends State<WalletOptionItemNew> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0x0D16B369), // مطابق با Kotlin Color(0x0D16B369)
+        color: const Color(0x0D03ac0e), // مطابق با Kotlin Color(0x0D03ac0e)
         borderRadius: BorderRadius.circular(12),
       ),
       padding: const EdgeInsets.all(16),
@@ -463,7 +463,7 @@ class _WalletOptionItemNewState extends State<WalletOptionItemNew> {
                          isExpanded ? 'Hide details ▲' : 'Show details ▼',
                          style: const TextStyle(
                            fontSize: 12,
-                           color: Color(0xFF16B369),
+                           color: Color(0xFF03ac0e),
                          ),
                        ),
                      ),
@@ -479,8 +479,8 @@ class _WalletOptionItemNewState extends State<WalletOptionItemNew> {
                   onPressed: widget.isLoading ? null : _onClick,
                   style: OutlinedButton.styleFrom(
                     backgroundColor: Colors.transparent,
-                    foregroundColor: const Color(0xFF16B369),
-                    side: const BorderSide(color: Color(0xFF16B369), width: 1),
+                    foregroundColor: const Color(0xFF03ac0e),
+                    side: const BorderSide(color: Color(0xFF03ac0e), width: 1),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -492,7 +492,7 @@ class _WalletOptionItemNewState extends State<WalletOptionItemNew> {
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
-                            color: Color(0xFF16B369),
+                            color: Color(0xFF03ac0e),
                             strokeWidth: 2,
                           ),
                         )
