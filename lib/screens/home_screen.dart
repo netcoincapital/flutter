@@ -730,7 +730,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // نمایش loading
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🍎 Running iOS debug diagnostics...'),
+          content: Text('Running diagnostics...'),
           duration: Duration(seconds: 3),
           backgroundColor: Colors.orange,
         ),
@@ -801,7 +801,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           print('🍎 Debug: Token count looks good ($enabledCount tokens)');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('🍎 Debug: $enabledCount tokens found - looks healthy!'),
+              content: Text('Diagnostics completed successfully.'),
               duration: const Duration(seconds: 2),
               backgroundColor: Colors.green,
             ),
@@ -810,12 +810,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     } catch (e) {
       print('🍎 Debug mode error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('🍎 Debug error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('An error occurred during diagnostics'),
+              backgroundColor: Colors.red,
+            ),
+          );
     }
     
     print('🍎 === DEBUG MODE COMPLETED ===');
@@ -1037,13 +1037,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             // اگر کمتر از 7 بار tap شده و iOS است، countdown نمایش بده
                             if (_debugTapCount > 3 && Platform.isIOS) {
                               final remaining = 7 - _debugTapCount;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('🍎 iOS Debug mode: $remaining more taps'),
-                                  duration: const Duration(seconds: 1),
-                                  backgroundColor: Colors.blue,
-                                ),
-                              );
+                              // Hide explicit debug text in UI
                             }
                             
                             // همچنین والت مودال را نمایش بده

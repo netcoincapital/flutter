@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -235,22 +234,7 @@ class _ImportCreateScreenState extends State<ImportCreateScreen>
                 
                 const SizedBox(height: 16),
                 
-                // Debug button (only in debug mode)
-                if (kDebugMode)
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 24),
-                    child: TextButton.icon(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/debug-wallet-state');
-                      },
-                      icon: const Icon(Icons.bug_report, size: 16),
-                      label: const Text('Debug Wallet State'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.grey,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                      ),
-                    ),
-                  ),
+                // Debug button removed for release UI
 
               ],
             ),

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
@@ -479,24 +478,6 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            // Debug info (only in debug mode)
-            if (kDebugMode)
-              Container(
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Text('Debug: ${widget.title}', style: const TextStyle(fontSize: 10)),
-                    Text('Length: ${enteredCode.length}/6', style: const TextStyle(fontSize: 10)),
-                    Text('Confirmed: $isConfirmed', style: const TextStyle(fontSize: 10)),
-                    Text('Locked: $isLocked', style: const TextStyle(fontSize: 10)),
-                  ],
-                ),
-              ),
             if (errorMessage.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),

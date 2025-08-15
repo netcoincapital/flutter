@@ -5,7 +5,7 @@ import '../services/passcode_manager.dart';
 import 'passcode_screen.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart'; // Added for kDebugMode
+// kDebugMode import removed to avoid showing debug UI in production
 import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // Added for SecureStorage
 
 class SecurityScreen extends StatefulWidget {
@@ -784,54 +784,7 @@ class _SecurityScreenState extends State<SecurityScreen> with WidgetsBindingObse
             
             const SizedBox(height: 24),
             
-            // Debug button for testing passcode persistence
-            if (kDebugMode) ...[
-              const SizedBox(height: 20),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.bug_report, color: Colors.purple),
-                  title: Text(_safeTranslate('debug_passcode_state', 'Debug Passcode State')),
-                  subtitle: Text(_safeTranslate('debug_passcode_subtitle', 'Test passcode persistence')),
-                  onTap: _debugPasscodeState,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.storage, color: Colors.orange),
-                  title: const Text('Test SharedPreferences'),
-                  subtitle: const Text('Test persistence across app kills'),
-                  onTap: _testSharedPreferencesPersistence,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.android, color: Colors.green),
-                  title: const Text('Android Storage Debug'),
-                  subtitle: const Text('Test Android app data persistence'),
-                  onTap: _debugAndroidStorageBehavior,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.refresh, color: Colors.red),
-                  title: const Text('🔧 Force Re-Init'),
-                  subtitle: const Text('Force SecurityManager re-initialization'),
-                  onTap: _forceReinitialization,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.science, color: Colors.blue),
-                  title: const Text('🧪 Comprehensive Test'),
-                  subtitle: const Text('Full persistence & initialization test'),
-                  onTap: _comprehensivePersistenceTest,
-                ),
-              ),
-            ],
+            // Debug cards removed for release UI
           ],
         ),
       ),
