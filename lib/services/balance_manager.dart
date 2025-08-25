@@ -98,10 +98,10 @@ class BalanceManager extends ChangeNotifier {
       // Load balances for new user/wallet
       await _loadUserBalances(userId, walletName);
       
-      // During app startup, wait a bit longer for other systems to initialize
+      // During app startup, wait a bit for other systems to initialize
       if (_isAppStartup) {
         print('🔄 BalanceManager: App startup detected, waiting for stabilization...');
-        await Future.delayed(const Duration(milliseconds: 1500));
+        await Future.delayed(const Duration(milliseconds: 500));
         _isAppStartup = false; // Mark startup complete
       }
       
@@ -137,7 +137,15 @@ class BalanceManager extends ChangeNotifier {
   
   /// دریافت موجودی توکن خاص
   double getTokenBalance(String userId, String symbol) {
-    return _userBalances[userId]?[symbol] ?? 0.0;
+    final balance = _userBalances[userId]?[symbol] ?? 0.0;
+    
+    // Debug logging for troubleshooting
+    if (balance == 0.0) {
+      print('🔍 BalanceManager: No balance found for $userId/$symbol');
+      print('🔍 BalanceManager: Available balances for $userId: ${_userBalances[userId]?.keys.toList() ?? "none"}');
+    }
+    
+    return balance;
   }
   
   /// دریافت تمام موجودی‌های کاربر

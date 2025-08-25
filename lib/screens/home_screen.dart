@@ -20,6 +20,7 @@ import '../services/api_service.dart'; // Added import for APIService
 import 'package:shared_preferences/shared_preferences.dart'; // Added import for SharedPreferences
 import 'dart:convert'; // Added import for json
 import '../widgets/stable_balance_display.dart';
+import '../services/balance_debug_helper.dart';
 import '../screens/wallets_screen.dart'; // Added import for WalletsScreen
 import '../utils/shared_preferences_utils.dart'; // Added import for formatAmount
 import 'dart:async'; // Added import for Timer
@@ -73,9 +74,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    // Listen to BalanceManager updates for UI refresh
+    BalanceManager.instance.addListener(_onBalanceManagerUpdate);
+    
     // ✅ Remove global cache loading - now handled per-wallet
     // _loadCachedBalances(); // ❌ Removed
     _initializeHomeScreen();
+  }
+  
+  void _onBalanceManagerUpdate() {
+    if (mounted) {
+      setState(() {
+        // This will trigger a rebuild with updated balance data
+      });
+    }
   }
 
   Future<void> _initializeHomeScreen() async {
@@ -94,16 +107,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('🏠 HomeScreen: BalanceManager initialized');
       
       // Set current user and wallet context for BalanceManager
-      // This should happen AFTER TokenProvider is ready to avoid conflicts
-      Timer(const Duration(milliseconds: 800), () async {
-        if (appProvider.currentUserId != null && appProvider.currentWalletName != null) {
+      // Use immediate setup if possible, otherwise delay briefly
+      if (appProvider.currentUserId != null && appProvider.currentWalletName != null) {
+        Timer(const Duration(milliseconds: 300), () async {
           await BalanceManager.instance.setCurrentUserAndWallet(
             appProvider.currentUserId!,
             appProvider.currentWalletName!,
           );
           print('🏠 HomeScreen: BalanceManager context set for user: ${appProvider.currentUserId}');
-        }
-      });
+          
+          // Force UI refresh after BalanceManager is ready
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      } else {
+        // If no current user yet, try again after a longer delay
+        Timer(const Duration(milliseconds: 1000), () async {
+          if (appProvider.currentUserId != null && appProvider.currentWalletName != null) {
+            await BalanceManager.instance.setCurrentUserAndWallet(
+              appProvider.currentUserId!,
+              appProvider.currentWalletName!,
+            );
+            print('🏠 HomeScreen: BalanceManager context set (delayed) for user: ${appProvider.currentUserId}');
+            
+            // Force UI refresh after BalanceManager is ready
+            if (mounted) {
+              setState(() {});
+            }
+          }
+        });
+      }
       
       // Initialize price provider
       await priceProvider.loadSelectedCurrency();
@@ -233,7 +267,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final balanceFromManager = currentUserId != null 
             ? BalanceManager.instance.getTokenBalance(currentUserId, token.symbol ?? '')
             : 0.0;
-        print('   - ${token.symbol}: Manager=${balanceFromManager}, Token=${token.amount ?? 0.0}');
+        final displayAmount = _getDisplayAmount(token);
+        print('   - ${token.symbol}: Manager=${balanceFromManager}, Token=${token.amount ?? 0.0}, Display=${displayAmount}');
+      }
+      
+      // Also debug BalanceManager state
+      BalanceManager.instance.debugBalanceState();
+      
+      // Full debug check
+      BalanceDebugHelper.debugFullBalanceState(appProvider);
+      
+      // Emergency fix: if all display amounts are 0, force a refresh
+      final allZero = enabledTokens.every((token) => _getDisplayAmount(token) == 0.0);
+      if (allZero && enabledTokens.isNotEmpty && currentUserId != null) {
+        print('🚨 HomeScreen: All balances are zero, forcing emergency refresh...');
+        Timer(const Duration(milliseconds: 500), () async {
+          try {
+            await BalanceManager.instance.refreshBalancesForUser(currentUserId, force: true);
+            if (mounted) setState(() {});
+          } catch (e) {
+            print('❌ Emergency refresh failed: $e');
+          }
+        });
       }
       
     } catch (e) {
@@ -322,6 +377,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    
+    // Remove BalanceManager listener
+    BalanceManager.instance.removeListener(_onBalanceManagerUpdate);
     
     // ✅ Save current wallet's balance cache automatically through AppProvider
     // This is handled automatically when the app goes to background or switches context
@@ -2044,8 +2102,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// دریافت موجودی نمایشی برای یک توکن
   double _getDisplayAmount(CryptoToken token) {
-    // Use actual token amount directly
-    return token.amount > 0 ? token.amount : 0.0;
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final currentUserId = appProvider.currentUserId;
+      
+      // Get the token's own amount first as baseline
+      final tokenAmount = token.amount ?? 0.0;
+      
+      // If we have a user ID, try to get from BalanceManager as well
+      if (currentUserId != null && currentUserId.isNotEmpty) {
+        final balanceFromManager = BalanceManager.instance.getTokenBalance(
+          currentUserId,
+          token.symbol ?? '',
+        );
+        
+        // Priority logic: prefer the higher value or the most recently valid one
+        if (balanceFromManager > 0.0 && tokenAmount > 0.0) {
+          // Both have values - prefer the higher one
+          return balanceFromManager > tokenAmount ? balanceFromManager : tokenAmount;
+        } else if (balanceFromManager > 0.0) {
+          // Only BalanceManager has value
+          return balanceFromManager;
+        } else if (tokenAmount > 0.0) {
+          // Only token has value
+          return tokenAmount;
+        }
+        
+        // If both are 0, at least show the token's amount (might be 0 but consistent)
+        return tokenAmount;
+      }
+      
+      // Fallback to token amount if no user ID
+      return tokenAmount;
+      
+    } catch (e) {
+      print('❌ HomeScreen: Error in _getDisplayAmount for ${token.symbol}: $e');
+      // Safe fallback
+      return token.amount ?? 0.0;
+    }
   }
 }
 
