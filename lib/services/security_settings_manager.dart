@@ -36,16 +36,25 @@ class SecuritySettingsManager {
 
   final LocalAuthentication _localAuth = LocalAuthentication();
 
-  /// ساده‌ترین initialization ممکن - فقط اگر هیچ تنظیمی وجود نداشت
+  /// TRUST WALLET STANDARD: Security-first initialization
   Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // فقط اگر هیچ کلید وجود نداشت، defaults قرار بده
+      // 🔒 TRUST WALLET STANDARD: Always default to TRUE (security first)
+      // Only becomes false when user explicitly disables it
       if (!prefs.containsKey(_passcodeEnabledKey)) {
-        final isPasscodeSet = await PasscodeManager.isPasscodeSet();
-        await prefs.setBool(_passcodeEnabledKey, isPasscodeSet);
-        print('🔒 Set default passcode_enabled: $isPasscodeSet');
+        await prefs.setBool(_passcodeEnabledKey, true);
+        print('🔒 TRUST WALLET STANDARD: Set default passcode_enabled = TRUE (security first)');
+      } else {
+        // 🔧 TRUST WALLET FIX: If passcode exists but toggle is OFF, reset to ON
+        final hasPasscode = await PasscodeManager.isPasscodeSet();
+        final currentToggle = prefs.getBool(_passcodeEnabledKey) ?? true;
+        
+        if (hasPasscode && !currentToggle) {
+          await prefs.setBool(_passcodeEnabledKey, true);
+          print('🔧 TRUST WALLET FIX: Passcode exists but toggle was OFF - reset to ON');
+        }
       }
       
       if (!prefs.containsKey(_autoLockDurationKey)) {
@@ -58,7 +67,7 @@ class SecuritySettingsManager {
         print('🔒 Set default lock_method: passcodeAndBiometric');
       }
       
-      print('✅ SecuritySettingsManager initialize completed');
+      print('✅ SecuritySettingsManager initialize completed - TRUST WALLET STANDARD');
     } catch (e) {
       print('❌ Error in SecuritySettingsManager.initialize: $e');
     }
@@ -132,16 +141,22 @@ class SecuritySettingsManager {
     try {
       print('🔒 Setting passcode enabled: $enabled');
       
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 5));
       
       // 🔍 DEBUG: Check before saving
       final oldValue = prefs.getBool(_passcodeEnabledKey);
       print('🔍 Old passcode enabled value: $oldValue');
       
-      // 🔒 CRITICAL: Force immediate write to disk
-      await prefs.setBool(_passcodeEnabledKey, enabled);
-      // Note: commit() is deprecated in newer Flutter versions - setBool already persists immediately
-      print('🔍 setBool completed - automatically persisted');
+      // 🔒 CRITICAL: Force immediate write to disk with retry mechanism
+      try {
+        await prefs.setBool(_passcodeEnabledKey, enabled).timeout(const Duration(seconds: 3));
+        print('🔍 setBool completed - automatically persisted');
+      } catch (e) {
+        print('❌ First setBool attempt failed: $e - retrying...');
+        await Future.delayed(const Duration(milliseconds: 100));
+        await prefs.setBool(_passcodeEnabledKey, enabled).timeout(const Duration(seconds: 3));
+        print('🔍 setBool retry successful');
+      }
       
       // 🔍 DEBUG: Verify after saving
       final newValue = prefs.getBool(_passcodeEnabledKey);
@@ -194,37 +209,21 @@ class SecuritySettingsManager {
     }
   }
 
-  /// بررسی فعال بودن passcode
+  /// TRUST WALLET STANDARD: Check if passcode toggle is enabled
   Future<bool> isPasscodeEnabled() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      print('🔍 DEBUG: Checking passcode enabled state...');
-      print('🔍 DEBUG: Key exists in prefs: ${prefs.containsKey(_passcodeEnabledKey)}');
+      // 🔒 TRUST WALLET STANDARD: Always show toggle state (default: TRUE)
+      // The toggle controls whether passcode protection is active or not
+      final enabled = prefs.getBool(_passcodeEnabledKey) ?? true;
       
-      // بررسی اینکه آیا setting صریحاً تنظیم شده یا نه
-      if (prefs.containsKey(_passcodeEnabledKey)) {
-        // اگر کاربر صریحاً تنظیم کرده، از همان مقدار استفاده کن
-        final enabled = prefs.getBool(_passcodeEnabledKey)!;
-        print('🔒 Passcode enabled check (explicit from prefs): $enabled');
-        return enabled;
-      } else {
-        // اگر تنظیم نشده، بررسی کن که آیا passcode set شده یا نه
-        // اگر passcode set شده، پیش‌فرض فعال است
-        final isPasscodeSet = await PasscodeManager.isPasscodeSet();
-        final defaultEnabled = isPasscodeSet; // اگر passcode set شده، فعال باشد
-        
-        print('🔒 Passcode enabled check (smart default): passcode_set=$isPasscodeSet, enabled=$defaultEnabled');
-        
-        // ذخیره کردن این مقدار پیش‌فرض برای استفاده‌های آینده
-        await prefs.setBool(_passcodeEnabledKey, defaultEnabled);
-        print('🔒 Saved smart default passcode enabled state: $defaultEnabled');
-        
-        return defaultEnabled;
-      }
+      print('🔒 TRUST WALLET: Passcode toggle state: $enabled (default: true for security)');
+      return enabled;
+      
     } catch (e) {
       print('❌ Error checking passcode enabled: $e');
-      return false; // پیش‌فرض امن تغییر یافت به false
+      return true; // TRUST WALLET STANDARD: Default to secure (true)
     }
   }
 
@@ -583,17 +582,20 @@ class SecuritySettingsManager {
   /// Reset activity timer - call this on real user interactions
   Future<void> resetActivityTimer() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance()
+          .timeout(const Duration(seconds: 2));
       final now = DateTime.now();
       final nowMillis = now.millisecondsSinceEpoch;
       
       // Save both wall clock and elapsed time for robust tracking
-      await prefs.setInt(_lastActivityTimeKey, nowMillis);
+      await prefs.setInt(_lastActivityTimeKey, nowMillis)
+          .timeout(const Duration(seconds: 2));
       
       print('🔄 Activity timer reset at: $now');
       print('🔄 Timestamp saved: $nowMillis');
     } catch (e) {
       print('❌ Error resetting activity timer: $e');
+      // Don't rethrow - let the app continue
     }
   }
 
@@ -641,33 +643,32 @@ class SecuritySettingsManager {
     }
   }
 
-  /// Check if passcode should be shown based on auto-lock settings
+  /// TRUST WALLET STANDARD: Check if passcode should be shown
   Future<bool> shouldShowPasscodeNow() async {
     try {
       final isPasscodeEnabled = await this.isPasscodeEnabled();
       final hasPasscode = await PasscodeManager.isPasscodeSet();
       
-      print('🔍 shouldShowPasscodeNow: enabled=$isPasscodeEnabled, hasPasscode=$hasPasscode');
+      print('🔍 TRUST WALLET: shouldShowPasscodeNow - enabled=$isPasscodeEnabled, hasPasscode=$hasPasscode');
       
-      // اگر passcode غیرفعال است، هیچ‌وقت نشان نده
+      // TRUST WALLET LOGIC: Both conditions must be true
       if (!isPasscodeEnabled) {
-        print('🔓 Passcode disabled by user - never show');
+        print('🔓 TRUST WALLET: Passcode disabled by user - skip protection');
         return false;
       }
       
-      // اگر passcode تنظیم نشده، نمی‌تواند نشان دهد
       if (!hasPasscode) {
-        print('⚠️ No passcode set - cannot show');
+        print('⚠️ TRUST WALLET: No passcode set - cannot protect');
         return false;
       }
       
-      // در غیر این صورت، نشان بده (ساده‌ترین logic)
-      print('🔒 Should show passcode: enabled and set');
+      // TRUST WALLET: Show passcode when both enabled and set
+      print('🔒 TRUST WALLET: Show passcode protection');
       return true;
       
     } catch (e) {
       print('❌ Error in shouldShowPasscodeNow: $e');
-      return false; // Safe fallback
+      return false; // TRUST WALLET: Safe fallback (no protection)
     }
   }
 

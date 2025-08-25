@@ -8,6 +8,7 @@ import '../layout/main_layout.dart';
 import '../services/device_registration_manager.dart';
 import '../services/secure_storage.dart';
 import '../services/security_settings_manager.dart';
+import '../services/balance_manager.dart';
 import '../providers/history_provider.dart';
 import '../models/crypto_token.dart';
 import 'crypto_details_screen.dart';
@@ -18,6 +19,7 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart'; // Added import for APIService
 import 'package:shared_preferences/shared_preferences.dart'; // Added import for SharedPreferences
 import 'dart:convert'; // Added import for json
+import '../widgets/stable_balance_display.dart';
 import '../screens/wallets_screen.dart'; // Added import for WalletsScreen
 import '../utils/shared_preferences_utils.dart'; // Added import for formatAmount
 import 'dart:async'; // Added import for Timer
@@ -40,6 +42,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // Map<String, double> _displayBalances = {}; // ❌ Removed global display cache
   
   int _debugTapCount = 0; // شمارنده تپ برای debug مخفی
+  
+  // Sort and filter options
+  String _sortOption = 'balance'; // 'balance', 'name', 'price'
+  bool _hideZeroBalances = false;
+  bool _showOnlyEnabled = false;
+  List<String> _selectedBlockchains = [];
   
   final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
 
@@ -80,6 +88,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Initialize SecuritySettingsManager
       await _securityManager.initialize();
       print('🏠 HomeScreen: Security manager initialized');
+      
+      // Initialize BalanceManager
+      await BalanceManager.instance.initialize(appProvider.apiService);
+      print('🏠 HomeScreen: BalanceManager initialized');
+      
+      // Set current user and wallet context for BalanceManager
+      if (appProvider.currentUserId != null && appProvider.currentWalletName != null) {
+        await BalanceManager.instance.setCurrentUserAndWallet(
+          appProvider.currentUserId!,
+          appProvider.currentWalletName!,
+        );
+        print('🏠 HomeScreen: BalanceManager context set for user: ${appProvider.currentUserId}');
+      }
       
       // Initialize price provider
       await priceProvider.loadSelectedCurrency();
@@ -164,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // ✅ Cached balance application is now handled per-wallet in AppProvider
   // No longer needed as balances are managed per-wallet through WalletStateManager
 
-  /// بارگذاری موجودی‌ها برای توکن‌های فعال با cache
+  /// بارگذاری موجودی‌ها برای توکن‌های فعال با BalanceManager
   Future<void> _loadBalancesForEnabledTokens(tokenProvider) async {
     if (_isRefreshing) {
       print('⏳ HomeScreen: Already refreshing balances, skipping...');
@@ -174,20 +195,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _isRefreshing = true;
     
     try {
-      print('💰 HomeScreen: Loading balances for enabled tokens');
+      print('💰 HomeScreen: Loading balances for enabled tokens using BalanceManager');
       
-      // ✅ Balance caching is now handled per-wallet in WalletStateManager
-      // Current balances are automatically saved when switching wallets
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final currentUserId = appProvider.currentUserId;
       
-      // مطابق گزارش Kotlin: هیچ API balance در startup فراخوانی نمی‌شود
-      // موجودی‌ها فقط بعد از import wallet یک بار فراخوانی می‌شوند
-      print('ℹ️ HomeScreen: Skipping balance API call - balances only fetched after wallet import');
+      if (currentUserId != null && currentUserId.isNotEmpty) {
+        // Set active tokens for the current user in BalanceManager
+        final enabledTokens = tokenProvider.enabledTokens;
+        final activeSymbols = enabledTokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toList();
+        
+        BalanceManager.instance.setActiveTokensForUser(currentUserId, activeSymbols);
+        print('🔄 HomeScreen: Set ${activeSymbols.length} active tokens in BalanceManager');
+        
+        // Force refresh balances for immediate display
+        await BalanceManager.instance.refreshBalancesForUser(currentUserId, force: false);
+        print('✅ HomeScreen: BalanceManager refresh completed');
+        
+      } else {
+        print('⚠️ HomeScreen: No valid user ID found for balance loading');
+      }
       
-      // Debug: نمایش موجودی‌های فعلی در TokenProvider
+      // Debug: نمایش موجودی‌های فعلی
       final enabledTokens = tokenProvider.enabledTokens;
       print('🔍 HomeScreen DEBUG: Current enabled tokens with balances:');
       for (final token in enabledTokens) {
-        print('   - ${token.symbol}: ${token.amount ?? 0.0}');
+        final balanceFromManager = currentUserId != null 
+            ? BalanceManager.instance.getTokenBalance(currentUserId, token.symbol ?? '')
+            : 0.0;
+        print('   - ${token.symbol}: Manager=${balanceFromManager}, Token=${token.amount ?? 0.0}');
       }
       
     } catch (e) {
@@ -231,10 +267,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Cancel existing timer if any
     _periodicTimer?.cancel();
     
-    // هر 60 ثانیه قیمت‌ها را به‌روزرسانی کن (فقط قیمت‌ها، نه موجودی‌ها)
-    _periodicTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
+    // هر 90 ثانیه قیمت‌ها و موجودی‌ها را به‌روزرسانی کن برای پایداری
+    _periodicTimer = Timer.periodic(const Duration(seconds: 90), (timer) {
       if (mounted) {
-        _refreshPricesForEnabledTokens();
+        _refreshPricesAndBalances();
       } else {
         // If widget is disposed, cancel the timer
         timer.cancel();
@@ -282,6 +318,607 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     
     _stopPeriodicUpdates(); // Stop periodic updates on dispose
     super.dispose();
+  }
+  
+  /// نمایش گزینه‌های مرتب‌سازی
+  void _showSortOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Header
+            Container(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF11c699).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.sort,
+                      color: Color(0xFF11c699),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _safeTranslate('sort by', 'Sort by'),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Sort options
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  _SortOption(
+                    title: _safeTranslate('balance', 'Balance'),
+                    subtitle: _safeTranslate('highest to lowest', 'Highest to lowest'),
+                    value: 'balance',
+                    currentValue: _sortOption,
+                    onChanged: (value) {
+                      setState(() => _sortOption = value);
+                      Navigator.pop(context);
+                    },
+                  ),
+                  _SortOption(
+                    title: _safeTranslate('name', 'Name'),
+                    subtitle: _safeTranslate('alphabetical order', 'A-Z alphabetical'),
+                    value: 'name',
+                    currentValue: _sortOption,
+                    onChanged: (value) {
+                      setState(() => _sortOption = value);
+                      Navigator.pop(context);
+                    },
+                  ),
+                  _SortOption(
+                    title: _safeTranslate('price', 'Price'),
+                    subtitle: _safeTranslate('highest price first', 'Highest price first'),
+                    value: 'price',
+                    currentValue: _sortOption,
+                    onChanged: (value) {
+                      setState(() => _sortOption = value);
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  // Additional filter state
+  double _minBalanceFilter = 0.0;
+  String _balanceFilterType = 'all'; // 'all', 'above', 'range'
+  
+  /// نمایش گزینه‌های فیلتر
+  void _showFilterOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          width: double.infinity,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // Header
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF11c699).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.tune,
+                        color: Color(0xFF11c699),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _safeTranslate('filter tokens', 'Filter Tokens'),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        setModalState(() {
+                          _hideZeroBalances = false;
+                          _showOnlyEnabled = false;
+                          _selectedBlockchains.clear();
+                          _minBalanceFilter = 0.0;
+                          _balanceFilterType = 'all';
+                        });
+                        setState(() {});
+                      },
+                      icon: const Icon(Icons.clear_all, size: 18),
+                      label: Text(_safeTranslate('clear all', 'Clear All')),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF11c699),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Balance filters with visual slider
+                      _buildAdvancedFilterSection(
+                        title: _safeTranslate('balance filter', 'Balance Filter'),
+                        icon: Icons.account_balance_wallet,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildToggleOption(
+                              title: _safeTranslate('hide zero balances', 'Hide Zero Balances'),
+                              subtitle: _safeTranslate('show only tokens with balance', 'Show only tokens with balance'),
+                              value: _hideZeroBalances,
+                              onChanged: (value) {
+                                setModalState(() => _hideZeroBalances = value);
+                                setState(() {});
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildToggleOption(
+                              title: _safeTranslate('show only enabled tokens', 'Show Only Enabled Tokens'),
+                              subtitle: _safeTranslate('tokens you have enabled', 'Tokens you have enabled'),
+                              value: _showOnlyEnabled,
+                              onChanged: (value) {
+                                setModalState(() => _showOnlyEnabled = value);
+                                setState(() {});
+                              },
+                            ),
+                            const SizedBox(height: 20),
+                            
+                            // Advanced balance filter
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _safeTranslate('minimum display value', 'Minimum Display Value'),
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1A1A1A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _safeTranslate('tokens below value hidden', 'Tokens with value below this amount will be hidden'),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  
+                                  // Quick preset buttons
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      _buildPresetButton(_safeTranslate('all', 'All'), 0.0, setModalState),
+                                      _buildPresetButton('\$1+', 1.0, setModalState),
+                                      _buildPresetButton('\$10+', 10.0, setModalState),
+                                      _buildPresetButton('\$100+', 100.0, setModalState),
+                                      _buildPresetButton('\$1000+', 1000.0, setModalState),
+                                    ],
+                                  ),
+                                  
+                                  const SizedBox(height: 16),
+                                  
+                                  // Custom slider
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              '\$${_minBalanceFilter.toStringAsFixed(0)}',
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF11c699),
+                                              ),
+                                            ),
+                                            Text(
+                                              '\$10,000',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        SliderTheme(
+                                          data: SliderTheme.of(context).copyWith(
+                                            trackHeight: 6,
+                                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+                                            activeTrackColor: const Color(0xFF11c699),
+                                            inactiveTrackColor: Colors.grey.withOpacity(0.3),
+                                            thumbColor: const Color(0xFF11c699),
+                                            overlayColor: const Color(0xFF11c699).withOpacity(0.2),
+                                          ),
+                                          child: Slider(
+                                            value: _minBalanceFilter,
+                                            min: 0,
+                                            max: 10000,
+                                            divisions: 100,
+                                            onChanged: (value) {
+                                              setModalState(() => _minBalanceFilter = value);
+                                              setState(() {});
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Blockchain filters with chips
+                      _buildAdvancedFilterSection(
+                        title: _safeTranslate('blockchain networks', 'Blockchain Networks'),
+                        icon: Icons.account_tree,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            'Bitcoin',
+                            'Ethereum', 
+                            'Binance Smart Chain',
+                            'Polygon',
+                            'Arbitrum',
+                            'Avalanche'
+                          ].map((blockchain) => _buildBlockchainChip(
+                            label: blockchain,
+                            isSelected: _selectedBlockchains.contains(blockchain),
+                            onTap: () {
+                              setModalState(() {
+                                if (_selectedBlockchains.contains(blockchain)) {
+                                  _selectedBlockchains.remove(blockchain);
+                                } else {
+                                  _selectedBlockchains.add(blockchain);
+                                }
+                              });
+                              setState(() {});
+                            },
+                          )).toList(),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 32),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Apply button
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF11c699),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      _safeTranslate('apply filters', 'Apply Filters'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildAdvancedFilterSection({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: const Color(0xFF11c699)),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        child,
+      ],
+    );
+  }
+  
+  Widget _buildToggleOption({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: value ? const Color(0xFF11c699).withOpacity(0.1) : Colors.grey.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: value ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: value ? const Color(0xFF11c699) : const Color(0xFF1A1A1A),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: const Color(0xFF11c699),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildPresetButton(String label, double value, StateSetter setModalState) {
+    final isSelected = _minBalanceFilter == value;
+    return GestureDetector(
+      onTap: () {
+        setModalState(() => _minBalanceFilter = value);
+        setState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.3),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: isSelected ? Colors.white : Colors.grey[700],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildBlockchainChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.3),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: isSelected ? Colors.white : Colors.grey[700],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  /// اعمال فیلترها به لیست tokens
+  List<CryptoToken> _applyFilters(List<CryptoToken> tokens, PriceProvider priceProvider) {
+    var filteredTokens = tokens;
+    
+    // Filter by zero balances
+    if (_hideZeroBalances) {
+      filteredTokens = filteredTokens.where((token) => (token.amount ?? 0.0) > 0).toList();
+    }
+    
+    // Filter by enabled status
+    if (_showOnlyEnabled) {
+      filteredTokens = filteredTokens.where((token) => token.isEnabled).toList();
+    }
+    
+    // Filter by minimum balance value
+    if (_minBalanceFilter > 0) {
+      filteredTokens = filteredTokens.where((token) {
+        final tokenAmount = token.amount ?? 0.0;
+        final price = priceProvider.getPrice(token.symbol ?? '') ?? 0.0;
+        final totalValue = tokenAmount * price;
+        return totalValue >= _minBalanceFilter;
+      }).toList();
+    }
+    
+    // Filter by blockchain
+    if (_selectedBlockchains.isNotEmpty) {
+      filteredTokens = filteredTokens.where((token) => 
+        _selectedBlockchains.contains(token.blockchainName)
+      ).toList();
+    }
+    
+    return filteredTokens;
+  }
+  
+  /// اعمال مرتب‌سازی به لیست tokens
+  List<CryptoToken> _applySorting(List<CryptoToken> tokens, PriceProvider priceProvider) {
+    var sortedTokens = List<CryptoToken>.from(tokens);
+    
+    switch (_sortOption) {
+      case 'balance':
+        sortedTokens.sort((a, b) {
+          final aBalance = a.amount ?? 0.0;
+          final bBalance = b.amount ?? 0.0;
+          return bBalance.compareTo(aBalance); // Descending
+        });
+        break;
+        
+      case 'name':
+        sortedTokens.sort((a, b) {
+          final aName = a.name ?? a.symbol ?? '';
+          final bName = b.name ?? b.symbol ?? '';
+          return aName.toLowerCase().compareTo(bName.toLowerCase()); // Ascending
+        });
+        break;
+        
+      case 'price':
+        sortedTokens.sort((a, b) {
+          final aPrice = priceProvider.getPrice(a.symbol ?? '') ?? 0.0;
+          final bPrice = priceProvider.getPrice(b.symbol ?? '') ?? 0.0;
+          return bPrice.compareTo(aPrice); // Descending
+        });
+        break;
+    }
+    
+    return sortedTokens;
   }
 
   @override
@@ -354,6 +991,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _refreshPricesForEnabledTokens() async {
     await _safeRefreshPricesOnly();
   }
+  
+  /// Refresh هم قیمت‌ها و هم موجودی‌ها برای پایداری
+  void _refreshPricesAndBalances() async {
+    try {
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      final priceProvider = Provider.of<PriceProvider>(context, listen: false);
+      final currentUserId = appProvider.currentUserId;
+      
+      if (appProvider.tokenProvider != null && currentUserId != null) {
+        final enabledTokens = appProvider.tokenProvider!.enabledTokens;
+        
+        if (enabledTokens.isNotEmpty) {
+          print('🔄 HomeScreen: Periodic refresh - updating prices and balances');
+          
+          // Refresh prices
+          await _loadPricesForTokens(enabledTokens, priceProvider);
+          
+          // Refresh balances through BalanceManager
+          await BalanceManager.instance.refreshBalancesForUser(currentUserId, force: false);
+          
+          print('✅ HomeScreen: Periodic refresh completed');
+        }
+      }
+    } catch (e) {
+      print('❌ HomeScreen: Error in periodic refresh: $e');
+    }
+  }
 
   /// refresh با balance update برای دکمه refresh
   Future<void> _performManualRefresh() async {
@@ -362,25 +1026,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     
+    _isRefreshing = true;
     final appProvider = Provider.of<AppProvider>(context, listen: false);
     final priceProvider = Provider.of<PriceProvider>(context, listen: false);
+    final currentUserId = appProvider.currentUserId;
     
     if (appProvider.tokenProvider == null) return;
     
     try {
-      // موازی: refresh موجودی‌ها و قیمت‌ها - اما فقط برای توکن‌های فعال
+      print('🔄 HomeScreen: Manual refresh started');
+      
       final enabledTokens = appProvider.tokenProvider!.enabledTokens;
       if (enabledTokens.isEmpty) return;
       
+      // موازی: refresh موجودی‌ها و قیمت‌ها
       await Future.wait<void>([
-        _loadBalancesForEnabledTokens(appProvider.tokenProvider!), // استفاده از متد cache دار
+        // Force refresh balances through BalanceManager
+        if (currentUserId != null)
+          BalanceManager.instance.refreshBalancesForUser(currentUserId, force: true),
+        // Refresh prices
         _loadPricesForTokens(enabledTokens, priceProvider),
       ]);
       
-      return; // success
+      print('✅ HomeScreen: Manual refresh completed successfully');
+      
     } catch (e) {
       print('❌ HomeScreen: Error in manual refresh: $e');
       rethrow; // re-throw for UI handling
+    } finally {
+      _isRefreshing = false;
     }
   }
 
@@ -584,7 +1258,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Padding(
                 padding: const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 8),
                 child: Text(
-                  _safeTranslate('select_wallet', 'Select Wallet'),
+                  _safeTranslate('select wallet', 'Select Wallet'),
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -616,7 +1290,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         padding: const EdgeInsets.all(40),
                         child: Center(
                           child: Text(
-                            _safeTranslate('no_wallets_found', 'No wallets found'),
+                            _safeTranslate('no wallets found', 'No wallets found'),
                             style: const TextStyle(
                               color: Color(0xFF666666),
                               fontSize: 16,
@@ -657,7 +1331,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               // Show success message
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(_safeTranslate('wallet_switched', 'Switched to {wallet}').replaceAll('{wallet}', walletName)),
+                                  content: Text(_safeTranslate('wallet switched', 'Switched to {wallet}').replaceAll('{wallet}', walletName)),
                                   backgroundColor: const Color(0xFF0BAB9B),
                                   duration: const Duration(seconds: 2),
                                 ),
@@ -666,7 +1340,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               print('❌ Error switching wallet: $e');
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(_safeTranslate('error_switching_wallet', 'Error switching wallet')),
+                                  content: Text(_safeTranslate('error switching wallet', 'Error switching wallet')),
                                   backgroundColor: Colors.red,
                                 ),
                               );
@@ -847,7 +1521,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _safeTranslate('loading_wallet', 'Loading wallet...'),
+                      _safeTranslate('loading wallet', 'Loading wallet...'),
                       style: const TextStyle(color: Color(0xFF666666)),
                     ),
                   ],
@@ -857,7 +1531,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           );
         }
 
-        final walletName = appProvider.currentWalletName ?? _safeTranslate('my_wallet', 'My Wallet');
+        final walletName = appProvider.currentWalletName ?? _safeTranslate('my wallet', 'My Wallet');
         final tokenProvider = appProvider.tokenProvider!;
         
         // Wait for TokenProvider to be fully initialized
@@ -880,12 +1554,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _safeTranslate('initializing_wallet', 'Initializing wallet...'),
+                      _safeTranslate('initializing wallet', 'Initializing wallet...'),
                       style: const TextStyle(color: Color(0xFF666666)),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _safeTranslate('loading_tokens', 'Loading your tokens...'),
+                      _safeTranslate('loading tokens', 'Loading your tokens...'),
                       style: const TextStyle(color: Color(0xFF999999), fontSize: 12),
                     ),
                   ],
@@ -925,12 +1599,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _safeTranslate('initializing_wallet', 'Initializing wallet...'),
+                      _safeTranslate('initializing wallet', 'Initializing wallet...'),
                       style: const TextStyle(color: Color(0xFF666666)),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _safeTranslate('please_wait', 'Please wait...'),
+                      _safeTranslate('please wait', 'Please wait...'),
                       style: const TextStyle(color: Color(0xFF999999), fontSize: 12),
                     ),
                   ],
@@ -952,7 +1626,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     Icon(Icons.account_balance_wallet, size: 64, color: Colors.grey.withOpacity(0.3)),
                     const SizedBox(height: 16),
                     Text(
-                      _safeTranslate('no_active_tokens_found', 'No active tokens found'),
+                      _safeTranslate('no active tokens found', 'No active tokens found'),
                       style: const TextStyle(color: Color(0xFF555555), fontSize: 16),
                     ),
                     const SizedBox(height: 8),
@@ -961,7 +1635,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pushNamed(context, '/add-token'),
-                          child: Text(_safeTranslate('add_token', 'Add Token')),
+                          child: Text(_safeTranslate('add token', 'Add Token')),
                         ),
                         const SizedBox(width: 16),
                         TextButton(
@@ -1153,20 +1827,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Tabs
+                  // Tabs with filter and sort icons
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Row(
                       children: [
-                        _TabButton(
-                          label: _safeTranslate('cryptos', 'Cryptos'),
-                          selected: selectedTab == 0,
-                          onTap: () => setState(() => selectedTab = 0),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              _TabButton(
+                                label: _safeTranslate('cryptos', 'Cryptos'),
+                                selected: selectedTab == 0,
+                                onTap: () => setState(() => selectedTab = 0),
+                              ),
+                              _TabButton(
+                                label: _safeTranslate('nfts', "NFT's"),
+                                selected: selectedTab == 1,
+                                onTap: () => setState(() => selectedTab = 1),
+                              ),
+                            ],
+                          ),
                         ),
-                        _TabButton(
-                          label: _safeTranslate('nfts', "NFT's"),
-                          selected: selectedTab == 1,
-                          onTap: () => setState(() => selectedTab = 1),
+                        // Filter and Sort icons
+                        Row(
+                          children: [
+                            _FilterSortIcon(
+                              icon: Icons.sort_by_alpha,
+                              tooltip: _safeTranslate('sort alphabetically', 'Sort A-Z'),
+                              onTap: () => _showSortOptions(),
+                            ),
+                            const SizedBox(width: 12),
+                            _FilterSortIcon(
+                              icon: Icons.filter_list,
+                              tooltip: _safeTranslate('filter tokens', 'Filter tokens'),
+                              onTap: () => _showFilterOptions(),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1177,7 +1873,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: selectedTab == 0
                         ? Consumer<PriceProvider>(
                             builder: (context, priceProvider, _) {
-                              final enabledTokens = tokenProvider.enabledTokens;
+                              var enabledTokens = tokenProvider.enabledTokens;
+                              
+                              // Apply filters
+                              enabledTokens = _applyFilters(enabledTokens, priceProvider);
+                              
+                              // Apply sorting
+                              enabledTokens = _applySorting(enabledTokens, priceProvider);
                               return RefreshIndicator(
                                 onRefresh: _performManualRefresh,
                                 color: const Color(0xFF0BAB9B),
@@ -1226,7 +1928,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           // نمایش پیام confirmation مشابه Android
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             SnackBar(
-                                              content: Text(_safeTranslate('token_disabled', 'Token {symbol} disabled').replaceAll('{symbol}', token.symbol ?? '')),
+                                              content: Text(_safeTranslate('token disabled', 'Token {symbol} disabled').replaceAll('{symbol}', token.symbol ?? '')),
                                               backgroundColor: const Color(0xFFFF1961),
                                               duration: const Duration(seconds: 3),
                                               action: SnackBarAction(
@@ -1268,7 +1970,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           // نمایش پیام خطا
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             SnackBar(
-                                              content: Text(_safeTranslate('error_disabling_token', 'Error disabling token: {error}').replaceAll('{error}', e.toString())),
+                                              content: Text(_safeTranslate('error disabling token', 'Error disabling token: {error}').replaceAll('{error}', e.toString())),
                                               backgroundColor: Colors.red,
                                             ),
                                           );
@@ -1302,7 +2004,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               physics: const AlwaysScrollableScrollPhysics(),
                               child: Container(
                                 height: MediaQuery.of(context).size.height * 0.5,
-                                child: _NFTEmptyWidget(_safeTranslate('no_nft_found', 'No NFT Found')),
+                                child: _NFTEmptyWidget(_safeTranslate('no nft found', 'No NFT Found')),
                               ),
                             ),
                           ),
@@ -1856,4 +2558,106 @@ class _TokenRow extends StatelessWidget {
       ),
     );
     }
-} 
+}
+
+/// Widget آیکون فیلتر و مرتب‌سازی
+class _FilterSortIcon extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _FilterSortIcon({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          child: Icon(
+            icon,
+            size: 20,
+            color: Colors.grey[400],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Widget گزینه مرتب‌سازی
+class _SortOption extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String value;
+  final String currentValue;
+  final ValueChanged<String> onChanged;
+
+  const _SortOption({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.currentValue,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = value == currentValue;
+    
+    return InkWell(
+      onTap: () => onChanged(value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF11c699).withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? const Color(0xFF11c699) : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelected ? const Color(0xFF11c699) : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF11c699),
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

@@ -16,10 +16,19 @@ class ServiceProvider {
   late final ApiService _apiService;
   late final NetworkMonitor _networkManager;
   
+  // Initialization status
+  bool _isInitialized = false;
+  
+  /// Check if services are initialized
+  bool get isInitialized => _isInitialized;
+  
   /// Initialize services
   void initialize() {
+    if (_isInitialized) return;
+    
     _networkManager = NetworkMonitor.instance;
     _apiService = ApiService();
+    _isInitialized = true;
     
     print('🚀 API services initialized');
   }

@@ -8,6 +8,9 @@ import '../services/service_provider.dart';
 import '../layout/main_layout.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/wallet_state_manager.dart';
+import 'dart:convert';
+import 'dart:async';
+import '../widgets/filter_widgets.dart';
 
 class CustomSwitch extends StatelessWidget {
   final bool checked;
@@ -73,6 +76,14 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   List<CryptoToken> allTokens = [];
   List<CryptoToken> filteredTokens = [];
   bool _needsRefresh = false; // فلگ برای تشخیص نیاز به refresh
+  
+  // Advanced filter options
+  String _sortOption = 'name'; // 'name', 'marketcap', 'price', 'volume'
+  bool _showOnlyEnabled = false;
+  bool _showOnlyTokens = false; // فقط tokens (نه coins)
+  bool _showOnlyCoins = false; // فقط coins (نه tokens)
+  List<String> _selectedCategories = []; // DeFi, Meme, Gaming, etc.
+  String _priceRange = 'all'; // 'all', 'low', 'mid', 'high'
   
   /// Safe translation helper with fallback
   String _safeTranslate(String key, String fallback) {
@@ -193,7 +204,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
 
   String get _translatedSelectedNetwork {
     if (selectedNetwork == 'All Blockchains') {
-      return _safeTranslate('all_blockchains', 'All Blockchains');
+      return _safeTranslate('all blockchains', 'All Blockchains');
     }
     return selectedNetwork;
   }
@@ -211,7 +222,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       
       if (tokenProvider == null) {
         setState(() {
-          errorMessage = _safeTranslate('token_provider_not_available', 'Token provider not available');
+          errorMessage = _safeTranslate('token provider not available', 'Token provider not available');
           isLoading = false;
         });
         return;
@@ -256,7 +267,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       // 5. اگر هیچ token وجود نداشت، خطا نمایش بده
       print('⚠️ AddTokenScreen: No tokens found');
       setState(() {
-        errorMessage = _safeTranslate('no_tokens_found', 'No tokens found');
+        errorMessage = _safeTranslate('no tokens found', 'No tokens found');
         isLoading = false;
       });
       
@@ -319,11 +330,11 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       // Provide user-friendly error messages
       String userFriendlyError;
       if (e.toString().contains('SocketException') || e.toString().contains('NetworkException')) {
-        userFriendlyError = _safeTranslate('network_error', 'Network connection error. Please check your internet connection.');
+        userFriendlyError = _safeTranslate('network error', 'Network connection error. Please check your internet connection.');
       } else if (e.toString().contains('TimeoutException')) {
-        userFriendlyError = _safeTranslate('timeout_error', 'Request timeout. Please try again.');
+        userFriendlyError = _safeTranslate('timeout error', 'Request timeout. Please try again.');
       } else if (e.toString().contains('FormatException') || e.toString().contains('type casting')) {
-        userFriendlyError = _safeTranslate('data_format_error', 'Data format error. Clearing cache and retrying...');
+        userFriendlyError = _safeTranslate('data format error', 'Data format error. Clearing cache and retrying...');
         // Automatically try to fix format errors
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
@@ -331,7 +342,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           }
         });
       } else {
-        userFriendlyError = _safeTranslate('error_loading_tokens', 'Error loading tokens') + ': ${e.toString().length > 100 ? e.toString().substring(0, 100) + '...' : e.toString()}';
+        userFriendlyError = _safeTranslate('error loading tokens', 'Error loading tokens') + ': ${e.toString().length > 100 ? e.toString().substring(0, 100) + '...' : e.toString()}';
       }
       
       setState(() {
@@ -468,21 +479,776 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   }
 
   void _filterTokens() {
-    filteredTokens = allTokens.where((token) {
+    var tokens = allTokens.where((token) {
       final matchesSearch = searchText.isEmpty ||
           (token.name ?? '').toLowerCase().contains(searchText.toLowerCase()) ||
           (token.symbol ?? '').toLowerCase().contains(searchText.toLowerCase());
       
       final matchesNetwork = selectedNetwork == 'All Blockchains' ||
           token.blockchainName == selectedNetwork;
+      
+      // Advanced filters
+      final matchesEnabled = !_showOnlyEnabled || token.isEnabled;
+      final matchesTokenType = (!_showOnlyTokens || (token.isToken == true)) &&
+                              (!_showOnlyCoins || (token.isToken == false));
 
-      return matchesSearch && matchesNetwork;
+      return matchesSearch && matchesNetwork && matchesEnabled && matchesTokenType;
     }).toList();
+    
+    // Apply sorting
+    switch (_sortOption) {
+      case 'name':
+        tokens.sort((a, b) => (a.name ?? a.symbol ?? '').toLowerCase()
+            .compareTo((b.name ?? b.symbol ?? '').toLowerCase()));
+        break;
+      case 'marketcap':
+        // Sort by market cap (if available, otherwise by name)
+        tokens.sort((a, b) => (a.name ?? a.symbol ?? '').toLowerCase()
+            .compareTo((b.name ?? b.symbol ?? '').toLowerCase()));
+        break;
+      case 'price':
+        // Sort by price (if available, otherwise by name)
+        tokens.sort((a, b) => (a.name ?? a.symbol ?? '').toLowerCase()
+            .compareTo((b.name ?? b.symbol ?? '').toLowerCase()));
+        break;
+      case 'volume':
+        // Sort by volume (if available, otherwise by name)
+        tokens.sort((a, b) => (a.name ?? a.symbol ?? '').toLowerCase()
+            .compareTo((b.name ?? b.symbol ?? '').toLowerCase()));
+        break;
+    }
+    
+    filteredTokens = tokens;
   }
 
   void _showNetworkModal() {
     // Remove modal bottom sheet - network selection removed
   }
+  
+  /// بررسی وجود فیلترهای فعال
+  bool _hasActiveFilters() {
+    return _showOnlyEnabled || 
+           _showOnlyTokens || 
+           _showOnlyCoins || 
+           _selectedCategories.isNotEmpty ||
+           _priceRange != 'all';
+  }
+  
+  /// ساخت چیپ‌های فیلتر فعال
+  Widget _buildFilterChips() {
+    List<Widget> chips = [];
+    
+    if (_showOnlyEnabled) {
+      chips.add(_buildFilterChip(
+        label: 'فعال شده',
+        onDeleted: () {
+          setState(() => _showOnlyEnabled = false);
+          _filterTokens();
+        },
+      ));
+    }
+    
+    if (_showOnlyTokens) {
+      chips.add(_buildFilterChip(
+        label: 'فقط توکن ها',
+        onDeleted: () {
+          setState(() => _showOnlyTokens = false);
+          _filterTokens();
+        },
+      ));
+    }
+    
+    if (_showOnlyCoins) {
+      chips.add(_buildFilterChip(
+        label: 'فقط کوین ها',
+        onDeleted: () {
+          setState(() => _showOnlyCoins = false);
+          _filterTokens();
+        },
+      ));
+    }
+    
+    for (String category in _selectedCategories) {
+      chips.add(_buildFilterChip(
+        label: category,
+        onDeleted: () {
+          setState(() => _selectedCategories.remove(category));
+          _filterTokens();
+        },
+      ));
+    }
+    
+    if (_priceRange != 'all') {
+      String label = _priceRange == 'low' ? 'قیمت پایین' : 
+                    _priceRange == 'mid' ? 'قیمت متوسط' : 'قیمت بالا';
+      chips.add(_buildFilterChip(
+        label: label,
+        onDeleted: () {
+          setState(() => _priceRange = 'all');
+          _filterTokens();
+        },
+      ));
+    }
+    
+    if (chips.isEmpty) return const SizedBox.shrink();
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: chips,
+      ),
+    );
+  }
+  
+  Widget _buildFilterChip({required String label, required VoidCallback onDeleted}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF11c699).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF11c699), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF11c699),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: onDeleted,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: const BoxDecoration(
+                color: Color(0xFF11c699),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.close,
+                size: 12,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// نمایش گزینه‌های مرتب سازی
+  void _showSortOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Header
+            Container(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF11c699).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.sort,
+                      color: Color(0xFF11c699),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _safeTranslate('sort by', 'Sort by'),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Sort options
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  _SortOption(
+                    title: _safeTranslate('name', 'Name'),
+                    subtitle: _safeTranslate('alphabetical az', 'A-Z alphabetical'),
+                    value: 'name',
+                    currentValue: _sortOption,
+                    onChanged: (value) {
+                      setState(() => _sortOption = value);
+                      _filterTokens();
+                      Navigator.pop(context);
+                    },
+                  ),
+                  _SortOption(
+                    title: _safeTranslate('market cap', 'Market Cap'),
+                    subtitle: _safeTranslate('highest first', 'Highest first'),
+                    value: 'marketcap',
+                    currentValue: _sortOption,
+                    onChanged: (value) {
+                      setState(() => _sortOption = value);
+                      _filterTokens();
+                      Navigator.pop(context);
+                    },
+                  ),
+                  _SortOption(
+                    title: _safeTranslate('price', 'Price'),
+                    subtitle: _safeTranslate('highest price', 'Highest price'),
+                    value: 'price',
+                    currentValue: _sortOption,
+                    onChanged: (value) {
+                      setState(() => _sortOption = value);
+                      _filterTokens();
+                      Navigator.pop(context);
+                    },
+                  ),
+                  _SortOption(
+                    title: _safeTranslate('trading volume', 'Trading Volume'),
+                    subtitle: _safeTranslate('highest volume', 'Highest volume'),
+                    value: 'volume',
+                    currentValue: _sortOption,
+                    onChanged: (value) {
+                      setState(() => _sortOption = value);
+                      _filterTokens();
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  /// Widget گزینه مرتب‌سازی شبیه home screen
+  Widget _SortOption({
+    required String title,
+    required String subtitle,
+    required String value,
+    required String currentValue,
+    required ValueChanged<String> onChanged,
+  }) {
+    final isSelected = value == currentValue;
+    
+    return InkWell(
+      onTap: () => onChanged(value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF11c699).withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? const Color(0xFF11c699) : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelected ? const Color(0xFF11c699) : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF11c699),
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  
+  /// نمایش فیلترهای پیشرفته
+  void _showAdvancedFilters() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          width: double.infinity,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // Header
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF11c699).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.tune,
+                        color: Color(0xFF11c699),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _safeTranslate('advanced filters', 'Advanced Filters'),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        setModalState(() {
+                          _showOnlyEnabled = false;
+                          _showOnlyTokens = false;
+                          _showOnlyCoins = false;
+                          _selectedCategories.clear();
+                          _priceRange = 'all';
+                        });
+                        setState(() {});
+                        _filterTokens();
+                      },
+                      icon: const Icon(Icons.clear_all, size: 18),
+                      label: Text(_safeTranslate('clear all', 'Clear All')),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF11c699),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Token Status with modern design
+                      _buildAdvancedFilterSection(
+                        title: _safeTranslate('token status', 'Token Status'),
+                        icon: Icons.toggle_on,
+                        child: Column(
+                          children: [
+                            _buildModernToggleOption(
+                              title: _safeTranslate('show only enabled tokens', 'Show Only Enabled Tokens'),
+                              subtitle: _safeTranslate('tokens you have enabled', 'Tokens you have enabled'),
+                              value: _showOnlyEnabled,
+                              onChanged: (value) {
+                                setModalState(() => _showOnlyEnabled = value);
+                                setState(() {});
+                                _filterTokens();
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Token Type with visual cards
+                      _buildAdvancedFilterSection(
+                        title: _safeTranslate('asset type', 'Asset Type'),
+                        icon: Icons.category,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _buildTypeCard(
+                                title: _safeTranslate('tokens', 'Tokens'),
+                                subtitle: 'ERC-20, BEP-20',
+                                icon: Icons.toll,
+                                isSelected: _showOnlyTokens,
+                                onTap: () {
+                                  setModalState(() {
+                                    _showOnlyTokens = !_showOnlyTokens;
+                                    if (_showOnlyTokens) _showOnlyCoins = false;
+                                  });
+                                  setState(() {});
+                                  _filterTokens();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTypeCard(
+                                title: _safeTranslate('coins', 'Coins'),
+                                subtitle: _safeTranslate('native currencies', 'Native currencies'),
+                                icon: Icons.monetization_on,
+                                isSelected: _showOnlyCoins,
+                                onTap: () {
+                                  setModalState(() {
+                                    _showOnlyCoins = !_showOnlyCoins;
+                                    if (_showOnlyCoins) _showOnlyTokens = false;
+                                  });
+                                  setState(() {});
+                                  _filterTokens();
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Categories with enhanced chips
+                      _buildAdvancedFilterSection(
+                        title: _safeTranslate('categories', 'Categories'),
+                        icon: Icons.apps,
+                        child: Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            'DeFi', 'Meme', 'Gaming', 'NFT', 'Metaverse', 'Layer 2', 'Stablecoin'
+                          ].map((category) => _buildEnhancedCategoryChip(
+                            label: category,
+                            isSelected: _selectedCategories.contains(category),
+                            onTap: () {
+                              setModalState(() {
+                                if (_selectedCategories.contains(category)) {
+                                  _selectedCategories.remove(category);
+                                } else {
+                                  _selectedCategories.add(category);
+                                }
+                              });
+                              setState(() {});
+                              _filterTokens();
+                            },
+                          )).toList(),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 32),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Apply Button
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF11c699),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      _safeTranslate('apply filters', 'Apply Filters'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildAdvancedFilterSection({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: const Color(0xFF11c699)),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        child,
+      ],
+    );
+  }
+  
+  Widget _buildModernToggleOption({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: value ? const Color(0xFF11c699).withOpacity(0.1) : Colors.grey.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: value ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: value ? const Color(0xFF11c699) : const Color(0xFF1A1A1A),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: const Color(0xFF11c699),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildTypeCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF11c699).withOpacity(0.1) : Colors.grey.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.2),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF11c699) : Colors.grey.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                size: 24,
+                color: isSelected ? Colors.white : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? const Color(0xFF11c699) : const Color(0xFF1A1A1A),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (isSelected)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF11c699),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check,
+                  size: 12,
+                  color: Colors.white,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildEnhancedCategoryChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: isSelected 
+              ? const LinearGradient(
+                  colors: [Color(0xFF11c699), Color(0xFF0F9B84)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isSelected ? null : Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Colors.transparent : Colors.grey.withOpacity(0.3),
+          ),
+          boxShadow: isSelected ? [
+            BoxShadow(
+              color: const Color(0xFF11c699).withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ] : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                size: 16,
+                color: Colors.white,
+              ),
+            if (isSelected) const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.grey[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+
 
   void _onSearchChanged(String value) {
     setState(() {
@@ -510,7 +1276,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(_safeTranslate('token_provider_not_available', 'Token provider not available')),
+              content: Text(_safeTranslate('token provider not available', 'Token provider not available')),
               backgroundColor: Colors.red,
             ),
           );
@@ -629,9 +1395,9 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
             SnackBar(
               content: Text(
                 newState 
-                  ? _safeTranslate('token_enabled', 'Token ${token.symbol} enabled')
+                  ? _safeTranslate('token enabled', 'Token ${token.symbol} enabled')
                       .replaceAll('\${token.symbol}', token.symbol ?? '')
-                  : _safeTranslate('token_disabled', 'Token ${token.symbol} disabled')
+                  : _safeTranslate('token disabled', 'Token ${token.symbol} disabled')
                       .replaceAll('\${token.symbol}', token.symbol ?? ''),
               ),
               backgroundColor: Colors.green,
@@ -675,7 +1441,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_safeTranslate('error_toggle_token', 'Error changing token state: ${e.toString()}')),
+            content: Text(_safeTranslate('error toggle token', 'Error changing token state: ${e.toString()}')),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -760,7 +1526,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
               backgroundColor: Colors.white,
               elevation: 0,
               title: Text(
-                _safeTranslate('token_management', 'Token Management'),
+                _safeTranslate('token management', 'Token Management'),
                 style: const TextStyle(
                   color: Colors.black,
                   fontWeight: FontWeight.bold,
@@ -774,30 +1540,54 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
                     children: [
                       const SizedBox(height: 16),
-                      // Search bar
-                      Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0x25757575),
-                          borderRadius: BorderRadius.circular(25),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.search, color: Colors.grey),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                decoration: InputDecoration(
-                                  hintText: _safeTranslate('search', 'Search'),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                ),
-                                onChanged: _onSearchChanged,
+                      // Search bar with filter icons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0x25757575),
+                                borderRadius: BorderRadius.circular(25),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.search, color: Colors.grey),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      decoration: InputDecoration(
+                                        hintText: _safeTranslate('search', 'Search'),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                      ),
+                                      onChanged: _onSearchChanged,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Sort and filter icons
+                          FilterIconButton(
+                            icon: Icons.sort_by_alpha,
+                            tooltip: 'مرتب سازی',
+                            onTap: () => _showSortOptions(),
+                            isActive: _sortOption != 'name',
+                          ),
+                          const SizedBox(width: 8),
+                          FilterIconButton(
+                            icon: Icons.tune,
+                            tooltip: 'فیلترهای پیشرفته',
+                            onTap: () => _showAdvancedFilters(),
+                            isActive: _hasActiveFilters(),
+                          ),
+                        ],
                       ),
+                      
+                      // Filter chips
+                      if (_hasActiveFilters()) _buildFilterChips(),
                       const SizedBox(height: 8),
                       // Network filter
                       Align(
@@ -841,7 +1631,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                             ),
                           ),
                           Text(
-                            _safeTranslate('cryptos_count', '${filteredTokens.length} Cryptos').replaceAll('{count}', filteredTokens.length.toString()),
+                            _safeTranslate('cryptos count', '${filteredTokens.length} Cryptos').replaceAll('{count}', filteredTokens.length.toString()),
                             style: const TextStyle(
                               fontSize: 14,
                               color: Color(0xCB838383),
@@ -881,7 +1671,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                                 const SizedBox(height: 16),
                                 ElevatedButton(
                                   onPressed: _loadTokens,
-                                  child: Text(_safeTranslate('try_again', 'Try Again')),
+                                  child: Text(_safeTranslate('try again', 'Try Again')),
                                 ),
                               ],
                             ),
@@ -893,7 +1683,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 32),
                           child: Center(
                             child: Text(
-                              _safeTranslate('no_tokens_found', 'No tokens found'),
+                              _safeTranslate('no tokens found', 'No tokens found'),
                               style: const TextStyle(
                                 color: Colors.grey,
                                 fontSize: 16,
@@ -910,7 +1700,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                                 child: Padding(
                                   padding: const EdgeInsets.all(32),
                                   child: Text(
-                                    context.tr('token_provider_not_available'),
+                                    context.tr('token provider not available'),
                                     style: const TextStyle(color: Colors.red),
                                   ),
                                 ),

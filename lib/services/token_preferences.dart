@@ -94,10 +94,17 @@ class TokenPreferences {
   }
 
   /// ذخیره وضعیت توکن با پارامترهای جداگانه
-  Future<void> saveTokenStateFromParams(String symbol, String blockchainName, String? contract, bool isEnabled) async {
+  Future<void> saveTokenStateFromParams(String symbol, String blockchainName, String? contract, bool isEnabled, {bool isManualToggle = false}) async {
     final key = getTokenKeyFromParams(symbol, blockchainName, contract);
     await _prefs.setBool(key, isEnabled);
     _enabledTokensCache?[key] = isEnabled;
+    
+    // Track manual disable state if needed
+    if (isManualToggle && !isEnabled) {
+      await _saveManuallyDisabledState(symbol, blockchainName, contract, true);
+    } else if (isManualToggle && isEnabled) {
+      await _saveManuallyDisabledState(symbol, blockchainName, contract, false);
+    }
   }
 
   /// ذخیره وضعیت توکن با استفاده از CryptoToken
@@ -193,6 +200,28 @@ class TokenPreferences {
   /// دریافت تعداد توکن‌های فعال
   int getEnabledTokenCount() {
     return getAllEnabledTokenKeys().length;
+  }
+
+  /// Save manually disabled state
+  Future<void> _saveManuallyDisabledState(String symbol, String blockchainName, String? contract, bool isManuallyDisabled) async {
+    try {
+      final key = '${getTokenKeyFromParams(symbol, blockchainName, contract)}_manual_disabled';
+      await _prefs.setBool(key, isManuallyDisabled);
+      print('💾 Manual disable state saved: $symbol = $isManuallyDisabled');
+    } catch (e) {
+      print('❌ Error saving manual disable state: $e');
+    }
+  }
+
+  /// Check if token was manually disabled by user
+  Future<bool> isTokenManuallyDisabled(String symbol, String blockchainName, String? contract) async {
+    try {
+      final key = '${getTokenKeyFromParams(symbol, blockchainName, contract)}_manual_disabled';
+      return _prefs.getBool(key) ?? false;
+    } catch (e) {
+      print('❌ Error checking manual disable state: $e');
+      return false;
+    }
   }
 
   /// پاک کردن تمام تنظیمات توکن‌ها

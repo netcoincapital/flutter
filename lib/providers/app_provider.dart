@@ -6,6 +6,7 @@ import '../services/lifecycle_manager.dart';
 import '../services/permission_manager.dart';
 import '../models/crypto_token.dart';
 import '../services/api_service.dart';
+import '../services/balance_manager.dart';
 import 'token_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/wallet_state_manager.dart'; // Added import for WalletStateManager
@@ -13,6 +14,10 @@ import '../services/wallet_state_manager.dart'; // Added import for WalletStateM
 /// Provider اصلی اپلیکیشن
 class AppProvider extends ChangeNotifier {
   // ==================== STATE VARIABLES ====================
+  
+  // مقداردهی اولیه
+  bool _isInitialized = false;
+  bool _isInitializing = false;
   
   // کیف پول
   String? _currentWalletName;
@@ -45,6 +50,10 @@ class AppProvider extends ChangeNotifier {
   
   // ==================== GETTERS ====================
   
+  // مقداردهی اولیه
+  bool get isInitialized => _isInitialized;
+  bool get isInitializing => _isInitializing;
+  
   String? get currentWalletName => _currentWalletName;
   String? get currentUserId => _currentUserId;
   List<Map<String, String>> get wallets => _wallets;
@@ -66,15 +75,26 @@ class AppProvider extends ChangeNotifier {
   
   /// مقداردهی اولیه Provider
   Future<void> initialize() async {
-    await _loadAppState();
-    await _setupLifecycleManager();
-    await _checkPermissions();
-    await _loadWallets();
+    if (_isInitialized || _isInitializing) return;
     
-    // Initialize TokenProvider for current user (non-blocking)
-    _initializeTokenProviderInBackground();
+    _isInitializing = true;
+    notifyListeners();
     
-    print('🚀 AppProvider initialized (TokenProvider loading in background)');
+    try {
+      await _loadAppState();
+      await _setupLifecycleManager();
+      await _checkPermissions();
+      await _loadWallets();
+      
+      // Initialize TokenProvider for current user (non-blocking)
+      _initializeTokenProviderInBackground();
+      
+      _isInitialized = true;
+      print('🚀 AppProvider initialized (TokenProvider loading in background)');
+    } finally {
+      _isInitializing = false;
+      notifyListeners();
+    }
   }
   
   /// مقداردهی اولیه TokenProvider در background - مشابه Kotlin
@@ -394,6 +414,16 @@ class AppProvider extends ChangeNotifier {
       
       // اطمینان از synchronization فوری برای کاربر جدید
       await tokenProvider.ensureTokensSynchronized();
+      
+      // Update BalanceManager with new wallet context
+      try {
+        if (BalanceManager.instance != null) {
+          await BalanceManager.instance.setCurrentUserAndWallet(_currentUserId!, walletName);
+          print('✅ AppProvider: Updated BalanceManager with new wallet context');
+        }
+      } catch (e) {
+        print('❌ AppProvider: Error updating BalanceManager: $e');
+      }
       
       // Update other providers that depend on wallet selection
       await _notifyWalletChange(walletName, _currentUserId!);

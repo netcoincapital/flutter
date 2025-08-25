@@ -50,19 +50,28 @@ class PasscodeManager {
       final salt = _generateSalt();
       final hash = _hashPasscode(passcode, salt);
       
-      // ذخیره با استراتژی platform-specific
+      print('🔑 Setting passcode - starting save process...');
+      
+      // ذخیره با استراتژی platform-specific با تلاش مجدد
       await _platformStorage.saveData(_passcodeHashKey, hash, isCritical: true);
       await _platformStorage.saveData('passcode_salt', salt, isCritical: true);
+      
+      print('🔑 Passcode hash and salt saved successfully');
       
       // Reset attempts
       await _platformStorage.deleteData(_attemptsKey);
       await _platformStorage.deleteData(_lockoutUntilKey);
+      
+      print('🔑 Reset attempts and lockout data');
       
       // CRITICAL: Mark app as used when passcode is set
       await _markAppAsUsedForPasscode();
       
       // CRITICAL: Enable passcode by default when it's set
       await _enablePasscodeByDefault();
+      
+      // ANDROID FIX: Add small delay to ensure all operations complete
+      await Future.delayed(const Duration(milliseconds: 100));
       
       print('🔑 Passcode saved using platform-specific strategy');
       return true;
@@ -305,31 +314,37 @@ class PasscodeManager {
   /// Mark app as used when passcode is set (prevent false fresh install detection)
   static Future<void> _markAppAsUsedForPasscode() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('app_has_been_used', true);
-      await prefs.setBool('passcode_set', true);
-      await prefs.setString('last_passcode_action', DateTime.now().millisecondsSinceEpoch.toString());
+      final prefs = await SharedPreferences.getInstance()
+          .timeout(const Duration(seconds: 3));
+      await prefs.setBool('app_has_been_used', true)
+          .timeout(const Duration(seconds: 2));
+      await prefs.setBool('passcode_set', true)
+          .timeout(const Duration(seconds: 2));
+      await prefs.setString('last_passcode_action', DateTime.now().millisecondsSinceEpoch.toString())
+          .timeout(const Duration(seconds: 2));
       
       print('✅ App marked as used (passcode set) - fresh install detection will be more accurate');
     } catch (e) {
       print('❌ Error marking app as used for passcode: $e');
+      // Don't rethrow - let the app continue
     }
   }
 
-  /// Enable passcode by default when it's first set
+  /// TRUST WALLET STANDARD: Always enable passcode when it's set
   static Future<void> _enablePasscodeByDefault() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance()
+          .timeout(const Duration(seconds: 3));
       
-      // Only set to enabled if not explicitly set before
-      if (!prefs.containsKey('passcode_enabled')) {
-        await prefs.setBool('passcode_enabled', true);
-        print('✅ Passcode enabled by default on first setup');
-      } else {
-        print('🔑 Passcode enabled state already exists - keeping current setting');
-      }
+      // TRUST WALLET STANDARD: ALWAYS enable when passcode is set
+      // This ensures the toggle is ON whenever user sets a passcode
+      await prefs.setBool('passcode_enabled', true)
+          .timeout(const Duration(seconds: 2));
+      print('✅ TRUST WALLET: Passcode enabled automatically when set');
+      
     } catch (e) {
       print('❌ Error enabling passcode by default: $e');
+      // Don't rethrow - let the app continue
     }
   }
 } 

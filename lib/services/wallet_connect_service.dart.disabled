@@ -15,11 +15,11 @@ class WalletConnectService {
   
   // اطلاعات پروژه
   static const String projectId = 'YOUR_PROJECT_ID'; // باید از WalletConnect Cloud دریافت شود
-  static const String bundleId = 'com.coinceeper.adl';
-  static const String appName = 'COINCEEPER DEX';
+  static const String bundleId = 'com.example.adl';
+  static const String appName = 'LAXCE DEX';
   static const String appDescription = 'Decentralized Exchange';
-  static const String appUrl = 'https://coinceeper.com';
-  static const String appIcon = 'https://coinceeper.com/icon.png';
+  static const String appUrl = 'https://laxce.com';
+  static const String appIcon = 'https://laxce.com/icon.png';
 
   // ==================== INITIALIZATION ====================
 
@@ -36,7 +36,7 @@ class WalletConnectService {
           icons: [appIcon],
           redirect: Redirect(
             native: '$bundleId://',
-            universal: 'https://coinceeper.com/app',
+            universal: 'https://laxce.com/app',
           ),
         ),
       );

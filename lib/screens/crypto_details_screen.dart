@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
+
 import 'dart:convert';
 
 import 'package:my_flutter_app/screens/receive_wallet_screen.dart';
 import '../models/transaction.dart';
 import '../models/crypto_token.dart';
-import '../services/api_models.dart' as api;
+
 import '../services/secure_storage.dart';
 import '../services/service_provider.dart';
+import '../services/coinmarketcap_service_main.dart';
+import '../services/chart_api_service.dart';
+import '../services/crypto_logo_cache_service.dart';
+import '../models/current_price_data.dart';
 import '../providers/price_provider.dart';
 import '../utils/number_formatter.dart';
 import '../providers/app_provider.dart';
 import '../providers/token_provider.dart';
+import '../widgets/crypto_chart_widget.dart';
 
 class CryptoDetailsScreen extends StatefulWidget {
   final String tokenName;
@@ -37,7 +43,7 @@ class CryptoDetailsScreen extends StatefulWidget {
   State<CryptoDetailsScreen> createState() => _CryptoDetailsScreenState();
 }
 
-class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
+class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTickerProviderStateMixin {
   Color? dominantColor;
 
   List<Transaction> transactions = [];
@@ -46,6 +52,14 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
   double tokenBalance = 0.0;
   bool isLoadingBalance = true;
   TokenProvider? _tokenProvider;
+  
+  // New state variables for the redesigned UI
+  late TabController _tabController;
+
+  CurrentPriceData? currentPriceData;
+  LivePriceData? livePrice; // Live price from new API
+  bool isLoadingPrice = true;
+  String? apiIconUrl; // Store the icon URL from API
   void _onTokenProviderChanged() {
     if (_tokenProvider == null) return;
     _syncBalanceFromProvider(_tokenProvider!);
@@ -97,9 +111,14 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _initializeCryptoLogoCache(); // Initialize logo cache first
     _updatePalette(widget.iconUrl);
     _loadTransactions();
     _loadTokenBalance(); // اضافه کردن بارگذاری موجودی توکن
+    _loadCurrentPrice(); // Load current price from CoinMarketCap
+    _loadCryptoIcon(); // Load crypto icon from API
+    
     // Immediately show balance from TokenProvider if available, and listen for updates
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
@@ -125,7 +144,88 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
   @override
   void dispose() {
     _tokenProvider?.removeListener(_onTokenProviderChanged);
+    _tabController.dispose();
     super.dispose();
+  }
+
+  /// Load current price data from new Chart API
+  Future<void> _loadCurrentPrice() async {
+    setState(() {
+      isLoadingPrice = true;
+    });
+
+    try {
+      // Try new API first
+      final livePrices = await ChartApiService.getLivePrices(
+        symbols: [widget.tokenSymbol],
+      );
+
+      if (livePrices != null && livePrices.containsKey(widget.tokenSymbol)) {
+        setState(() {
+          livePrice = livePrices[widget.tokenSymbol];
+          isLoadingPrice = false;
+        });
+        print('✅ Live price loaded: \$${livePrice?.price.toStringAsFixed(2)}');
+      } else {
+        // Fallback to old API
+        final priceData = await CoinMarketCapService.getCurrentPrice(widget.tokenSymbol);
+        setState(() {
+          currentPriceData = priceData;
+          isLoadingPrice = false;
+        });
+        print('✅ Fallback price loaded from CoinMarketCap');
+      }
+    } catch (e) {
+      print('❌ Error loading current price: $e');
+      // Try fallback to old API
+      try {
+        final priceData = await CoinMarketCapService.getCurrentPrice(widget.tokenSymbol);
+        setState(() {
+          currentPriceData = priceData;
+          isLoadingPrice = false;
+        });
+      } catch (fallbackError) {
+        print('❌ Fallback also failed: $fallbackError');
+        setState(() {
+          isLoadingPrice = false;
+        });
+      }
+    }
+  }
+
+  /// Initialize crypto logo cache
+  Future<void> _initializeCryptoLogoCache() async {
+    try {
+      await CryptoLogoCacheService.initialize();
+      print('✅ Crypto logo cache initialized');
+    } catch (e) {
+      print('❌ Error initializing crypto logo cache: $e');
+    }
+  }
+
+  /// Load crypto icon from cache
+  Future<void> _loadCryptoIcon() async {
+    try {
+      print('🔍 Loading crypto icon for ${widget.tokenSymbol} from cache');
+      
+      final cachedUrl = await CryptoLogoCacheService.getLogoUrl(
+        widget.tokenSymbol,
+        blockchain: widget.blockchainName,
+      );
+      
+      if (cachedUrl != null && cachedUrl.isNotEmpty) {
+        print('✅ Found cached icon for ${widget.tokenSymbol}: $cachedUrl');
+        setState(() {
+          apiIconUrl = cachedUrl;
+        });
+        // Update palette with new icon
+        _updatePalette(widget.iconUrl);
+      } else {
+        print('❌ No cached icon found for ${widget.tokenSymbol}');
+      }
+    } catch (e) {
+      print('❌ Error loading crypto icon from cache: $e');
+    }
   }
 
   /// ایجاد CryptoToken object برای ارسال به صفحه Send
@@ -287,11 +387,11 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
 
   Future<void> _updatePalette(String iconUrl) async {
     try {
-      final ImageProvider provider = iconUrl.startsWith('http')
-          ? NetworkImage(iconUrl)
-          : AssetImage(iconUrl) as ImageProvider;
+      // Use API icon if available, otherwise use provided iconUrl
+      final effectiveIconUrl = apiIconUrl ?? iconUrl;
       // Palette generation removed for now
-      print('Palette generation removed');
+      // Palette generation removed for now
+      print('Palette generation removed for $effectiveIconUrl');
               setState(() {
           dominantColor = const Color(0x80D7FBE7);
         });
@@ -413,199 +513,574 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> {
     }
   }
 
-  Widget _buildTokenIcon(String iconUrl) {
-    if (iconUrl.startsWith('http')) {
-      return Image.network(
-        iconUrl,
-        width: 52,
-        height: 52,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => const Icon(Icons.monetization_on, size: 52, color: Colors.grey),
-      );
-    } else {
-      return Image.asset(
-        iconUrl,
-        width: 52,
-        height: 52,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => const Icon(Icons.monetization_on, size: 52, color: Colors.grey),
-      );
-    }
-  }
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: IconButton(
+        child: Column(
+          children: [
+            // Header with back button and notification icon
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.black),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
-                ),
-                // Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Icon(Icons.notifications, color: Colors.grey),
-                    Column(
-                      children: [
-                        Text(widget.tokenName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                        Text(
-                          "${widget.isToken ? _safeTranslate('token', 'Token') : _safeTranslate('coin', 'Coin')}  ||  ${widget.tokenSymbol}",
-                          style: const TextStyle(fontSize: 14, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                    const Icon(Icons.info, color: Colors.grey),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Token Icon with dominant color background
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: dominantColor ?? const Color(0x80D7FBE7),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: ClipOval(
-                      child: _buildTokenIcon(widget.iconUrl),
+                  Text(
+                    widget.tokenName,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                // قیمت، مقدار و ... (در اینجا به صورت نمونه)
-                isLoadingBalance 
-                  ? const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
-                    )
-                  : Text(
-                      '${NumberFormatter.formatDouble(tokenBalance)} ${widget.tokenSymbol}',
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                const SizedBox(height: 4),
-                Consumer<PriceProvider>(
-                  builder: (context, priceProvider, child) {
-                    final currencySymbol = priceProvider.getCurrencySymbol();
-                    final price = priceProvider.getPrice(widget.tokenSymbol) ?? 0.0;
-                    final dollarValue = tokenBalance * price;
-                    return Text(
-                      '≈ ${currencySymbol}${dollarValue.toStringAsFixed(2)}',
-                      style: const TextStyle(fontSize: 18, color: Colors.grey),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                // دکمه‌های Send و Receive
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined, color: Colors.grey),
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ),
+            
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
                   children: [
-                    _ActionButton(
-                      assetIcon: 'assets/images/send.png',
-                      label: _safeTranslate('send', 'Send'),
-                      color: const Color(0x80D7FBE7),
-                      onTap: () {
-                        _navigateToSendScreen();
-                      },
-                    ),
-                    _ActionButton(
-                      assetIcon: 'assets/images/receive.png',
-                      label: _safeTranslate('receive', 'Receive'),
-                      color: const Color(0xFFE0F7FA),
-                      onTap: () async {
-                        try {
-                          // دریافت آدرس کیف پول
-                          final address = await _getWalletAddress();
+                    // Token info section
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Column(
+                        children: [
+                          // Token icon with cached logo
+                          CachedCryptoLogo(
+                            symbol: widget.tokenSymbol,
+                            blockchain: widget.blockchainName,
+                            fallbackUrl: widget.iconUrl,
+                            size: 60,
+                            backgroundColor: const Color(0xFF0BAB9B),
+                            backgroundOpacity: 0.15, // Much lighter background
+                          ),
+                          const SizedBox(height: 8),
                           
-                          if (address != null && address.isNotEmpty) {
-                            // باز کردن صفحه receive با آدرس واقعی
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ReceiveWalletScreen(
-                                  cryptoName: widget.tokenName,
-                                  blockchainName: widget.blockchainName,
-                                  address: address,
-                                  symbol: widget.tokenSymbol,
+                          // Token name and symbol
+                          Text(
+                            widget.tokenSymbol,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            "${widget.isToken ? _safeTranslate('token', 'Token') : _safeTranslate('coin', 'Coin')} | ${widget.blockchainName}",
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          // Current price - prioritize live price
+                          if (isLoadingPrice)
+                            const CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+                            )
+                          else if (livePrice != null)
+                            Column(
+                              children: [
+                                Text(
+                                  '\$${NumberFormatter.formatDouble(livePrice!.price)}',
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
                                 ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      livePrice!.change24h >= 0 
+                                          ? Icons.arrow_upward 
+                                          : Icons.arrow_downward,
+                                      color: livePrice!.change24h >= 0 
+                                          ? const Color(0xFF0BAB9B) 
+                                          : const Color(0xFFF43672),
+                                      size: 16,
+                                    ),
+                                    Text(
+                                      '${livePrice!.change24h >= 0 ? '+' : ''}${livePrice!.change24h.toStringAsFixed(2)}%',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: livePrice!.change24h >= 0 
+                                            ? const Color(0xFF0BAB9B) 
+                                            : const Color(0xFFF43672),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            )
+                          else if (currentPriceData != null)
+                            Column(
+                              children: [
+                                Text(
+                                  '\$${NumberFormatter.formatDouble(currentPriceData!.price)}',
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      currentPriceData!.change24h >= 0 
+                                          ? Icons.arrow_upward 
+                                          : Icons.arrow_downward,
+                                      color: currentPriceData!.change24h >= 0 
+                                          ? const Color(0xFF0BAB9B) 
+                                          : const Color(0xFFF43672),
+                                      size: 16,
+                                    ),
+                                    Text(
+                                      '${currentPriceData!.change24h >= 0 ? '+' : ''}${currentPriceData!.change24h.toStringAsFixed(2)}%',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: currentPriceData!.change24h >= 0 
+                                            ? const Color(0xFF0BAB9B) 
+                                            : const Color(0xFFF43672),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            )
+                          else
+                            const Text(
+                              'Price unavailable',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey,
                               ),
-                            );
-                          } else {
-                            // Remove error message - silent failure
-                          }
-                        } catch (e) {
-                          // Remove error message - silent failure
-                        }
-                      },
+                            ),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    ),
+                    
+                    // Chart widget
+                    CryptoChartWidget(
+                      symbol: widget.tokenSymbol,
+                      height: 250,
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    
+                    // Tab bar
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TabBar(
+                        controller: _tabController,
+                        onTap: (index) {
+                          // Tab selection handled by TabController
+                        },
+                        labelColor: const Color(0xFF0BAB9B),
+                        unselectedLabelColor: Colors.grey,
+                        indicatorColor: const Color(0xFF0BAB9B),
+                        indicatorWeight: 2,
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        unselectedLabelStyle: const TextStyle(
+                          fontWeight: FontWeight.normal,
+                          fontSize: 16,
+                        ),
+                        tabs: [
+                          Tab(text: _safeTranslate('holdings', 'Holdings')),
+                          Tab(text: _safeTranslate('history', 'History')),
+                          Tab(text: _safeTranslate('about', 'About')),
+                        ],
+                      ),
+                    ),
+                    
+                    // Tab content
+                    Container(
+                      height: 400,
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          // Holdings tab
+                          _buildHoldingsTab(),
+                          // History tab
+                          _buildHistoryTab(),
+                          // About tab
+                          _buildAboutTab(),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                // لیست تراکنش‌ها (نمونه)
-                const SizedBox(height: 16),
-                if (isLoading)
-                  const Center(child: CircularProgressIndicator()),
-                if (errorMessage != null)
-                  Center(child: Text(errorMessage!, style: const TextStyle(color: Colors.red))),
-                if (!isLoading && errorMessage == null)
-                  _TransactionHistorySection(transactions: transactions, tokenSymbol: widget.tokenSymbol),
+              ),
+            ),
+            
+            // Bottom action buttons
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    spreadRadius: 1,
+                    blurRadius: 10,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _BottomActionButton(
+                    assetIcon: 'assets/images/send.png',
+                    label: _safeTranslate('send', 'Send'),
+                    onTap: () => _navigateToSendScreen(),
+                  ),
+                  _BottomActionButton(
+                    assetIcon: 'assets/images/receive.png',
+                    label: _safeTranslate('receive', 'Receive'),
+                    onTap: () async {
+                      try {
+                        final address = await _getWalletAddress();
+                        if (address != null && address.isNotEmpty) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ReceiveWalletScreen(
+                                cryptoName: widget.tokenName,
+                                blockchainName: widget.blockchainName,
+                                address: address,
+                                symbol: widget.tokenSymbol,
+                              ),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        // Silent failure
+                      }
+                    },
+                  ),
+                  _BottomActionButton(
+                    icon: Icons.swap_horiz,
+                    label: _safeTranslate('swap', 'Swap'),
+                    onTap: () {
+                      // TODO: Implement swap functionality
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(_safeTranslate('swap coming soon', 'Swap feature coming soon')),
+                          backgroundColor: const Color(0xFF0BAB9B),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHoldingsTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 16),
+          Text(
+            _safeTranslate('My balance', 'My Balance'),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                CachedCryptoLogo(
+                  symbol: widget.tokenSymbol,
+                  blockchain: widget.blockchainName,
+                  fallbackUrl: widget.iconUrl,
+                  size: 40,
+                  backgroundColor: const Color(0xFF0BAB9B),
+                  backgroundOpacity: 0.12, // Even lighter for smaller size
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${widget.blockchainName} ${widget.tokenSymbol}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                      ),
+                      Text(
+                        isLoadingBalance 
+                            ? 'Loading...' 
+                            : '${NumberFormatter.formatDouble(tokenBalance)} ${widget.tokenSymbol}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '\$${(tokenBalance * (livePrice?.price ?? currentPriceData?.price ?? 0.0)).toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    Text(
+                      '+\$0.00',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF0BAB9B),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
+          const SizedBox(height: 24),
+          // Use live price data if available, otherwise use current price data
+          if (livePrice != null) ...[
+            _buildInfoRow('Current Price', '\$${NumberFormatter.formatDouble(livePrice!.price)}'),
+            _buildInfoRow('24h Volume', '\$${_formatLargeNumber(livePrice!.volume24h)}'),
+            _buildInfoRow('24h Change', '${livePrice!.change24h >= 0 ? '+' : ''}${livePrice!.change24h.toStringAsFixed(2)}%'),
+          ] else if (currentPriceData != null) ...[
+            _buildInfoRow('Current Price', '\$${NumberFormatter.formatDouble(currentPriceData!.price)}'),
+            _buildInfoRow('Market Cap', '\$${_formatLargeNumber(currentPriceData!.marketCap)}'),
+            _buildInfoRow('24h Volume', '\$${_formatLargeNumber(currentPriceData!.volume24h)}'),
+            _buildInfoRow('24h Change', '${currentPriceData!.change24h >= 0 ? '+' : ''}${currentPriceData!.change24h.toStringAsFixed(2)}%'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          if (isLoading)
+            const Expanded(
+              child: Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+                ),
+              ),
+            )
+          else if (errorMessage != null)
+            Expanded(
+              child: Center(
+                child: Text(
+                  errorMessage!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: _TransactionHistorySection(
+                transactions: transactions,
+                tokenSymbol: widget.tokenSymbol,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 16),
+          Text(
+            _safeTranslate('about', 'About') + ' ${widget.tokenName}',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildInfoRow('Symbol', widget.tokenSymbol),
+          _buildInfoRow('Blockchain', widget.blockchainName),
+          _buildInfoRow('Type', widget.isToken ? 'Token' : 'Coin'),
+          // Use live price data if available, otherwise use current price data
+          if (livePrice != null) ...[
+            _buildInfoRow('Current Price', '\$${NumberFormatter.formatDouble(livePrice!.price)}'),
+            _buildInfoRow('24h Volume', '\$${_formatLargeNumber(livePrice!.volume24h)}'),
+            _buildInfoRow('24h Change', '${livePrice!.change24h >= 0 ? '+' : ''}${livePrice!.change24h.toStringAsFixed(2)}%'),
+          ] else if (currentPriceData != null) ...[
+            _buildInfoRow('Current Price', '\$${NumberFormatter.formatDouble(currentPriceData!.price)}'),
+            _buildInfoRow('Market Cap', '\$${_formatLargeNumber(currentPriceData!.marketCap)}'),
+            _buildInfoRow('24h Volume', '\$${_formatLargeNumber(currentPriceData!.volume24h)}'),
+            _buildInfoRow('24h Change', '${currentPriceData!.change24h >= 0 ? '+' : ''}${currentPriceData!.change24h.toStringAsFixed(2)}%'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.grey,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatLargeNumber(double number) {
+    if (number >= 1e12) {
+      return '${(number / 1e12).toStringAsFixed(2)}T';
+    } else if (number >= 1e9) {
+      return '${(number / 1e9).toStringAsFixed(2)}B';
+    } else if (number >= 1e6) {
+      return '${(number / 1e6).toStringAsFixed(2)}M';
+    } else if (number >= 1e3) {
+      return '${(number / 1e3).toStringAsFixed(2)}K';
+    } else {
+      return number.toStringAsFixed(2);
+    }
+  }
+}
+
+// Bottom action button widget
+class _BottomActionButton extends StatelessWidget {
+  final IconData? icon;
+  final String? assetIcon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _BottomActionButton({
+    this.icon,
+    this.assetIcon,
+    required this.label,
+    required this.onTap,
+  }) : assert(icon != null || assetIcon != null, 'Either icon or assetIcon must be provided');
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 80,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0BAB9B),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: assetIcon != null
+                    ? Image.asset(
+                        assetIcon!,
+                        width: 24,
+                        height: 24,
+                        color: Colors.white,
+                        errorBuilder: (context, error, stackTrace) {
+                          // Fallback to icon if asset fails
+                          return Icon(
+                            icon ?? Icons.help,
+                            color: Colors.white,
+                            size: 24,
+                          );
+                        },
+                      )
+                    : Icon(
+                        icon!,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ActionButton extends StatelessWidget {
-  final String assetIcon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
 
-  const _ActionButton({required this.assetIcon, required this.label, required this.color, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(30),
-          child: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Image.asset(
-                assetIcon,
-                width: 28,
-                height: 28,
-                color: Colors.black,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
-}
 
 // Transaction history section widget
 class _TransactionHistorySection extends StatelessWidget {
@@ -637,7 +1112,7 @@ class _TransactionHistorySection extends StatelessWidget {
         return "${dateTime.year}/${dateTime.month}/${dateTime.day}";
       }
     } catch (e) {
-      return _safeTranslate(context, 'unknown_date', 'Unknown Date');
+      return _safeTranslate(context, 'unknown date', 'Unknown Date');
     }
   }
 
@@ -656,7 +1131,7 @@ class _TransactionHistorySection extends StatelessWidget {
           children: [
             Image.asset('assets/images/notransaction.png', width: 80, height: 80),
             const SizedBox(height: 12),
-            Text(_safeTranslate(context, 'no_transactions_found', 'No transactions found'), style: const TextStyle(color: Colors.grey)),
+            Text(_safeTranslate(context, 'no transactions found', 'No transactions found'), style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -713,8 +1188,8 @@ class _TransactionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final isReceived = tx.direction == "inbound";
     final icon = isReceived ? Icons.arrow_downward : Icons.arrow_upward;
-    final iconColor = isReceived ? const Color(0xFF20CDA4) : const Color(0xFFF43672);
-    final bgColor = isReceived ? const Color(0xFF20CDA4).withOpacity(0.1) : const Color(0xFFF43672).withOpacity(0.1);
+    final iconColor = isReceived ? const Color(0xFF0BAB9B) : const Color(0xFFF43672);
+    final bgColor = isReceived ? const Color(0xFF0BAB9B).withOpacity(0.1) : const Color(0xFFF43672).withOpacity(0.1);
     final address = isReceived ? tx.from : tx.to;
     final shortAddress = address.length > 15 ? "${address.substring(0, 10)}...${address.substring(address.length - 5)}" : address;
     final amountPrefix = isReceived ? "+" : "-";
@@ -783,7 +1258,7 @@ class _TransactionItem extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(amountValue, style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12, color: amountValue.startsWith("-") ? const Color(0xFFF43672) : const Color(0xFF11c699))),
+                  Text(amountValue, style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12, color: amountValue.startsWith("-") ? const Color(0xFFF43672) : const Color(0xFF0BAB9B))),
                   const SizedBox(width: 2),
                   Text(tx.tokenSymbol, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12, color: Colors.black)),
                 ],

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -29,13 +30,13 @@ class PlatformStorageManager {
     try {
       if (Platform.isIOS) {
         // iOS: استراتژی Triple Storage برای اطمینان بیشتر
-        await _saveDataIOS(key, value, isCritical);
+        await _saveDataIOS(key, value, isCritical).timeout(const Duration(seconds: 3));
       } else if (Platform.isAndroid) {
         // Android: استراتژی Dual Storage
-        await _saveDataAndroid(key, value, isCritical);
+        await _saveDataAndroid(key, value, isCritical).timeout(const Duration(seconds: 3));
       } else {
         // Web/Desktop: فقط SharedPreferences
-        await _saveDataGeneric(key, value);
+        await _saveDataGeneric(key, value).timeout(const Duration(seconds: 3));
       }
       
       print('💾 Platform storage saved: $key (critical: $isCritical, platform: ${Platform.operatingSystem})');
@@ -49,11 +50,11 @@ class PlatformStorageManager {
   Future<String?> getData(String key, {bool isCritical = false}) async {
     try {
       if (Platform.isIOS) {
-        return await _getDataIOS(key, isCritical);
+        return await _getDataIOS(key, isCritical).timeout(const Duration(seconds: 3));
       } else if (Platform.isAndroid) {
-        return await _getDataAndroid(key, isCritical);
+        return await _getDataAndroid(key, isCritical).timeout(const Duration(seconds: 3));
       } else {
-        return await _getDataGeneric(key);
+        return await _getDataGeneric(key).timeout(const Duration(seconds: 3));
       }
     } catch (e) {
       print('❌ Error getting platform data: $e');
@@ -64,18 +65,18 @@ class PlatformStorageManager {
   /// حذف داده از همه مکان‌ها
   Future<void> deleteData(String key) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 3));
       
       // حذف از SharedPreferences
-      await prefs.remove(key);
+      await prefs.remove(key).timeout(const Duration(seconds: 2));
       
       // حذف از SecureStorage
-      await _secureStorage.delete(key: key);
+      await _secureStorage.delete(key: key).timeout(const Duration(seconds: 3));
       
       // iOS: حذف از backup keys
       if (Platform.isIOS) {
-        await _secureStorage.delete(key: '${key}_ios_backup');
-        await prefs.remove('${key}_timestamp');
+        await _secureStorage.delete(key: '${key}_ios_backup').timeout(const Duration(seconds: 3));
+        await prefs.remove('${key}_timestamp').timeout(const Duration(seconds: 2));
       }
       
       print('🗑️ Platform data deleted: $key');
@@ -88,25 +89,25 @@ class PlatformStorageManager {
 
   /// ذخیره‌سازی iOS با Triple Storage
   Future<void> _saveDataIOS(String key, String value, bool isCritical) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 3));
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     
     // 1. SharedPreferences (اولویت اول)
-    await prefs.setString(key, value);
-    await prefs.setInt('${key}_timestamp', timestamp);
+    await prefs.setString(key, value).timeout(const Duration(seconds: 2));
+    await prefs.setInt('${key}_timestamp', timestamp).timeout(const Duration(seconds: 2));
     
     // 2. SecureStorage (backup اصلی)
-    await _secureStorage.write(key: key, value: value);
+    await _secureStorage.write(key: key, value: value).timeout(const Duration(seconds: 3));
     
     // 3. SecureStorage backup (برای critical data)
     if (isCritical) {
-      await _secureStorage.write(key: '${key}_ios_backup', value: value);
+      await _secureStorage.write(key: '${key}_ios_backup', value: value).timeout(const Duration(seconds: 3));
     }
   }
 
   /// بازیابی iOS با استراتژی Cascade
   Future<String?> _getDataIOS(String key, bool isCritical) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 3));
     
     // 1. اول از SharedPreferences تلاش کن
     String? value = prefs.getString(key);
@@ -116,26 +117,26 @@ class PlatformStorageManager {
     }
     
     // 2. از SecureStorage اصلی
-    value = await _secureStorage.read(key: key);
+    value = await _secureStorage.read(key: key).timeout(const Duration(seconds: 3));
     if (value != null) {
       print('📱 iOS: Data recovered from SecureStorage: $key');
       
       // بازگردانی به SharedPreferences
-      await prefs.setString(key, value);
-      await prefs.setInt('${key}_timestamp', DateTime.now().millisecondsSinceEpoch);
+      await prefs.setString(key, value).timeout(const Duration(seconds: 2));
+      await prefs.setInt('${key}_timestamp', DateTime.now().millisecondsSinceEpoch).timeout(const Duration(seconds: 2));
       
       return value;
     }
     
     // 3. از iOS backup (فقط برای critical data)
     if (isCritical) {
-      value = await _secureStorage.read(key: '${key}_ios_backup');
+      value = await _secureStorage.read(key: '${key}_ios_backup').timeout(const Duration(seconds: 3));
       if (value != null) {
         print('📱 iOS: Data recovered from backup: $key');
         
         // بازگردانی کامل
-        await prefs.setString(key, value);
-        await _secureStorage.write(key: key, value: value);
+        await prefs.setString(key, value).timeout(const Duration(seconds: 2));
+        await _secureStorage.write(key: key, value: value).timeout(const Duration(seconds: 3));
         
         return value;
       }
@@ -149,20 +150,35 @@ class PlatformStorageManager {
 
   /// ذخیره‌سازی Android با Dual Storage
   Future<void> _saveDataAndroid(String key, String value, bool isCritical) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 5));
     
-    // 1. SharedPreferences (اصلی)
-    await prefs.setString(key, value);
+    // 1. SharedPreferences (اصلی) - با تلاش مجدد در صورت خطا
+    try {
+      await prefs.setString(key, value).timeout(const Duration(seconds: 3));
+      print('🤖 Android: SharedPreferences write successful for $key');
+    } catch (e) {
+      print('❌ Android: SharedPreferences write failed for $key: $e');
+      // تلاش مجدد
+      await Future.delayed(const Duration(milliseconds: 100));
+      await prefs.setString(key, value).timeout(const Duration(seconds: 3));
+      print('🤖 Android: SharedPreferences retry successful for $key');
+    }
     
-    // 2. SecureStorage (فقط برای critical data)
+    // 2. SecureStorage (برای critical data و backup)
     if (isCritical) {
-      await _secureStorage.write(key: key, value: value);
+      try {
+        await _secureStorage.write(key: key, value: value).timeout(const Duration(seconds: 5));
+        print('🤖 Android: SecureStorage write successful for $key');
+      } catch (e) {
+        print('❌ Android: SecureStorage write failed for $key: $e');
+        // در اندروید، اگر SecureStorage کار نکرد، حداقل SharedPreferences داریم
+      }
     }
   }
 
   /// بازیابی Android
   Future<String?> _getDataAndroid(String key, bool isCritical) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 3));
     
     // 1. اول از SharedPreferences
     String? value = prefs.getString(key);
@@ -173,12 +189,12 @@ class PlatformStorageManager {
     
     // 2. از SecureStorage (فقط برای critical data)
     if (isCritical) {
-      value = await _secureStorage.read(key: key);
+      value = await _secureStorage.read(key: key).timeout(const Duration(seconds: 3));
       if (value != null) {
         print('🤖 Android: Data recovered from SecureStorage: $key');
         
         // بازگردانی به SharedPreferences
-        await prefs.setString(key, value);
+        await prefs.setString(key, value).timeout(const Duration(seconds: 2));
         
         return value;
       }

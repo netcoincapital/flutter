@@ -923,16 +923,17 @@ class TokenProvider extends ChangeNotifier {
 
   // --- فعال/غیرفعال کردن توکن ---
   /// Toggle کردن وضعیت توکن - مشابه Kotlin
-  Future<void> toggleToken(CryptoToken token, bool newState) async {
+  Future<void> toggleToken(CryptoToken token, bool newState, {bool isManualToggle = false}) async {
     try {
-      print('🔄 TokenProvider - Toggling token ${token.name} (${token.symbol}) to $newState for user: $_userId');
+      print('🔄 TokenProvider - Toggling token ${token.name} (${token.symbol}) to $newState for user: $_userId (manual: $isManualToggle)');
       
-      // 1. ذخیره state در preferences با کلید user-specific (scoped)
+      // 1. ذخیره state در preferences با کلید user-specific (scoped) و فلگ manual toggle
       await tokenPreferences.saveTokenStateFromParams(
         token.symbol ?? '', 
         token.blockchainName ?? '', 
         token.smartContractAddress, 
-        newState
+        newState,
+        isManualToggle: isManualToggle
       );
       
       // 2. به‌روزرسانی currencies list
@@ -1046,12 +1047,13 @@ class TokenProvider extends ChangeNotifier {
   }
   
   /// ذخیره state توکن برای کاربر خاص - مشابه Kotlin
-  Future<void> saveTokenStateForUser(CryptoToken token, bool isEnabled) async {
+  Future<void> saveTokenStateForUser(CryptoToken token, bool isEnabled, {bool isManualToggle = false}) async {
     await tokenPreferences.saveTokenStateFromParams(
       token.symbol ?? '', 
       token.blockchainName ?? '', 
       token.smartContractAddress, 
-      isEnabled
+      isEnabled,
+      isManualToggle: isManualToggle
     );
   }
   
@@ -1333,12 +1335,23 @@ class TokenProvider extends ChangeNotifier {
           
           print('   🔍 Found token in currencies: ${currencyToken.name} (${currencyToken.symbol})');
           
-          // For tokens with balance, force enable them
-          final isEnabled = true; // Force enable tokens with balance
+          // Check if token was manually disabled by user
+          final isManuallyDisabled = await tokenPreferences.isTokenManuallyDisabled(
+            currencyToken.symbol ?? '',
+            currencyToken.blockchainName ?? '',
+            currencyToken.smartContractAddress,
+          );
           
-          print('   🔄 Adding token with balance to active tokens: $balanceSymbol = $balanceDouble (enabled: $isEnabled)');
-          final newToken = currencyToken.copyWith(amount: balanceDouble, isEnabled: true);
-          _activeTokens.add(newToken);
+          // Only auto-enable tokens with balance if they were not manually disabled
+          final shouldAutoEnable = !isManuallyDisabled;
+          final isEnabled = shouldAutoEnable;
+          
+          print('   🔄 Adding token with balance to active tokens: $balanceSymbol = $balanceDouble (enabled: $isEnabled, manually disabled: $isManuallyDisabled)');
+          final newToken = currencyToken.copyWith(amount: balanceDouble, isEnabled: isEnabled);
+          
+          if (isEnabled) {
+            _activeTokens.add(newToken);
+          }
           
           // Also add to currencies if not exists
           final existsInCurrencies = _currencies.any((token) => token.symbol == balanceSymbol);
@@ -1347,12 +1360,12 @@ class TokenProvider extends ChangeNotifier {
             print('   ✅ Added token to currencies list: $balanceSymbol');
           }
           
-          // Also save to preferences as enabled
+          // Save to preferences with current state (respecting manual disable)
           await tokenPreferences.saveTokenStateFromParams(
             currencyToken.symbol ?? '',
             currencyToken.blockchainName ?? '',
             currencyToken.smartContractAddress,
-            true,
+            isEnabled,
           );
         }
       }
