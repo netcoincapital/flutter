@@ -94,13 +94,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('🏠 HomeScreen: BalanceManager initialized');
       
       // Set current user and wallet context for BalanceManager
-      if (appProvider.currentUserId != null && appProvider.currentWalletName != null) {
-        await BalanceManager.instance.setCurrentUserAndWallet(
-          appProvider.currentUserId!,
-          appProvider.currentWalletName!,
-        );
-        print('🏠 HomeScreen: BalanceManager context set for user: ${appProvider.currentUserId}');
-      }
+      // This should happen AFTER TokenProvider is ready to avoid conflicts
+      Timer(const Duration(milliseconds: 800), () async {
+        if (appProvider.currentUserId != null && appProvider.currentWalletName != null) {
+          await BalanceManager.instance.setCurrentUserAndWallet(
+            appProvider.currentUserId!,
+            appProvider.currentWalletName!,
+          );
+          print('🏠 HomeScreen: BalanceManager context set for user: ${appProvider.currentUserId}');
+        }
+      });
       
       // Initialize price provider
       await priceProvider.loadSelectedCurrency();
@@ -208,9 +211,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         BalanceManager.instance.setActiveTokensForUser(currentUserId, activeSymbols);
         print('🔄 HomeScreen: Set ${activeSymbols.length} active tokens in BalanceManager');
         
-        // Force refresh balances for immediate display
-        await BalanceManager.instance.refreshBalancesForUser(currentUserId, force: false);
-        print('✅ HomeScreen: BalanceManager refresh completed');
+        // Check if we have cached balances first
+        final upToDate = BalanceManager.instance.areBalancesUpToDate(currentUserId);
+        if (!upToDate) {
+          // Only refresh if we don't have recent cached data
+          print('🔄 HomeScreen: No recent cached balances, refreshing...');
+          await BalanceManager.instance.refreshBalancesForUser(currentUserId, force: false);
+          print('✅ HomeScreen: BalanceManager refresh completed');
+        } else {
+          print('✅ HomeScreen: Using cached balances (still valid)');
+        }
         
       } else {
         print('⚠️ HomeScreen: No valid user ID found for balance loading');

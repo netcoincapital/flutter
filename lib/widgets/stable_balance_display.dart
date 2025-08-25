@@ -73,17 +73,27 @@ class _StableBalanceDisplayState extends State<StableBalanceDisplay>
       widget.token.symbol ?? '',
     );
     
-    // If BalanceManager has valid data, use it
-    if (balanceFromManager > 0.0) {
+    // Also get the token's own amount for comparison
+    final tokenAmount = widget.token.amount ?? 0.0;
+    
+    // Priority logic for balance selection:
+    // 1. If both are available, prefer the higher value (to prevent showing 0 during transitions)
+    // 2. If only one is available, use that
+    // 3. If neither is available, return 0
+    
+    if (balanceFromManager > 0.0 && tokenAmount > 0.0) {
+      // Both available - prefer the higher value to avoid showing 0 during sync issues
+      return balanceFromManager > tokenAmount ? balanceFromManager : tokenAmount;
+    } else if (balanceFromManager > 0.0) {
+      // Only BalanceManager has data
       return balanceFromManager;
+    } else if (tokenAmount > 0.0) {
+      // Only token has data
+      return tokenAmount;
     }
     
-    // Fallback to token's own amount
-    final amount = widget.token.amount;
-    if (amount == null || amount.isNaN || amount.isInfinite) {
-      return 0.0;
-    }
-    return amount < 0 ? 0.0 : amount;
+    // Neither has valid data
+    return 0.0;
   }
 
   /// فرمت‌بندی موجودی با در نظر گیری اندازه صفحه

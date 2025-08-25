@@ -33,9 +33,11 @@ class BalanceManager extends ChangeNotifier {
   bool _isInitialized = false;
   String? _currentUserId;
   String? _currentWalletName;
+  bool _isAppStartup = true; // Track if this is app startup
   
   // Thread safety
   final Map<String, Completer<void>> _refreshLocks = {};
+  final Map<String, Completer<void>> _initializationLocks = {};
   
   /// مقداردهی اولیه
   Future<void> initialize(ApiService apiService) async {
@@ -67,27 +69,56 @@ class BalanceManager extends ChangeNotifier {
   
   /// تنظیم کاربر و کیف پول فعلی
   Future<void> setCurrentUserAndWallet(String userId, String walletName) async {
-    if (_currentUserId == userId && _currentWalletName == walletName) {
-      return; // No change needed
+    // Prevent concurrent initialization
+    final lockKey = '${userId}_$walletName';
+    if (_initializationLocks.containsKey(lockKey)) {
+      print('⏳ BalanceManager: Already initializing for $userId/$walletName, waiting...');
+      await _initializationLocks[lockKey]!.future;
+      return;
     }
     
-    print('🔄 BalanceManager: Setting current user: $userId, wallet: $walletName');
-    
-    // Save current user's state before switching
-    if (_currentUserId != null && _currentWalletName != null) {
-      await _persistUserBalances(_currentUserId!);
+    if (_currentUserId == userId && _currentWalletName == walletName && !_isAppStartup) {
+      return; // No change needed unless this is app startup
     }
     
-    _currentUserId = userId;
-    _currentWalletName = walletName;
+    print('🔄 BalanceManager: Setting current user: $userId, wallet: $walletName (startup: $_isAppStartup)');
     
-    // Load balances for new user/wallet
-    await _loadUserBalances(userId, walletName);
+    final completer = Completer<void>();
+    _initializationLocks[lockKey] = completer;
     
-    // Force immediate refresh for new context
-    await refreshBalancesForUser(userId, force: true);
-    
-    notifyListeners();
+    try {
+      // Save current user's state before switching (but not during app startup)
+      if (_currentUserId != null && _currentWalletName != null && !_isAppStartup) {
+        await _persistUserBalances(_currentUserId!);
+      }
+      
+      _currentUserId = userId;
+      _currentWalletName = walletName;
+      
+      // Load balances for new user/wallet
+      await _loadUserBalances(userId, walletName);
+      
+      // During app startup, wait a bit longer for other systems to initialize
+      if (_isAppStartup) {
+        print('🔄 BalanceManager: App startup detected, waiting for stabilization...');
+        await Future.delayed(const Duration(milliseconds: 1500));
+        _isAppStartup = false; // Mark startup complete
+      }
+      
+      // Force immediate refresh only if we don't have recent cached data
+      if (!areBalancesUpToDate(userId)) {
+        print('🔄 BalanceManager: No recent balances, forcing refresh...');
+        await refreshBalancesForUser(userId, force: true);
+      } else {
+        print('✅ BalanceManager: Using cached balances (still valid)');
+      }
+      
+      notifyListeners();
+      
+    } finally {
+      _initializationLocks.remove(lockKey);
+      completer.complete();
+    }
   }
   
   /// تنظیم توکن‌های فعال برای کاربر
@@ -132,6 +163,12 @@ class BalanceManager extends ChangeNotifier {
       return;
     }
     
+    // During app startup, be more conservative about API calls
+    if (_isAppStartup && !force) {
+      print('ℹ️ BalanceManager: Skipping API refresh during app startup (use cached data)');
+      return;
+    }
+    
     // Check if refresh is needed
     if (!force && areBalancesUpToDate(userId)) {
       print('ℹ️ BalanceManager: Balances are up to date for user $userId');
@@ -171,17 +208,26 @@ class BalanceManager extends ChangeNotifier {
           }
         }
         
-        // Update internal state
-        _userBalances[userId] = newBalances;
-        _lastBalanceUpdate[userId] = DateTime.now();
-        
-        // Persist immediately
-        await _persistUserBalances(userId);
-        
-        print('✅ BalanceManager: Updated ${newBalances.length} balances for user $userId');
-        
-        // Notify listeners
-        notifyListeners();
+        // Update internal state with protection against empty responses
+        if (newBalances.isNotEmpty && !_shouldPreventZeroBalances(userId, newBalances)) {
+          // Backup current balances before updating
+          final backup = _backupUserBalances(userId);
+          
+          _userBalances[userId] = newBalances;
+          _lastBalanceUpdate[userId] = DateTime.now();
+          
+          // Persist immediately
+          await _persistUserBalances(userId);
+          
+          print('✅ BalanceManager: Updated ${newBalances.length} balances for user $userId');
+          
+          // Notify listeners
+          notifyListeners();
+        } else {
+          print('⚠️ BalanceManager: API returned empty/suspicious balances, keeping cached data');
+          // Still update timestamp to avoid too frequent API calls
+          _lastBalanceUpdate[userId] = DateTime.now();
+        }
         
       } else {
         print('❌ BalanceManager: API failed to fetch balances for user $userId');
@@ -376,11 +422,48 @@ class BalanceManager extends ChangeNotifier {
     notifyListeners();
   }
   
+  /// backup موجودی‌ها قبل از تغییرات مهم
+  Map<String, double> _backupUserBalances(String userId) {
+    return Map.from(_userBalances[userId] ?? {});
+  }
+  
+  /// restore موجودی‌ها در صورت مشکل
+  void _restoreUserBalances(String userId, Map<String, double> backup) {
+    if (backup.isNotEmpty) {
+      _userBalances[userId] = backup;
+      notifyListeners();
+      print('🔄 BalanceManager: Restored ${backup.length} balances from backup for user $userId');
+    }
+  }
+  
+  /// بررسی و محافظت از صفر شدن موجودی‌ها
+  bool _shouldPreventZeroBalances(String userId, Map<String, double> newBalances) {
+    final currentBalances = _userBalances[userId] ?? {};
+    
+    // If current balances exist and new balances are empty, prevent the update
+    if (currentBalances.isNotEmpty && newBalances.isEmpty) {
+      print('⚠️ BalanceManager: Preventing zero balance update (current: ${currentBalances.length}, new: 0)');
+      return true;
+    }
+    
+    // If we have significant balances and new response has all zeros, be cautious
+    final currentNonZero = currentBalances.values.where((v) => v > 0).length;
+    final newNonZero = newBalances.values.where((v) => v > 0).length;
+    
+    if (currentNonZero >= 2 && newNonZero == 0) {
+      print('⚠️ BalanceManager: Preventing suspicious zero balance update (current non-zero: $currentNonZero, new non-zero: 0)');
+      return true;
+    }
+    
+    return false;
+  }
+  
   /// اطلاعات debug
   void debugBalanceState() {
     print('=== BalanceManager Debug ===');
     print('Current User ID: $_currentUserId');
     print('Current Wallet: $_currentWalletName');
+    print('Is App Startup: $_isAppStartup');
     print('Total Users: ${_userBalances.length}');
     
     for (final userId in _userBalances.keys) {
@@ -390,6 +473,7 @@ class BalanceManager extends ChangeNotifier {
       
       print('User $userId:');
       print('  Balances: ${balances.length}');
+      print('  Non-zero balances: ${balances.values.where((v) => v > 0).length}');
       print('  Active Tokens: ${activeTokens.length}');
       print('  Last Update: $lastUpdate');
       print('  Up to Date: ${areBalancesUpToDate(userId)}');
