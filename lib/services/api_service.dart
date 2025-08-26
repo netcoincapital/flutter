@@ -5,32 +5,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_models.dart';
 import '../utils/shared_preferences_utils.dart';
 import 'secure_storage.dart';
+import 'enhanced_network_manager.dart';
 
-/// API service for server communication
-/// This class manages all API requests
+/// API service for server communication with enhanced network handling
+/// This class manages all API requests with intelligent retry and timeout handling
 class ApiService {
   static const String _baseUrl = 'https://coinceeper.com/api/';
   
   late final Dio _dio;
+  final EnhancedNetworkManager _networkManager = EnhancedNetworkManager.instance;
   
   ApiService() {
     _initializeDio();
   }
   
-  /// مقداردهی اولیه Dio برای HTTP requests
+  /// مقداردهی اولیه Dio برای HTTP requests با Enhanced Network Manager
   void _initializeDio() {
-    // تنظیمات اصلی Dio
-    _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
-      sendTimeout: const Duration(seconds: 30),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'Flutter-App/1.0',
-      },
-    ));
+    // استفاده از Enhanced Network Manager برای timeout های هوشمند
+    _dio = _networkManager.createAdaptiveDio(baseUrl: _baseUrl);
     
     // اضافه کردن interceptors برای logging
     _dio.interceptors.add(LogInterceptor(
@@ -134,36 +126,36 @@ class ApiService {
   
   // ==================== WALLET OPERATIONS ====================
   
-  /// Create new wallet
+  /// Create new wallet with enhanced network handling
   /// [walletName]: wallet name
   Future<GenerateWalletResponse> generateWallet(String walletName) async {
-    try {
-      final request = CreateWalletRequest(walletName: walletName);
-      // For new wallet creation, don't send UserID in headers
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'Flutter-App/1.0',
-      };
-      
-      print('🌐 API Request - URL: ${_baseUrl}generate-wallet');
-      print('📤 Request Data: ${request.toJson()}');
-      print('📋 Headers: $headers');
-      
-      final response = await _dio.post(
-        'generate-wallet',
-        data: request.toJson(),
-        options: Options(headers: headers),
-      );
-      
-      print('📥 Response Status: ${response.statusCode}');
-      print('📄 Response Data: ${response.data}');
-      
-      return GenerateWalletResponse.fromJson(response.data);
-    } on DioException catch (e) {
-      _handleError(e);
-      rethrow;
-    }
+    return await _networkManager.executeRequest<GenerateWalletResponse>(
+      () async {
+        final request = CreateWalletRequest(walletName: walletName);
+        // For new wallet creation, don't send UserID in headers
+        final headers = <String, String>{
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Flutter-App/1.0',
+        };
+        
+        print('🌐 API Request - URL: ${_baseUrl}generate-wallet');
+        print('📤 Request Data: ${request.toJson()}');
+        print('📋 Headers: $headers');
+        
+        final response = await _dio.post(
+          'generate-wallet',
+          data: request.toJson(),
+          options: Options(headers: headers),
+        );
+        
+        print('📥 Response Status: ${response.statusCode}');
+        print('📄 Response Data: ${response.data}');
+        
+        return GenerateWalletResponse.fromJson(response.data);
+      },
+      operationName: 'generateWallet',
+    );
   }
   
   /// Import wallet with mnemonic
@@ -281,26 +273,26 @@ class ApiService {
   
   // ==================== PRICE & BALANCE OPERATIONS ====================
   
-  /// دریافت قیمت‌های ارزها
+  /// دریافت قیمت‌های ارزها با Enhanced Network Handling
   /// [symbols]: لیست نمادهای ارز
   /// [fiatCurrencies]: لیست ارزهای فیات
   Future<PricesResponse> getPrices(List<String> symbols, List<String> fiatCurrencies) async {
-    try {
-      final request = PricesRequest(symbol: symbols, fiatCurrencies: fiatCurrencies);
-      final response = await _dio.post(
-        'prices',
-        data: request.toJson(),
-        options: Options(headers: await _getHeaders()),
-      );
-      
-      return PricesResponse.fromJson(response.data);
-    } on DioException catch (e) {
-      _handleError(e);
-      rethrow;
-    }
+    return await _networkManager.executeRequest<PricesResponse>(
+      () async {
+        final request = PricesRequest(symbol: symbols, fiatCurrencies: fiatCurrencies);
+        final response = await _dio.post(
+          'prices',
+          data: request.toJson(),
+          options: Options(headers: await _getHeaders()),
+        );
+        
+        return PricesResponse.fromJson(response.data);
+      },
+      operationName: 'getPrices',
+    );
   }
   
-  /// دریافت موجودی کاربر
+  /// دریافت موجودی کاربر با Enhanced Network Handling
   /// [userId]: شناسه کاربر
   /// [currencyNames]: لیست نام‌های ارز (اختیاری)
   /// [blockchain]: نقشه بلاکچین‌ها (اختیاری)
@@ -309,23 +301,23 @@ class ApiService {
     List<String> currencyNames = const [],
     Map<String, String> blockchain = const {},
   }) async {
-    try {
-      final request = BalanceRequest(
-        userId: userId,
-        currencyNames: currencyNames,
-        blockchain: blockchain,
-      );
-      final response = await _dio.post(
-        'balance',
-        data: request.toJson(),
-        options: Options(headers: await _getHeaders()),
-      );
-      
-      return BalanceResponse.fromJson(response.data);
-    } on DioException catch (e) {
-      _handleError(e);
-      rethrow;
-    }
+    return await _networkManager.executeRequest<BalanceResponse>(
+      () async {
+        final request = BalanceRequest(
+          userId: userId,
+          currencyNames: currencyNames,
+          blockchain: blockchain,
+        );
+        final response = await _dio.post(
+          'balance',
+          data: request.toJson(),
+          options: Options(headers: await _getHeaders()),
+        );
+        
+        return BalanceResponse.fromJson(response.data);
+      },
+      operationName: 'getBalance',
+    );
   }
   
   /// دریافت موجودی کاربر (فرمت جدید برای ایمپورت کیف پول)
@@ -728,5 +720,19 @@ class ApiService {
     }
   }
   
+  
+  /// Get current network status for debugging and user information
+  Map<String, dynamic> getNetworkStatus() {
+    return _networkManager.getConnectionStatus();
+  }
+  
+  /// Check if network is suitable for critical operations (like transactions)
+  bool isNetworkSuitableForCriticalOps() {
+    final status = _networkManager.getConnectionStatus();
+    final quality = status['quality'] as String;
+    
+    // Allow critical operations only on good connections
+    return ['excellent', 'good'].contains(quality);
+  }
 
 } 

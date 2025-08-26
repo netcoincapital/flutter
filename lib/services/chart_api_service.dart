@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/secure_storage.dart';
+import 'enhanced_network_manager.dart';
 
 class ChartApiService {
   static const String _baseUrl = 'https://coinceeper.com/api';
