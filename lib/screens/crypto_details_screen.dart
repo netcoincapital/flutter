@@ -1,24 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
-
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:convert';
 
 import 'package:my_flutter_app/screens/receive_wallet_screen.dart';
 import '../models/transaction.dart';
 import '../models/crypto_token.dart';
-
+import '../services/api_models.dart' as api;
 import '../services/secure_storage.dart';
 import '../services/service_provider.dart';
-import '../services/coinmarketcap_service_main.dart';
 import '../services/chart_api_service.dart';
 import '../services/crypto_logo_cache_service.dart';
-import '../models/current_price_data.dart';
 import '../providers/price_provider.dart';
 import '../utils/number_formatter.dart';
 import '../providers/app_provider.dart';
 import '../providers/token_provider.dart';
 import '../widgets/crypto_chart_widget.dart';
+
+/// Simple data class for price information
+class CurrentPriceData {
+  final double price;
+  final double change24h;
+  final double marketCap;
+  final double volume24h;
+  final DateTime lastUpdated;
+
+  CurrentPriceData({
+    required this.price,
+    required this.change24h,
+    required this.marketCap,
+    required this.volume24h,
+    required this.lastUpdated,
+  });
+}
+
+/// Simple service for price data
+class CoinMarketCapService {
+  static Future<CurrentPriceData?> getCurrentPrice(String symbol) async {
+    try {
+      // Check if symbol has real price data by trying actual API call first
+      // For now, return null to indicate no price data is available
+      // This prevents showing fake prices for tokens without real data
+      print('⚠️ No real price data available for symbol: $symbol');
+      return null;
+    } catch (e) {
+      print('❌ Error fetching crypto price: $e');
+      return null;
+    }
+  }
+}
 
 class CryptoDetailsScreen extends StatefulWidget {
   final String tokenName;
@@ -55,7 +86,7 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
   
   // New state variables for the redesigned UI
   late TabController _tabController;
-
+  int _selectedTabIndex = 0;
   CurrentPriceData? currentPriceData;
   LivePriceData? livePrice; // Live price from new API
   bool isLoadingPrice = true;
@@ -89,9 +120,9 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
         ),
       );
 
-      if (token.amount != tokenBalance && mounted) {
+      if (token?.amount != tokenBalance && mounted) {
         setState(() {
-          tokenBalance = token.amount;
+          tokenBalance = token?.amount ?? 0.0;
         });
       }
     } catch (_) {
@@ -389,7 +420,9 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
     try {
       // Use API icon if available, otherwise use provided iconUrl
       final effectiveIconUrl = apiIconUrl ?? iconUrl;
-      // Palette generation removed for now
+      final ImageProvider provider = effectiveIconUrl.startsWith('http')
+          ? NetworkImage(effectiveIconUrl)
+          : AssetImage(effectiveIconUrl) as ImageProvider;
       // Palette generation removed for now
       print('Palette generation removed for $effectiveIconUrl');
               setState(() {
@@ -513,7 +546,49 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
     }
   }
 
-
+  Widget _buildTokenIcon(String iconUrl) {
+    // Prioritize API icon if available, otherwise use the provided iconUrl
+    final effectiveIconUrl = apiIconUrl ?? iconUrl;
+    
+    print('🖼️ Building token icon for ${widget.tokenSymbol}:');
+    print('   - Original iconUrl: $iconUrl');
+    print('   - API iconUrl: $apiIconUrl');
+    print('   - Effective iconUrl: $effectiveIconUrl');
+    
+    if (effectiveIconUrl.startsWith('http')) {
+      return CachedNetworkImage(
+        imageUrl: effectiveIconUrl,
+        width: 52,
+        height: 52,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => Container(
+          width: 52,
+          height: 52,
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+              strokeWidth: 2,
+            ),
+          ),
+        ),
+        errorWidget: (context, url, error) {
+          print('❌ Error loading network icon from $url: $error');
+          return const Icon(Icons.monetization_on, size: 52, color: Colors.grey);
+        },
+      );
+    } else {
+      return Image.asset(
+        effectiveIconUrl,
+        width: 52,
+        height: 52,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          print('❌ Error loading asset icon: $error');
+          return const Icon(Icons.monetization_on, size: 52, color: Colors.grey);
+        },
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -668,12 +743,25 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
                               ],
                             )
                           else
-                            const Text(
-                              'Price unavailable',
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.grey,
-                              ),
+                            Column(
+                              children: [
+                                const Text(
+                                  '\$0.00',
+                                  style: TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'No price data available',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
                             ),
                           const SizedBox(height: 24),
                         ],
@@ -694,7 +782,9 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
                       child: TabBar(
                         controller: _tabController,
                         onTap: (index) {
-                          // Tab selection handled by TabController
+                          setState(() {
+                            _selectedTabIndex = index;
+                          });
                         },
                         labelColor: const Color(0xFF0BAB9B),
                         unselectedLabelColor: Colors.grey,
@@ -789,7 +879,7 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
                       // TODO: Implement swap functionality
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(_safeTranslate('swap coming soon', 'Swap feature coming soon')),
+                          content: Text(_safeTranslate('swap_coming_soon', 'Swap feature coming soon')),
                           backgroundColor: const Color(0xFF0BAB9B),
                         ),
                       );
@@ -812,7 +902,7 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
         children: [
           const SizedBox(height: 16),
           Text(
-            _safeTranslate('My balance', 'My Balance'),
+            _safeTranslate('my_balance', 'My Balance'),
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -865,11 +955,19 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '\$${(tokenBalance * (livePrice?.price ?? currentPriceData?.price ?? 0.0)).toStringAsFixed(2)}',
-                      style: const TextStyle(
+                      () {
+                        final price = livePrice?.price ?? currentPriceData?.price ?? 0.0;
+                        if (price == 0.0) {
+                          return '\$0.00';
+                        }
+                        return '\$${(tokenBalance * price).toStringAsFixed(2)}';
+                      }(),
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.black,
+                        color: (livePrice?.price ?? currentPriceData?.price ?? 0.0) == 0.0 
+                            ? Colors.grey 
+                            : Colors.black,
                       ),
                     ),
                     Text(
@@ -895,6 +993,11 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
             _buildInfoRow('Market Cap', '\$${_formatLargeNumber(currentPriceData!.marketCap)}'),
             _buildInfoRow('24h Volume', '\$${_formatLargeNumber(currentPriceData!.volume24h)}'),
             _buildInfoRow('24h Change', '${currentPriceData!.change24h >= 0 ? '+' : ''}${currentPriceData!.change24h.toStringAsFixed(2)}%'),
+          ] else ...[
+            _buildInfoRow('Current Price', '\$0.00'),
+            _buildInfoRow('Market Cap', 'Not available'),
+            _buildInfoRow('24h Volume', 'Not available'),
+            _buildInfoRow('24h Change', '0.00%'),
           ],
         ],
       ),
@@ -964,6 +1067,11 @@ class _CryptoDetailsScreenState extends State<CryptoDetailsScreen> with SingleTi
             _buildInfoRow('Market Cap', '\$${_formatLargeNumber(currentPriceData!.marketCap)}'),
             _buildInfoRow('24h Volume', '\$${_formatLargeNumber(currentPriceData!.volume24h)}'),
             _buildInfoRow('24h Change', '${currentPriceData!.change24h >= 0 ? '+' : ''}${currentPriceData!.change24h.toStringAsFixed(2)}%'),
+          ] else ...[
+            _buildInfoRow('Current Price', '\$0.00'),
+            _buildInfoRow('Market Cap', 'Not available'),
+            _buildInfoRow('24h Volume', 'Not available'),
+            _buildInfoRow('24h Change', '0.00%'),
           ],
         ],
       ),
@@ -1080,7 +1188,44 @@ class _BottomActionButton extends StatelessWidget {
   }
 }
 
+class _ActionButton extends StatelessWidget {
+  final String assetIcon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
 
+  const _ActionButton({required this.assetIcon, required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(30),
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Image.asset(
+                assetIcon,
+                width: 28,
+                height: 28,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+}
 
 // Transaction history section widget
 class _TransactionHistorySection extends StatelessWidget {
@@ -1112,7 +1257,7 @@ class _TransactionHistorySection extends StatelessWidget {
         return "${dateTime.year}/${dateTime.month}/${dateTime.day}";
       }
     } catch (e) {
-      return _safeTranslate(context, 'unknown date', 'Unknown Date');
+      return _safeTranslate(context, 'unknown_date', 'Unknown Date');
     }
   }
 
@@ -1131,7 +1276,7 @@ class _TransactionHistorySection extends StatelessWidget {
           children: [
             Image.asset('assets/images/notransaction.png', width: 80, height: 80),
             const SizedBox(height: 12),
-            Text(_safeTranslate(context, 'no transactions found', 'No transactions found'), style: const TextStyle(color: Colors.grey)),
+            Text(_safeTranslate(context, 'no_transactions_found', 'No transactions found'), style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );

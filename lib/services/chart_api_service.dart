@@ -27,6 +27,11 @@ class ChartApiService {
 
       // Determine points based on timeframe if not provided
       points ??= _getPointsForTimeframe(timeframe);
+      
+      // Map timeframe to API format
+      final apiTimeframe = _mapTimeframeToApi(timeframe);
+
+      print('🔄 API Request: Symbol=$symbol, Timeframe=$apiTimeframe, Points=$points');
 
       final response = await http.post(
         Uri.parse('$_baseUrl/chart-data'),
@@ -34,7 +39,7 @@ class ChartApiService {
         body: json.encode({
           'Symbol': symbol,
           'FiatCurrency': fiatCurrency,
-          'timeframe': timeframe,
+          'timeframe': apiTimeframe,
           'points': points,
         }),
       );
@@ -43,15 +48,20 @@ class ChartApiService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('✅ Chart API Response: ${data.keys}');
+        print('✅ Chart API Response Keys: ${data.keys}');
 
         if (data['success'] == true && data['chart_data'] != null) {
-          return ChartApiData.fromJson(data);
+          final chartApiData = ChartApiData.fromJson(data);
+          print('✅ Chart data parsed successfully: ${chartApiData.data.length} data points');
+          return chartApiData;
         } else {
-          print('❌ Chart API Error: ${data['message'] ?? 'Unknown error'}');
+          final errorMessage = data['message'] ?? 'Unknown error';
+          print('❌ Chart API Error: $errorMessage');
+          print('📊 API Response: ${json.encode(data)}');
         }
       } else {
-        print('❌ Chart API HTTP Error: ${response.statusCode} - ${response.body}');
+        print('❌ Chart API HTTP Error: ${response.statusCode}');
+        print('📝 Response Body: ${response.body}');
       }
       return null;
     } catch (e) {
@@ -81,22 +91,31 @@ class ChartApiService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('✅ Live Price API Response Keys: ${data.keys}');
 
         if (data['success'] == true && data['live_prices'] != null) {
           final livePrices = <String, LivePriceData>{};
           final pricesData = data['live_prices'] as Map<String, dynamic>;
 
           for (final entry in pricesData.entries) {
-            livePrices[entry.key] = LivePriceData.fromJson(entry.value);
+            try {
+              livePrices[entry.key] = LivePriceData.fromJson(entry.value);
+              print('✅ Live price parsed for ${entry.key}: \$${entry.value['price']}');
+            } catch (parseError) {
+              print('❌ Error parsing live price for ${entry.key}: $parseError');
+            }
           }
 
           print('✅ Live prices loaded for ${livePrices.length} symbols');
           return livePrices;
         } else {
-          print('❌ Live Price API Error: ${data['message'] ?? 'Unknown error'}');
+          final errorMessage = data['message'] ?? 'Unknown error';
+          print('❌ Live Price API Error: $errorMessage');
+          print('📊 API Response: ${json.encode(data)}');
         }
       } else {
-        print('❌ Live Price API HTTP Error: ${response.statusCode} - ${response.body}');
+        print('❌ Live Price API HTTP Error: ${response.statusCode}');
+        print('📝 Response Body: ${response.body}');
       }
       return null;
     } catch (e) {
@@ -105,25 +124,43 @@ class ChartApiService {
     }
   }
 
-  /// Get points count for timeframe
+  /// Get points count for timeframe based on real API requirements
   static int _getPointsForTimeframe(String timeframe) {
     switch (timeframe) {
       case '1h':
-        return 24; // 24 hours
+        return 24; // 24 points for hourly data (last 24 hours)
       case '1d':
-        return 30; // 30 days
+        return 30; // 30 points for daily data (last 30 days)
       case '1w':
-        return 12; // 12 weeks
+        return 12; // 12 points for weekly data (last 12 weeks)
       case '1m':
-        return 12; // 12 months
+        return 12; // 12 points for monthly data (last 12 months)
       case '3m':
-        return 12; // 12 quarters
-      case '6m':
-        return 10; // 10 half-years
+        return 12; // 12 points for quarterly data (last 3 months)
       case '1y':
-        return 10; // 10 years
+        return 12; // 12 points for yearly data (last 12 months)
       default:
         return 30;
+    }
+  }
+
+  /// Map Flutter timeframes to API timeframes
+  static String _mapTimeframeToApi(String flutterTimeframe) {
+    switch (flutterTimeframe) {
+      case '1h':
+        return '1h'; // Hourly data
+      case '1d':
+        return '1d'; // Daily data  
+      case '1w':
+        return '1w'; // Weekly data
+      case '1m':
+        return '1m'; // Monthly data
+      case '3m':
+        return '3m'; // 3 months data
+      case '1y':
+        return '1y'; // Yearly data
+      default:
+        return '1d'; // Default to daily
     }
   }
 }

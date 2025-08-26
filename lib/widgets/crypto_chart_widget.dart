@@ -61,47 +61,74 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
     try {
       print('🔄 Loading chart data for ${widget.symbol} with timeframe $selectedTimeFrame');
       
-      // Since chart APIs are not implemented yet, use fallback data directly
-      print('⚠️ Chart APIs not ready, using fallback data...');
+      // Try to get real chart data from API first
+      final apiData = await ChartApiService.getChartData(
+        symbol: widget.symbol,
+        timeframe: selectedTimeFrame,
+      );
       
-      final fallbackData = await _loadFallbackChartData();
-      if (fallbackData != null) {
+      if (apiData != null && apiData.data.isNotEmpty) {
+        final convertedData = apiData.toChartData();
         setState(() {
-          chartData = fallbackData;
+          chartData = convertedData;
           isLoading = false;
         });
-        print('✅ Fallback chart data loaded successfully: ${fallbackData.points.length} points');
+        print('✅ Real chart data loaded successfully: ${apiData.data.length} points');
+        print('📊 Price range: \$${convertedData.minPrice.toStringAsFixed(2)} - \$${convertedData.maxPrice.toStringAsFixed(2)}');
+        return;
+      }
+      
+      // If API returns null or empty data, show gray "no data" chart
+      print('⚠️ No real chart data available for ${widget.symbol}');
+      if (apiData == null) {
+        print('   - API returned null (likely HTTP error or parsing error)');
       } else {
-        setState(() {
-          error = 'Failed to generate chart data';
-          isLoading = false;
-        });
+        print('   - API returned empty data (${apiData.data.length} points)');
       }
-    } catch (e) {
-      print('❌ Error loading chart data: $e');
       
-      // Try fallback on error
-      try {
-        final fallbackData = await _loadFallbackChartData();
-        if (fallbackData != null) {
-          setState(() {
-            chartData = fallbackData;
-            isLoading = false;
-          });
-          print('✅ Fallback chart data loaded after error');
-        } else {
-          setState(() {
-            error = 'Chart data unavailable';
-            isLoading = false;
-          });
-        }
-      } catch (fallbackError) {
-        setState(() {
-          error = 'Chart data unavailable';
-          isLoading = false;
-        });
-      }
+      final noDataChart = _createNoDataChart();
+      setState(() {
+        chartData = noDataChart;
+        isLoading = false;
+      });
+      print('✅ No-data chart displayed for ${widget.symbol}');
+      
+    } catch (e) {
+      print('❌ Error loading chart data for ${widget.symbol}: $e');
+      
+      // On error, show no-data chart
+      final noDataChart = _createNoDataChart();
+      setState(() {
+        chartData = noDataChart;
+        isLoading = false;
+        error = 'Failed to load chart data';
+      });
     }
+  }
+
+  /// Create a flat gray chart to indicate no data is available
+  ChartData _createNoDataChart() {
+    final now = DateTime.now();
+    final points = <ChartPoint>[];
+    
+    // Create a flat line at zero price to indicate no data
+    for (int i = 23; i >= 0; i--) {
+      final timestamp = now.subtract(Duration(hours: i));
+      points.add(ChartPoint(
+        timestamp: timestamp,
+        price: 0.0,
+      ));
+    }
+    
+    return ChartData(
+      points: points,
+      currentPrice: 0.0,
+      priceChange: 0.0,
+      priceChangePercent: 0.0,
+      minPrice: 0.0,
+      maxPrice: 0.0,
+      timeFrame: selectedTimeFrame,
+    );
   }
 
   /// Fallback method to generate sample data when APIs are not available
@@ -235,12 +262,20 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
       );
 
       if (livePrices != null && livePrices.containsKey(widget.symbol)) {
+        final newLivePrice = livePrices[widget.symbol];
         setState(() {
-          livePrice = livePrices[widget.symbol];
+          livePrice = newLivePrice;
         });
-        print('✅ Live price updated: \$${livePrice?.price.toStringAsFixed(2)}');
+        print('✅ Live price updated from API: \$${newLivePrice?.price.toStringAsFixed(2)} (${newLivePrice?.change24h.toStringAsFixed(2)}%)');
       } else {
-        print('⚠️ Live price API failed, using PriceProvider fallback...');
+        print('⚠️ Live price API failed for ${widget.symbol}');
+        if (livePrices != null) {
+          print('   - API succeeded but ${widget.symbol} not found in response');
+          print('   - Available symbols: ${livePrices.keys.join(', ')}');
+        } else {
+          print('   - API returned null');
+        }
+        
         // Use existing PriceProvider as fallback
         if (mounted) {
           try {
@@ -257,7 +292,9 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
                   lastUpdated: DateTime.now(),
                 );
               });
-              print('✅ Live price updated from PriceProvider: \$${price.toStringAsFixed(2)}');
+              print('✅ Live price updated from PriceProvider fallback: \$${price.toStringAsFixed(2)}');
+            } else {
+              print('⚠️ PriceProvider also has no price for ${widget.symbol}');
             }
           } catch (e) {
             print('❌ Error accessing PriceProvider: $e');
@@ -265,7 +302,7 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
         }
       }
     } catch (e) {
-      print('❌ Error loading live price: $e');
+      print('❌ Error loading live price for ${widget.symbol}: $e');
       // Silent failure for live price updates
     }
   }
@@ -418,8 +455,15 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
       );
     }
 
+    // Check if this is a no-data chart (all prices are zero)
+    final isNoDataChart = chartData!.currentPrice == 0.0 && 
+                         chartData!.maxPrice == 0.0 && 
+                         chartData!.minPrice == 0.0;
+    
     final isPositive = chartData!.priceChangePercent >= 0;
-    final lineColor = widget.lineColor ?? (isPositive ? const Color(0xFF20CDA4) : const Color(0xFFF43672));
+    final lineColor = widget.lineColor ?? 
+                     (isNoDataChart ? Colors.grey : 
+                      (isPositive ? const Color(0xFF20CDA4) : const Color(0xFFF43672)));
     
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -467,14 +511,14 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Low: \$${chartData!.minPrice.toStringAsFixed(2)}',
+                          isNoDataChart ? 'No price data' : 'Low: \$${chartData!.minPrice.toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.grey,
                           ),
                         ),
                         Text(
-                          'High: \$${chartData!.maxPrice.toStringAsFixed(2)}',
+                          isNoDataChart ? 'available' : 'High: \$${chartData!.maxPrice.toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.grey,
@@ -486,7 +530,7 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         // Live price if available, otherwise use chart data
-                        if (livePrice != null)
+                        if (!isNoDataChart && livePrice != null)
                           Text(
                             '\$${livePrice!.price.toStringAsFixed(2)}',
                             style: const TextStyle(
@@ -497,22 +541,39 @@ class _CryptoChartWidgetState extends State<CryptoChartWidget> {
                           ),
                         Row(
                           children: [
-                            Icon(
-                              (livePrice?.change24h ?? chartData!.priceChangePercent) >= 0 
-                                  ? Icons.trending_up 
-                                  : Icons.trending_down,
-                              color: lineColor,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${(livePrice?.change24h ?? chartData!.priceChangePercent) >= 0 ? '+' : ''}${(livePrice?.change24h ?? chartData!.priceChangePercent).toStringAsFixed(2)}%',
-                              style: TextStyle(
+                            if (!isNoDataChart) ...[
+                              Icon(
+                                (livePrice?.change24h ?? chartData!.priceChangePercent) >= 0 
+                                    ? Icons.trending_up 
+                                    : Icons.trending_down,
                                 color: lineColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                                size: 16,
                               ),
-                            ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${(livePrice?.change24h ?? chartData!.priceChangePercent) >= 0 ? '+' : ''}${(livePrice?.change24h ?? chartData!.priceChangePercent).toStringAsFixed(2)}%',
+                                style: TextStyle(
+                                  color: lineColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ] else ...[
+                              Icon(
+                                Icons.help_outline,
+                                color: Colors.grey,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '0.00%',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ]
                           ],
                         ),
                       ],
