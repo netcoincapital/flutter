@@ -250,20 +250,115 @@ class SharedPreferencesUtils {
     }
   }
 
-  /// فرمت مقدار - مطابق با Kotlin
+  /// فرمت مقدار - نسخه بهبود یافته برای خوانایی بهتر
   static String formatAmount(double amount, double price) {
     if (amount == 0.0) return '0';
     
-    if (amount < 0.001) {
-      return amount.toStringAsFixed(8);
-    } else if (amount < 0.1) {
-      return amount.toStringAsFixed(6);
-    } else if (amount < 1.0) {
-      return amount.toStringAsFixed(4);
-    } else if (amount < 10.0) {
-      return amount.toStringAsFixed(3);
+    // برای مقادیر بسیار کوچک، از نمایش علمی استفاده کن
+    if (amount < 0.000001) {
+      return amount.toStringAsExponential(2);
+    }
+    // مقادیر خیلی کوچک با 8 رقم اعشار
+    else if (amount < 0.001) {
+      return _removeTrailingZeros(amount.toStringAsFixed(8));
+    }
+    // مقادیر کوچک با 6 رقم اعشار
+    else if (amount < 0.1) {
+      return _removeTrailingZeros(amount.toStringAsFixed(6));
+    }
+    // مقادیر کمتر از 1 با 4 رقم اعشار
+    else if (amount < 1.0) {
+      return _removeTrailingZeros(amount.toStringAsFixed(4));
+    }
+    // مقادیر متوسط با 3 رقم اعشار
+    else if (amount < 100.0) {
+      return _removeTrailingZeros(amount.toStringAsFixed(3));
+    }
+    // مقادیر بزرگ با کاما برای جداکننده هزارگان
+    else if (amount < 1000000) {
+      return _formatWithCommas(amount.toStringAsFixed(2));
+    }
+    // مقادیر خیلی بزرگ با نمایش مخفف
+    else {
+      return _formatLargeNumber(amount);
+    }
+  }
+
+  /// حذف صفرهای اضافی انتهایی
+  static String _removeTrailingZeros(String numberStr) {
+    if (numberStr.contains('.')) {
+      numberStr = numberStr.replaceAll(RegExp(r'0*$'), '');
+      numberStr = numberStr.replaceAll(RegExp(r'\.$'), '');
+    }
+    return numberStr;
+  }
+
+  /// اضافه کردن کاما برای جداکننده هزارگان
+  static String _formatWithCommas(String numberStr) {
+    final parts = numberStr.split('.');
+    final integerPart = parts[0];
+    final decimalPart = parts.length > 1 ? parts[1] : '';
+    
+    // اضافه کردن کاما به قسمت صحیح
+    String formattedInteger = '';
+    for (int i = 0; i < integerPart.length; i++) {
+      if (i > 0 && (integerPart.length - i) % 3 == 0) {
+        formattedInteger += ',';
+      }
+      formattedInteger += integerPart[i];
+    }
+    
+    return decimalPart.isNotEmpty ? '$formattedInteger.$decimalPart' : formattedInteger;
+  }
+
+  /// فرمت اعداد بزرگ با مخففات (K, M, B, T)
+  static String _formatLargeNumber(double amount) {
+    if (amount >= 1e12) {
+      return '${_removeTrailingZeros((amount / 1e12).toStringAsFixed(2))}T';
+    } else if (amount >= 1e9) {
+      return '${_removeTrailingZeros((amount / 1e9).toStringAsFixed(2))}B';
+    } else if (amount >= 1e6) {
+      return '${_removeTrailingZeros((amount / 1e6).toStringAsFixed(2))}M';
+    } else if (amount >= 1e3) {
+      return '${_removeTrailingZeros((amount / 1e3).toStringAsFixed(2))}K';
+    }
+    return _formatWithCommas(amount.toStringAsFixed(2));
+  }
+
+  /// فرمت کردن ارزش کل پورتفولیو
+  static String formatPortfolioValue(double value, String currencySymbol) {
+    if (value == 0.0) return '${currencySymbol}0.00';
+    
+    // برای مقادیر بزرگ، از مخففات استفاده کن
+    if (value >= 1e9) {
+      return '$currencySymbol${_removeTrailingZeros((value / 1e9).toStringAsFixed(2))}B';
+    } else if (value >= 1e6) {
+      return '$currencySymbol${_removeTrailingZeros((value / 1e6).toStringAsFixed(2))}M';
+    } else if (value >= 1e3) {
+      return '$currencySymbol${_removeTrailingZeros((value / 1e3).toStringAsFixed(2))}K';
+    } else if (value >= 100) {
+      return '$currencySymbol${_formatWithCommas(value.toStringAsFixed(0))}';
+    } else if (value >= 10) {
+      return '$currencySymbol${value.toStringAsFixed(1)}';
     } else {
-      return amount.toStringAsFixed(2);
+      return '$currencySymbol${value.toStringAsFixed(2)}';
+    }
+  }
+
+  /// فرمت کردن ارزش توکن (قیمت × موجودی)
+  static String formatTokenValue(double value, String currencySymbol) {
+    if (value == 0.0) return '${currencySymbol}0.00';
+    
+    if (value >= 1e6) {
+      return '$currencySymbol${_removeTrailingZeros((value / 1e6).toStringAsFixed(2))}M';
+    } else if (value >= 1e3) {
+      return '$currencySymbol${_removeTrailingZeros((value / 1e3).toStringAsFixed(2))}K';
+    } else if (value >= 1) {
+      return '$currencySymbol${_formatWithCommas(value.toStringAsFixed(2))}';
+    } else if (value >= 0.01) {
+      return '$currencySymbol${value.toStringAsFixed(2)}';
+    } else {
+      return '$currencySymbol${value.toStringAsFixed(4)}';
     }
   }
 

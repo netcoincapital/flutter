@@ -37,19 +37,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool isHidden = false;
   int selectedTab = 0;
   bool _isRefreshing = false; // جلوگیری از concurrent refresh
-  
+
   // ✅ Remove global cache - now handled per-wallet in AppProvider/WalletStateManager
   // Map<String, double> _cachedBalances = {}; // ❌ Removed global cache
   // Map<String, double> _displayBalances = {}; // ❌ Removed global display cache
-  
+
   int _debugTapCount = 0; // شمارنده تپ برای debug مخفی
-  
+
   // Sort and filter options
   String _sortOption = 'balance'; // 'balance', 'name', 'price'
   bool _hideZeroBalances = false;
   bool _showOnlyEnabled = false;
   List<String> _selectedBlockchains = [];
-  
+
   final SecuritySettingsManager _securityManager = SecuritySettingsManager.instance;
 
   // Safe translate method with fallback
@@ -74,15 +74,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    
+
     // Listen to BalanceManager updates for UI refresh
     BalanceManager.instance.addListener(_onBalanceManagerUpdate);
-    
+
     // ✅ Remove global cache loading - now handled per-wallet
     // _loadCachedBalances(); // ❌ Removed
     _initializeHomeScreen();
   }
-  
+
   void _onBalanceManagerUpdate() {
     if (mounted) {
       setState(() {
@@ -93,19 +93,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _initializeHomeScreen() async {
     print('🏠 HomeScreen: Starting initialization...');
-    
+
     try {
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       final priceProvider = Provider.of<PriceProvider>(context, listen: false);
-      
+
       // Initialize SecuritySettingsManager
       await _securityManager.initialize();
       print('🏠 HomeScreen: Security manager initialized');
-      
+
       // Initialize BalanceManager
       await BalanceManager.instance.initialize(appProvider.apiService);
       print('🏠 HomeScreen: BalanceManager initialized');
-      
+
       // Set current user and wallet context for BalanceManager
       // Use immediate setup if possible, otherwise delay briefly
       if (appProvider.currentUserId != null && appProvider.currentWalletName != null) {
@@ -115,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             appProvider.currentWalletName!,
           );
           print('🏠 HomeScreen: BalanceManager context set for user: ${appProvider.currentUserId}');
-          
+
           // Force UI refresh after BalanceManager is ready
           if (mounted) {
             setState(() {});
@@ -130,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               appProvider.currentWalletName!,
             );
             print('🏠 HomeScreen: BalanceManager context set (delayed) for user: ${appProvider.currentUserId}');
-            
+
             // Force UI refresh after BalanceManager is ready
             if (mounted) {
               setState(() {});
@@ -138,11 +138,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           }
         });
       }
-      
+
       // Initialize price provider
       await priceProvider.loadSelectedCurrency();
       print('🏠 HomeScreen: Price provider currency loaded');
-      
+
       // بلافاصله قیمت‌ها را بارگذاری کن (همزمان با UI loading)
       final tokenProvider = appProvider.tokenProvider;
       if (tokenProvider != null) {
@@ -174,35 +174,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           }
         });
       }
-      
+
       // Register device in background
       _registerDeviceOnHome();
       print('🏠 HomeScreen: Device registration started');
-      
+
       // Background data loading - بدون await (برای موجودی‌ها)
       _loadDataInBackground(appProvider, priceProvider);
-      
+
       // شروع periodic updates در background
       _startPeriodicUpdates();
-      
+
     } catch (e) {
       print('❌ HomeScreen: Error initializing: $e');
       // UI will still be shown even if initialization fails
     }
   }
-  
+
   /// بارگذاری داده‌ها در background بدون مسدود کردن UI
   Future<void> _loadDataInBackground(AppProvider appProvider, PriceProvider priceProvider) async {
     print('🔄 HomeScreen: Loading data in background...');
-    
+
     try {
       if (appProvider.tokenProvider != null) {
         final enabledTokens = appProvider.tokenProvider!.enabledTokens;
-        
+
         if (enabledTokens.isNotEmpty) {
           // ابتدا موجودی‌های cached را نمایش بده
           // _applyCachedBalancesToTokens(enabledTokens); // ❌ Removed global apply
-          
+
           // بارگذاری موجودی‌ها و قیمت‌ها به صورت موازی در background
           await Future.wait<void>([
             // دریافت موجودی‌های فوری
@@ -211,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _loadPricesForTokens(enabledTokens, priceProvider),
           ]);
         }
-        
+
         print('✅ HomeScreen: Background data loading completed');
       }
     } catch (e) {
@@ -228,23 +228,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('⏳ HomeScreen: Already refreshing balances, skipping...');
       return;
     }
-    
+
     _isRefreshing = true;
-    
+
     try {
       print('💰 HomeScreen: Loading balances for enabled tokens using BalanceManager');
-      
+
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       final currentUserId = appProvider.currentUserId;
-      
+
       if (currentUserId != null && currentUserId.isNotEmpty) {
         // Set active tokens for the current user in BalanceManager
         final enabledTokens = tokenProvider.enabledTokens;
         final activeSymbols = enabledTokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toList();
-        
+
         BalanceManager.instance.setActiveTokensForUser(currentUserId, activeSymbols);
         print('🔄 HomeScreen: Set ${activeSymbols.length} active tokens in BalanceManager');
-        
+
         // Check if we have cached balances first
         final upToDate = BalanceManager.instance.areBalancesUpToDate(currentUserId);
         if (!upToDate) {
@@ -255,28 +255,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         } else {
           print('✅ HomeScreen: Using cached balances (still valid)');
         }
-        
+
       } else {
         print('⚠️ HomeScreen: No valid user ID found for balance loading');
       }
-      
+
       // Debug: نمایش موجودی‌های فعلی
       final enabledTokens = tokenProvider.enabledTokens;
       print('🔍 HomeScreen DEBUG: Current enabled tokens with balances:');
       for (final token in enabledTokens) {
-        final balanceFromManager = currentUserId != null 
+        final balanceFromManager = currentUserId != null
             ? BalanceManager.instance.getTokenBalance(currentUserId, token.symbol ?? '')
             : 0.0;
         final displayAmount = _getDisplayAmount(token);
         print('   - ${token.symbol}: Manager=${balanceFromManager}, Token=${token.amount ?? 0.0}, Display=${displayAmount}');
       }
-      
+
       // Also debug BalanceManager state
       BalanceManager.instance.debugBalanceState();
-      
+
       // Full debug check
       BalanceDebugHelper.debugFullBalanceState(appProvider);
-      
+
       // Emergency fix: if all display amounts are 0, force a refresh
       final allZero = enabledTokens.every((token) => _getDisplayAmount(token) == 0.0);
       if (allZero && enabledTokens.isNotEmpty && currentUserId != null) {
@@ -290,7 +290,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           }
         });
       }
-      
+
     } catch (e) {
       print('❌ HomeScreen: Error loading balances: $e');
     } finally {
@@ -305,21 +305,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _loadPricesForTokens(List<CryptoToken> tokens, PriceProvider priceProvider) async {
     if (tokens.isEmpty) return;
-    
+
     print('🔄 HomeScreen: Loading prices for ${tokens.length} tokens');
-    
+
     // Get symbols from actual loaded tokens only
     final tokenSymbols = tokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toList();
-    
+
     if (tokenSymbols.isEmpty) {
       print('⚠️ HomeScreen: No valid token symbols found');
       return;
     }
-    
+
     // Fetch prices only for selected currency (for performance)
     final selectedCurrency = priceProvider.selectedCurrency;
     final currencies = [selectedCurrency];
-    
+
     print('🔄 HomeScreen: Fetching prices for symbols: $tokenSymbols (currency: $selectedCurrency)');
     await priceProvider.fetchPrices(tokenSymbols, currencies: currencies);
     print('✅ HomeScreen: Prices loaded successfully');
@@ -327,11 +327,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// شروع periodic updates برای wallet استاندارد
   Timer? _periodicTimer;
-  
+
   void _startPeriodicUpdates() {
     // Cancel existing timer if any
     _periodicTimer?.cancel();
-    
+
     // هر 90 ثانیه قیمت‌ها و موجودی‌ها را به‌روزرسانی کن برای پایداری
     _periodicTimer = Timer.periodic(const Duration(seconds: 90), (timer) {
       if (mounted) {
@@ -342,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
   }
-  
+
   void _stopPeriodicUpdates() {
     _periodicTimer?.cancel();
     _periodicTimer = null;
@@ -361,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       final priceProvider = Provider.of<PriceProvider>(context, listen: false);
-      
+
       if (appProvider.tokenProvider != null) {
         final enabledTokens = appProvider.tokenProvider!.enabledTokens;
         if (enabledTokens.isNotEmpty) {
@@ -373,21 +373,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('❌ HomeScreen: Error in safe prices-only refresh: $e');
     }
   }
-  
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    
+
     // Remove BalanceManager listener
     BalanceManager.instance.removeListener(_onBalanceManagerUpdate);
-    
+
     // ✅ Save current wallet's balance cache automatically through AppProvider
     // This is handled automatically when the app goes to background or switches context
-    
+
     _stopPeriodicUpdates(); // Stop periodic updates on dispose
     super.dispose();
   }
-  
+
   /// نمایش گزینه‌های مرتب‌سازی
   void _showSortOptions() {
     showModalBottomSheet(
@@ -416,7 +416,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            
+
             // Header
             Container(
               padding: const EdgeInsets.all(24),
@@ -446,7 +446,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            
+
             // Sort options
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -485,18 +485,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
-  
+
   // Additional filter state
   double _minBalanceFilter = 0.0;
   String _balanceFilterType = 'all'; // 'all', 'above', 'range'
-  
+
   /// نمایش گزینه‌های فیلتر
   void _showFilterOptions() {
     showModalBottomSheet(
@@ -529,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              
+
               // Header
               Container(
                 padding: const EdgeInsets.all(24),
@@ -579,7 +579,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
-              
+
               Flexible(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -613,7 +613,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               },
                             ),
                             const SizedBox(height: 20),
-                            
+
                             // Advanced balance filter
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -642,7 +642,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ),
                                   ),
                                   const SizedBox(height: 16),
-                                  
+
                                   // Quick preset buttons
                                   Wrap(
                                     spacing: 8,
@@ -655,9 +655,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       _buildPresetButton('\$1000+', 1000.0, setModalState),
                                     ],
                                   ),
-                                  
+
                                   const SizedBox(height: 16),
-                                  
+
                                   // Custom slider
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -713,9 +713,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ],
                         ),
                       ),
-                      
+
                       const SizedBox(height: 24),
-                      
+
                       // Blockchain filters with chips
                       _buildAdvancedFilterSection(
                         title: _safeTranslate('blockchain networks', 'Blockchain Networks'),
@@ -725,7 +725,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           runSpacing: 8,
                           children: [
                             'Bitcoin',
-                            'Ethereum', 
+                            'Ethereum',
                             'Binance Smart Chain',
                             'Polygon',
                             'Arbitrum',
@@ -746,13 +746,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           )).toList(),
                         ),
                       ),
-                      
+
                       const SizedBox(height: 32),
                     ],
                   ),
                 ),
               ),
-              
+
               // Apply button
               Container(
                 padding: const EdgeInsets.all(24),
@@ -785,7 +785,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
-  
+
   Widget _buildAdvancedFilterSection({
     required String title,
     required IconData icon,
@@ -813,7 +813,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ],
     );
   }
-  
+
   Widget _buildToggleOption({
     required String title,
     required String subtitle,
@@ -865,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
-  
+
   Widget _buildPresetButton(String label, double value, StateSetter setModalState) {
     final isSelected = _minBalanceFilter == value;
     return GestureDetector(
@@ -893,7 +893,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
-  
+
   Widget _buildBlockchainChip({
     required String label,
     required bool isSelected,
@@ -921,21 +921,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
-  
+
   /// اعمال فیلترها به لیست tokens
   List<CryptoToken> _applyFilters(List<CryptoToken> tokens, PriceProvider priceProvider) {
     var filteredTokens = tokens;
-    
+
     // Filter by zero balances
     if (_hideZeroBalances) {
       filteredTokens = filteredTokens.where((token) => (token.amount ?? 0.0) > 0).toList();
     }
-    
+
     // Filter by enabled status
     if (_showOnlyEnabled) {
       filteredTokens = filteredTokens.where((token) => token.isEnabled).toList();
     }
-    
+
     // Filter by minimum balance value
     if (_minBalanceFilter > 0) {
       filteredTokens = filteredTokens.where((token) {
@@ -945,21 +945,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return totalValue >= _minBalanceFilter;
       }).toList();
     }
-    
+
     // Filter by blockchain
     if (_selectedBlockchains.isNotEmpty) {
-      filteredTokens = filteredTokens.where((token) => 
-        _selectedBlockchains.contains(token.blockchainName)
+      filteredTokens = filteredTokens.where((token) =>
+          _selectedBlockchains.contains(token.blockchainName)
       ).toList();
     }
-    
+
     return filteredTokens;
   }
-  
+
   /// اعمال مرتب‌سازی به لیست tokens
   List<CryptoToken> _applySorting(List<CryptoToken> tokens, PriceProvider priceProvider) {
     var sortedTokens = List<CryptoToken>.from(tokens);
-    
+
     switch (_sortOption) {
       case 'balance':
         sortedTokens.sort((a, b) {
@@ -968,7 +968,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return bBalance.compareTo(aBalance); // Descending
         });
         break;
-        
+
       case 'name':
         sortedTokens.sort((a, b) {
           final aName = a.name ?? a.symbol ?? '';
@@ -976,7 +976,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return aName.toLowerCase().compareTo(bName.toLowerCase()); // Ascending
         });
         break;
-        
+
       case 'price':
         sortedTokens.sort((a, b) {
           final aPrice = priceProvider.getPrice(a.symbol ?? '') ?? 0.0;
@@ -985,14 +985,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
         break;
     }
-    
+
     return sortedTokens;
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    
+
     if (state == AppLifecycleState.paused) {
       // Save background time when app goes to background
       _securityManager.saveLastBackgroundTime();
@@ -1000,7 +1000,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // هنگام بازگشت به اپ، فوراً balance و قیمت‌ها را به‌روزرسانی کن
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _performFullRefresh();
-        
+
         // iOS-specific: Handle token state recovery
         _handleiOSAppResume();
       });
@@ -1012,7 +1012,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       final tokenProvider = appProvider.tokenProvider;
-      
+
       if (tokenProvider != null) {
         await tokenProvider.handleiOSAppResume();
         print('🍎 HomeScreen: iOS app resume handling completed');
@@ -1028,19 +1028,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('⏳ HomeScreen: Already refreshing, skipping full refresh...');
       return;
     }
-    
+
     final appProvider = Provider.of<AppProvider>(context, listen: false);
     final priceProvider = Provider.of<PriceProvider>(context, listen: false);
-    
+
     if (appProvider.tokenProvider == null) return;
-    
+
     final enabledTokens = appProvider.tokenProvider!.enabledTokens;
     if (enabledTokens.isEmpty) return;
-    
+
     try {
       // فقط قیمت‌ها را refresh کن، موجودی‌ها فقط اگر لازم باشد
       await _loadPricesForTokens(enabledTokens, priceProvider);
-      
+
       // موجودی‌ها را فقط اگر لازم باشد
       if (_shouldUpdateBalances()) {
         await _loadBalancesForEnabledTokens(appProvider.tokenProvider!);
@@ -1059,26 +1059,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _refreshPricesForEnabledTokens() async {
     await _safeRefreshPricesOnly();
   }
-  
+
   /// Refresh هم قیمت‌ها و هم موجودی‌ها برای پایداری
   void _refreshPricesAndBalances() async {
     try {
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       final priceProvider = Provider.of<PriceProvider>(context, listen: false);
       final currentUserId = appProvider.currentUserId;
-      
+
       if (appProvider.tokenProvider != null && currentUserId != null) {
         final enabledTokens = appProvider.tokenProvider!.enabledTokens;
-        
+
         if (enabledTokens.isNotEmpty) {
           print('🔄 HomeScreen: Periodic refresh - updating prices and balances');
-          
+
           // Refresh prices
           await _loadPricesForTokens(enabledTokens, priceProvider);
-          
+
           // Refresh balances through BalanceManager
           await BalanceManager.instance.refreshBalancesForUser(currentUserId, force: false);
-          
+
           print('✅ HomeScreen: Periodic refresh completed');
         }
       }
@@ -1093,20 +1093,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('⏳ HomeScreen: Already refreshing, skipping manual refresh...');
       return;
     }
-    
+
     _isRefreshing = true;
     final appProvider = Provider.of<AppProvider>(context, listen: false);
     final priceProvider = Provider.of<PriceProvider>(context, listen: false);
     final currentUserId = appProvider.currentUserId;
-    
+
     if (appProvider.tokenProvider == null) return;
-    
+
     try {
       print('🔄 HomeScreen: Manual refresh started');
-      
+
       final enabledTokens = appProvider.tokenProvider!.enabledTokens;
       if (enabledTokens.isEmpty) return;
-      
+
       // موازی: refresh موجودی‌ها و قیمت‌ها
       await Future.wait<void>([
         // Force refresh balances through BalanceManager
@@ -1115,9 +1115,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // Refresh prices
         _loadPricesForTokens(enabledTokens, priceProvider),
       ]);
-      
+
       print('✅ HomeScreen: Manual refresh completed successfully');
-      
+
     } catch (e) {
       print('❌ HomeScreen: Error in manual refresh: $e');
       rethrow; // re-throw for UI handling
@@ -1132,24 +1132,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('⏳ HomeScreen: Already refreshing, skipping immediate refresh...');
       return;
     }
-    
+
     final appProvider = Provider.of<AppProvider>(context, listen: false);
     final priceProvider = Provider.of<PriceProvider>(context, listen: false);
-    
+
     if (appProvider.tokenProvider == null) return;
-    
+
     try {
       print('⚡ HomeScreen: Performing immediate refresh after token change');
-      
+
       // Get newly enabled tokens
       final enabledTokens = appProvider.tokenProvider!.enabledTokens;
       print('⚡ HomeScreen: Current enabled tokens: ${enabledTokens.map((t) => t.symbol).toList()}');
-      
+
       if (enabledTokens.isEmpty) {
         print('⚠️ HomeScreen: No enabled tokens, skipping refresh');
         return;
       }
-      
+
       // موازی: دریافت موجودی‌ها و قیمت‌ها برای تمام توکن‌های فعال
       await Future.wait<void>([
         // دریافت موجودی‌های جدید با cache
@@ -1157,9 +1157,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // دریافت قیمت‌های جدید برای تمام توکن‌های فعال
         _loadPricesForTokens(enabledTokens, priceProvider),
       ]);
-      
+
       print('✅ HomeScreen: Immediate refresh completed successfully');
-      
+
     } catch (e) {
       print('❌ HomeScreen: Error in immediate refresh: $e');
     }
@@ -1169,12 +1169,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _updateAddTokenScreenCache(CryptoToken token) async {
     try {
       print('🔄 HomeScreen: Updating add_token screen cache for ${token.symbol}');
-      
+
       // Clear the add_token cache to force refresh
       // این کار باعث می‌شود که وقتی کاربر به add_token برود، حالت جدید نمایش داده شود
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('add_token_cached_tokens');
-      
+
       print('✅ HomeScreen: add_token cache cleared for synchronization');
     } catch (e) {
       print('❌ HomeScreen: Error updating add_token cache: $e');
@@ -1185,17 +1185,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _performTokenReactivation(CryptoToken token) async {
     try {
       print('🔄 HomeScreen: Reactivating token ${token.symbol}');
-      
+
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       final priceProvider = Provider.of<PriceProvider>(context, listen: false);
-      
+
       if (appProvider.tokenProvider != null) {
         // موازی: دریافت موجودی و قیمت فوری برای توکن فعال شده مجدد
         await Future.wait<void>([
           _updateSingleTokenBalanceWithCache(token, appProvider.tokenProvider!),
           _fetchTokenPrice(token, priceProvider),
         ]);
-        
+
         print('✅ HomeScreen: Token ${token.symbol} reactivated with fresh data');
       }
     } catch (e) {
@@ -1213,29 +1213,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return false;
         },
       );
-      
+
       if (success && token.amount > 0) {
         print('✅ HomeScreen: Updated balance for ${token.symbol}: ${token.amount}');
-        
+
         // ✅ Save updated balance per-wallet automatically
         final appProvider = Provider.of<AppProvider>(context, listen: false);
         if (appProvider.currentWalletName != null && appProvider.currentUserId != null) {
           final balanceCache = {token.symbol ?? '': token.amount};
-          
+
           // Get existing cache and update
           final existingCache = await SecureStorage.instance.getWalletBalanceCache(
-            appProvider.currentWalletName!, 
-            appProvider.currentUserId!
+              appProvider.currentWalletName!,
+              appProvider.currentUserId!
           );
           existingCache.addAll(balanceCache);
-          
+
           await WalletStateManager.instance.saveBalanceCacheForWallet(
-            appProvider.currentWalletName!, 
-            appProvider.currentUserId!, 
-            existingCache
+              appProvider.currentWalletName!,
+              appProvider.currentUserId!,
+              existingCache
           );
         }
-        
+
       } else {
         print('⚠️ HomeScreen: Failed to update ${token.symbol} balance, keeping existing value');
         // TokenProvider retains its existing state, no manual cache restoration needed
@@ -1334,9 +1334,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   textAlign: TextAlign.center,
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Wallets list
               Flexible(
                 child: FutureBuilder<List<Map<String, String>>>(
@@ -1352,7 +1352,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                     }
-                    
+
                     if (!snapshot.hasData || snapshot.data!.isEmpty) {
                       return Padding(
                         padding: const EdgeInsets.all(40),
@@ -1367,9 +1367,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                     }
-                    
+
                     final wallets = snapshot.data!;
-                    
+
                     return ListView.separated(
                       shrinkWrap: true,
                       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1379,23 +1379,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         final wallet = wallets[index];
                         final walletName = wallet['walletName'] ?? '';
                         final userId = wallet['userID'] ?? '';
-                        
+
                         return GestureDetector(
                           onTap: () async {
                             try {
                               // Save selected wallet to SecureStorage
                               await SecureStorage.instance.saveSelectedWallet(walletName, userId);
-                              
+
                               // Update AppProvider
                               final appProvider = Provider.of<AppProvider>(context, listen: false);
                               await appProvider.selectWallet(walletName);
-                              
+
                               // Close modal
                               Navigator.pop(context);
-                              
+
                               // Force refresh after wallet change
                               await _performImmediateRefreshAfterTokenChange();
-                              
+
                               // Show success message
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
@@ -1450,7 +1450,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   },
                 ),
               ),
-              
+
               const SizedBox(height: 20),
             ],
           ),
@@ -1465,9 +1465,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       print('🤖 Debug mode: Not iOS, skipping');
       return;
     }
-    
+
     print('🍎 === DEBUG MODE TRIGGERED ===');
-    
+
     try {
       // نمایش loading
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1477,19 +1477,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           backgroundColor: Colors.orange,
         ),
       );
-      
+
       final tokenProvider = appProvider.tokenProvider;
       if (tokenProvider != null) {
         // 1. نمایش وضعیت فعلی
         // await tokenProvider.tokenPreferences.debugTokenRecoveryStatus(); // Method not available in utils TokenPreferences
-        
+
         // 2. اگر توکن‌های فعال کم هستند، force recovery کن
         final enabledCount = tokenProvider.enabledTokens.length;
         print('🍎 Debug: Current enabled tokens count: $enabledCount');
-        
+
         if (enabledCount <= 3) { // فقط توکن‌های پیش‌فرض
           print('🍎 Debug: Low token count detected, forcing recovery...');
-          
+
           // نمایش دیالوگ تأیید
           final shouldRecover = await showDialog<bool>(
             context: context,
@@ -1508,10 +1508,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           );
-          
+
           if (shouldRecover == true) {
             print('🍎 Debug: User confirmed recovery, starting...');
-            
+
             // نمایش loading
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -1520,17 +1520,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 backgroundColor: Colors.green,
               ),
             );
-            
+
             // Force recovery
             // await tokenProvider.tokenPreferences.forceRecoveryFromSecureStorage(); // Method not available in utils TokenPreferences
-            
+
             // اجبار به همگام‌سازی مجدد
             await tokenProvider.ensureTokensSynchronized();
-            
+
             // نمایش نتیجه
             final newEnabledCount = tokenProvider.enabledTokens.length;
             print('🍎 Debug: Recovery completed. New enabled tokens count: $newEnabledCount');
-            
+
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('🍎 Recovery completed!\nEnabled tokens: $enabledCount → $newEnabledCount'),
@@ -1552,14 +1552,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     } catch (e) {
       print('🍎 Debug mode error: $e');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('An error occurred during diagnostics'),
-              backgroundColor: Colors.red,
-            ),
-          );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('An error occurred during diagnostics'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
-    
+
     print('🍎 === DEBUG MODE COMPLETED ===');
   }
 
@@ -1568,523 +1568,523 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async {
-        // خروج از اپلیکیشن بجای برگشت به صفحه قبل
-        SystemNavigator.pop();
-        return false;
-      },
-      child: Consumer<AppProvider>(
-        builder: (context, appProvider, _) {
-        // Show loading only if AppProvider is not initialized yet
-        if (appProvider.tokenProvider == null) {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            body: SafeArea(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _safeTranslate('loading wallet', 'Loading wallet...'),
-                      style: const TextStyle(color: Color(0xFF666666)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-
-        final walletName = appProvider.currentWalletName ?? _safeTranslate('my wallet', 'My Wallet');
-        final tokenProvider = appProvider.tokenProvider!;
-        
-        // Wait for TokenProvider to be fully initialized
-        if (tokenProvider.isLoading || 
-            (!tokenProvider.isFullyReady && tokenProvider.enabledTokens.isEmpty)) {
-          
-          // Debug current state
-          print('🏠 HomeScreen: TokenProvider not ready yet');
-          tokenProvider.debugCurrentState();
-          
-          return Scaffold(
-            backgroundColor: Colors.white,
-            body: SafeArea(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _safeTranslate('initializing wallet', 'Initializing wallet...'),
-                      style: const TextStyle(color: Color(0xFF666666)),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _safeTranslate('loading tokens', 'Loading your tokens...'),
-                      style: const TextStyle(color: Color(0xFF999999), fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-        
-        // Debug final state
-        print('🏠 HomeScreen: TokenProvider is ready, rendering UI');
-        tokenProvider.debugCurrentState();
-        
-        // Additional debug: Check token preferences state
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          tokenProvider.debugTokenPreferences();
-        });
-        
-        // Pre-cache logos when tokens are available (but don't wait for it)
-        if (tokenProvider.enabledTokens.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            preCacheTokenLogos(tokenProvider.enabledTokens);
-          });
-        }
-        
-        // Show loading indicator if TokenProvider is still loading and has no tokens
-        if (tokenProvider.isLoading && tokenProvider.enabledTokens.isEmpty) {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            body: SafeArea(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _safeTranslate('initializing wallet', 'Initializing wallet...'),
-                      style: const TextStyle(color: Color(0xFF666666)),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _safeTranslate('please wait', 'Please wait...'),
-                      style: const TextStyle(color: Color(0xFF999999), fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-        
-        // Show "Add Token" screen only if loading is complete and no tokens found
-        if (!tokenProvider.isLoading && tokenProvider.enabledTokens.isEmpty) {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            body: SafeArea(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.account_balance_wallet, size: 64, color: Colors.grey.withOpacity(0.3)),
-                    const SizedBox(height: 16),
-                    Text(
-                      _safeTranslate('no active tokens found', 'No active tokens found'),
-                      style: const TextStyle(color: Color(0xFF555555), fontSize: 16),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
+        onWillPop: () async {
+          // خروج از اپلیکیشن بجای برگشت به صفحه قبل
+          SystemNavigator.pop();
+          return false;
+        },
+        child: Consumer<AppProvider>(
+          builder: (context, appProvider, _) {
+            // Show loading only if AppProvider is not initialized yet
+            if (appProvider.tokenProvider == null) {
+              return Scaffold(
+                backgroundColor: Colors.white,
+                body: SafeArea(
+                  child: Center(
+                    child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        TextButton(
-                          onPressed: () => Navigator.pushNamed(context, '/add-token'),
-                          child: Text(_safeTranslate('add token', 'Add Token')),
+                        const CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
                         ),
-                        const SizedBox(width: 16),
-                        TextButton(
-                          onPressed: () async {
-                            // Force refresh TokenProvider
-                            await tokenProvider.forceRefresh();
-                            // Also ensure synchronization
-                            await tokenProvider.ensureTokensSynchronized();
-                          },
-                          child: Text(_safeTranslate('refresh', 'Refresh')),
+                        const SizedBox(height: 16),
+                        Text(
+                          _safeTranslate('loading wallet', 'Loading wallet...'),
+                          style: const TextStyle(color: Color(0xFF666666)),
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          );
-        }
-        
-        return MainLayout(
-            child: Scaffold(
-              backgroundColor: Colors.white,
-              body: SafeArea(
-              child: Column(
-                children: [
-                  // Loading indicator for background tasks
-                  if (tokenProvider.isLoading)
-                    Container(
-                      height: 3,
-                      child: const LinearProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
-                        backgroundColor: Color(0xFFE0E0E0),
-                      ),
-                    ),
-                  // Header
-                  Padding(
-                    padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+              );
+            }
+
+            final walletName = appProvider.currentWalletName ?? _safeTranslate('my wallet', 'My Wallet');
+            final tokenProvider = appProvider.tokenProvider!;
+
+            // Wait for TokenProvider to be fully initialized
+            if (tokenProvider.isLoading ||
+                (!tokenProvider.isFullyReady && tokenProvider.enabledTokens.isEmpty)) {
+
+              // Debug current state
+              print('🏠 HomeScreen: TokenProvider not ready yet');
+              tokenProvider.debugCurrentState();
+
+              return Scaffold(
+                backgroundColor: Colors.white,
+                body: SafeArea(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Left icons
+                        const CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _safeTranslate('initializing wallet', 'Initializing wallet...'),
+                          style: const TextStyle(color: Color(0xFF666666)),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _safeTranslate('loading tokens', 'Loading your tokens...'),
+                          style: const TextStyle(color: Color(0xFF999999), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            // Debug final state
+            print('🏠 HomeScreen: TokenProvider is ready, rendering UI');
+            tokenProvider.debugCurrentState();
+
+            // Additional debug: Check token preferences state
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              tokenProvider.debugTokenPreferences();
+            });
+
+            // Pre-cache logos when tokens are available (but don't wait for it)
+            if (tokenProvider.enabledTokens.isNotEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                preCacheTokenLogos(tokenProvider.enabledTokens);
+              });
+            }
+
+            // Show loading indicator if TokenProvider is still loading and has no tokens
+            if (tokenProvider.isLoading && tokenProvider.enabledTokens.isEmpty) {
+              return Scaffold(
+                backgroundColor: Colors.white,
+                body: SafeArea(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _safeTranslate('initializing wallet', 'Initializing wallet...'),
+                          style: const TextStyle(color: Color(0xFF666666)),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _safeTranslate('please wait', 'Please wait...'),
+                          style: const TextStyle(color: Color(0xFF999999), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            // Show "Add Token" screen only if loading is complete and no tokens found
+            if (!tokenProvider.isLoading && tokenProvider.enabledTokens.isEmpty) {
+              return Scaffold(
+                backgroundColor: Colors.white,
+                body: SafeArea(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.account_balance_wallet, size: 64, color: Colors.grey.withOpacity(0.3)),
+                        const SizedBox(height: 16),
+                        Text(
+                          _safeTranslate('no active tokens found', 'No active tokens found'),
+                          style: const TextStyle(color: Color(0xFF555555), fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            TextButton(
+                              onPressed: () => Navigator.pushNamed(context, '/add-token'),
+                              child: Text(_safeTranslate('add token', 'Add Token')),
+                            ),
+                            const SizedBox(width: 16),
+                            TextButton(
+                              onPressed: () async {
+                                // Force refresh TokenProvider
+                                await tokenProvider.forceRefresh();
+                                // Also ensure synchronization
+                                await tokenProvider.ensureTokensSynchronized();
+                              },
+                              child: Text(_safeTranslate('refresh', 'Refresh')),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return MainLayout(
+              child: Scaffold(
+                backgroundColor: Colors.white,
+                body: SafeArea(
+                  child: Column(
+                    children: [
+                      // Loading indicator for background tasks
+                      if (tokenProvider.isLoading)
+                        Container(
+                          height: 3,
+                          child: const LinearProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0BAB9B)),
+                            backgroundColor: Color(0xFFE0E0E0),
+                          ),
+                        ),
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Left icons
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () async {
+                                    // Navigate to add token screen with immediate refresh on return
+                                    final result = await Navigator.pushNamed(context, '/add-token');
+
+                                    // فوراً refresh کن بدون توجه به result
+                                    print('🔄 HomeScreen: Returned from add-token screen, performing immediate refresh');
+                                    await _performImmediateRefreshAfterTokenChange();
+                                  },
+                                  child: Image.asset('assets/images/music.png', width: 18, height: 18),
+                                ),
+                                const SizedBox(width: 12),
+                              ],
+                            ),
+                            // Center wallet name and visibility
+                            GestureDetector(
+                              onTap: () {
+                                // Debug tap counter مخفی برای iOS
+                                _debugTapCount++;
+                                print('🔍 Debug tap count: $_debugTapCount');
+
+                                // اگر ۷ بار tap شده، debug methods رو فراخوانی کن
+                                if (_debugTapCount >= 7) {
+                                  _debugTapCount = 0; // ریست کن
+                                  _triggerDebugMode(appProvider);
+                                }
+
+                                // اگر کمتر از 7 بار tap شده و iOS است، countdown نمایش بده
+                                if (_debugTapCount > 3 && Platform.isIOS) {
+                                  final remaining = 7 - _debugTapCount;
+                                  // Hide explicit debug text in UI
+                                }
+
+                                // همچنین والت مودال را نمایش بده
+                                _showWalletModal();
+                              },
+                              child: Row(
+                                children: [
+                                  Text(
+                                    walletName,
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  GestureDetector(
+                                    onTap: () => setState(() => isHidden = !isHidden),
+                                    child: Icon(
+                                      isHidden ? Icons.visibility_off : Icons.visibility,
+                                      size: 16,
+                                      color: const Color(0xFF666666),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Right icon
                             GestureDetector(
                               onTap: () async {
                                 // Navigate to add token screen with immediate refresh on return
                                 final result = await Navigator.pushNamed(context, '/add-token');
-                                
+
                                 // فوراً refresh کن بدون توجه به result
                                 print('🔄 HomeScreen: Returned from add-token screen, performing immediate refresh');
                                 await _performImmediateRefreshAfterTokenChange();
                               },
-                              child: Image.asset('assets/images/music.png', width: 18, height: 18),
+                              child: Image.asset('assets/images/search.png', width: 18, height: 18),
                             ),
-                            const SizedBox(width: 12),
                           ],
                         ),
-                        // Center wallet name and visibility
-                        GestureDetector(
-                          onTap: () {
-                            // Debug tap counter مخفی برای iOS
-                            _debugTapCount++;
-                            print('🔍 Debug tap count: $_debugTapCount');
-                            
-                            // اگر ۷ بار tap شده، debug methods رو فراخوانی کن
-                            if (_debugTapCount >= 7) {
-                              _debugTapCount = 0; // ریست کن
-                              _triggerDebugMode(appProvider);
-                            }
-                            
-                            // اگر کمتر از 7 بار tap شده و iOS است، countdown نمایش بده
-                            if (_debugTapCount > 3 && Platform.isIOS) {
-                              final remaining = 7 - _debugTapCount;
-                              // Hide explicit debug text in UI
-                            }
-                            
-                            // همچنین والت مودال را نمایش بده
-                            _showWalletModal();
-                          },
-                          child: Row(
-                            children: [
-                              Text(
-                                walletName,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-                              ),
-                              const SizedBox(width: 6),
-                              GestureDetector(
-                                onTap: () => setState(() => isHidden = !isHidden),
-                                                                child: Icon(
-                                    isHidden ? Icons.visibility_off : Icons.visibility,
-                                    size: 16,
-                                    color: const Color(0xFF666666),
-                                  ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Right icon
-                        GestureDetector(
-                          onTap: () async {
-                            // Navigate to add token screen with immediate refresh on return
-                            final result = await Navigator.pushNamed(context, '/add-token');
-                            
-                            // فوراً refresh کن بدون توجه به result
-                            print('🔄 HomeScreen: Returned from add-token screen, performing immediate refresh');
-                            await _performImmediateRefreshAfterTokenChange();
-                          },
-                          child: Image.asset('assets/images/search.png', width: 18, height: 18),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // User profile section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 16),
-                        Consumer<PriceProvider>(
-                          builder: (context, priceProvider, child) {
-                            final totalValue = _calculateTotalValue(tokenProvider.enabledTokens, priceProvider);
-                            final currencySymbol = priceProvider.getCurrencySymbol();
-                            final formattedValue = NumberFormat.currency(symbol: currencySymbol, decimalDigits: 2).format(totalValue);
-                            return Text(
-                              isHidden ? '****' : formattedValue,
-                              style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                      ),
+                      // User profile section
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                        child: Column(
                           children: [
-                            Icon(
-                              Icons.arrow_upward,
-                              size: 12,
-                              color: Colors.green,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              isHidden ? '**** +2.5%' : '+2.5%',
-                              style: const TextStyle(fontSize: 16, color: Colors.green),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Action buttons
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _ActionButtonWithImage(
-                          imagePath: 'assets/images/send.png',
-                          label: _safeTranslate('send', 'Send'),
-                          onTap: () {
-                            Navigator.pushNamed(context, '/send');
-                          },
-                          bgColor: const Color(0x80D7FBE7),
-                        ),
-                        _ActionButtonWithImage(
-                          imagePath: 'assets/images/receive.png',
-                          label: _safeTranslate('receive', 'Receive'),
-                          onTap: () {
-                            Navigator.pushNamed(context, '/receive');
-                          },
-                          bgColor: const Color(0x80D7F0F1),
-                        ),
-                        Consumer<HistoryProvider>(
-                          builder: (context, historyProvider, child) {
-                            final pendingCount = historyProvider.pendingTransactionCount;
-                            return _ActionButtonWithImage(
-                              imagePath: 'assets/images/history.png',
-                              label: _safeTranslate('history', 'History'),
-                              onTap: () {
-                                Navigator.pushNamed(context, '/history');
+                            const SizedBox(height: 16),
+                            Consumer<PriceProvider>(
+                              builder: (context, priceProvider, child) {
+                                final totalValue = _calculateTotalValue(tokenProvider.enabledTokens, priceProvider);
+                                final currencySymbol = priceProvider.getCurrencySymbol();
+                                final formattedValue = SharedPreferencesUtils.formatPortfolioValue(totalValue, currencySymbol);
+                                return Text(
+                                  isHidden ? '****' : formattedValue,
+                                  style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+                                );
                               },
-                              bgColor: const Color(0x80D6E8FF),
-                              badge: pendingCount > 0 ? pendingCount.toString() : null,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Tabs with filter and sort icons
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              _TabButton(
-                                label: _safeTranslate('cryptos', 'Cryptos'),
-                                selected: selectedTab == 0,
-                                onTap: () => setState(() => selectedTab = 0),
-                              ),
-                              _TabButton(
-                                label: _safeTranslate('nfts', "NFT's"),
-                                selected: selectedTab == 1,
-                                onTap: () => setState(() => selectedTab = 1),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Filter and Sort icons
-                        Row(
-                          children: [
-                            _FilterSortIcon(
-                              icon: Icons.sort_by_alpha,
-                              tooltip: _safeTranslate('sort alphabetically', 'Sort A-Z'),
-                              onTap: () => _showSortOptions(),
                             ),
-                            const SizedBox(width: 12),
-                            _FilterSortIcon(
-                              icon: Icons.filter_list,
-                              tooltip: _safeTranslate('filter tokens', 'Filter tokens'),
-                              onTap: () => _showFilterOptions(),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.arrow_upward,
+                                  size: 12,
+                                  color: Colors.green,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isHidden ? '**** +2.5%' : '+2.5%',
+                                  style: const TextStyle(fontSize: 16, color: Colors.green),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  // Token list or NFT
-                  Expanded(
-                    child: selectedTab == 0
-                        ? Consumer<PriceProvider>(
-                            builder: (context, priceProvider, _) {
-                              var enabledTokens = tokenProvider.enabledTokens;
-                              
-                              // Apply filters
-                              enabledTokens = _applyFilters(enabledTokens, priceProvider);
-                              
-                              // Apply sorting
-                              enabledTokens = _applySorting(enabledTokens, priceProvider);
-                              return RefreshIndicator(
-                                onRefresh: _performManualRefresh,
-                                color: const Color(0xFF0BAB9B),
-                                child: ListView.separated(
-                                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 90),
-                                  itemCount: enabledTokens.length,
-                                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                                  itemBuilder: (context, index) {
-                                    final token = enabledTokens[index];
-                                    final price = priceProvider.getPrice(token.symbol ?? '') ?? 0.0;
-                                    return _SwipeableTokenRow(
-                                      key: ValueKey(token.symbol ?? token.name ?? index),
-                                      token: token,
-                                      isHidden: isHidden,
-                                      tokenLogoCacheManager: tokenLogoCacheManager,
-                                      price: price,
-                                      displayAmount: _getDisplayAmount(token),
-                                      onSwipeToDisable: () async {
-                                        print('🔄 HomeScreen: Swiping to disable token ${token.symbol}');
-                                        
-                                        try {
-                                          // غیرفعال کردن توکن در TokenProvider - مشابه Android
-                                          await tokenProvider.toggleToken(token, false);
-                                          
-                                          // ذخیره لیست active tokens برای والت فعلی (Persistence برای بعد از kill)
-                                          try {
-                                            final appProvider = Provider.of<AppProvider>(context, listen: false);
-                                            final walletName = appProvider.currentWalletName;
-                                            final userId = appProvider.currentUserId;
-                                            if (walletName != null && userId != null) {
-                                              final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
-                                              await WalletStateManager.instance.saveActiveTokensForWallet(
-                                                walletName,
-                                                userId,
-                                                activeSymbols,
-                                              );
-                                              print('💾 HomeScreen: Persisted active tokens after disable (${activeSymbols.length})');
-                                            }
-                                          } catch (persistError) {
-                                            print('⚠️ HomeScreen: Error persisting active tokens after disable: $persistError');
-                                          }
+                      ),
+                      const SizedBox(height: 16),
+                      // Action buttons
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _ActionButtonWithImage(
+                              imagePath: 'assets/images/send.png',
+                              label: _safeTranslate('send', 'Send'),
+                              onTap: () {
+                                Navigator.pushNamed(context, '/send');
+                              },
+                              bgColor: const Color(0x80D7FBE7),
+                            ),
+                            _ActionButtonWithImage(
+                              imagePath: 'assets/images/receive.png',
+                              label: _safeTranslate('receive', 'Receive'),
+                              onTap: () {
+                                Navigator.pushNamed(context, '/receive');
+                              },
+                              bgColor: const Color(0x80D7F0F1),
+                            ),
+                            Consumer<HistoryProvider>(
+                              builder: (context, historyProvider, child) {
+                                final pendingCount = historyProvider.pendingTransactionCount;
+                                return _ActionButtonWithImage(
+                                  imagePath: 'assets/images/history.png',
+                                  label: _safeTranslate('history', 'History'),
+                                  onTap: () {
+                                    Navigator.pushNamed(context, '/history');
+                                  },
+                                  bgColor: const Color(0x80D6E8FF),
+                                  badge: pendingCount > 0 ? pendingCount.toString() : null,
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Tabs with filter and sort icons
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  _TabButton(
+                                    label: _safeTranslate('cryptos', 'Cryptos'),
+                                    selected: selectedTab == 0,
+                                    onTap: () => setState(() => selectedTab = 0),
+                                  ),
+                                  _TabButton(
+                                    label: _safeTranslate('nfts', "NFT's"),
+                                    selected: selectedTab == 1,
+                                    onTap: () => setState(() => selectedTab = 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Filter and Sort icons
+                            Row(
+                              children: [
+                                _FilterSortIcon(
+                                  icon: Icons.sort_by_alpha,
+                                  tooltip: _safeTranslate('sort alphabetically', 'Sort A-Z'),
+                                  onTap: () => _showSortOptions(),
+                                ),
+                                const SizedBox(width: 12),
+                                _FilterSortIcon(
+                                  icon: Icons.filter_list,
+                                  tooltip: _safeTranslate('filter tokens', 'Filter tokens'),
+                                  onTap: () => _showFilterOptions(),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      // Token list or NFT
+                      Expanded(
+                        child: selectedTab == 0
+                            ? Consumer<PriceProvider>(
+                          builder: (context, priceProvider, _) {
+                            var enabledTokens = tokenProvider.enabledTokens;
 
-                                          // اطمینان از به‌روزرسانی کش add_token_screen
-                                          await _updateAddTokenScreenCache(token);
-                                          
-                                          // نمایش پیام confirmation مشابه Android
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text(_safeTranslate('token disabled', 'Token {symbol} disabled').replaceAll('{symbol}', token.symbol ?? '')),
-                                              backgroundColor: const Color(0xFFFF1961),
-                                              duration: const Duration(seconds: 3),
-                                              action: SnackBarAction(
-                                                label: _safeTranslate('undo', 'Undo'),
-                                                textColor: Colors.white,
-                                                onPressed: () async {
-                                                  // Re-enable the token
-                                                  await tokenProvider.toggleToken(token, true);
-                                                  await _updateAddTokenScreenCache(token);
-                                                   // ذخیره active tokens پس از فعال‌سازی مجدد
-                                                   try {
-                                                     final appProvider = Provider.of<AppProvider>(context, listen: false);
-                                                     final walletName = appProvider.currentWalletName;
-                                                     final userId = appProvider.currentUserId;
-                                                     if (walletName != null && userId != null) {
-                                                       final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
-                                                       await WalletStateManager.instance.saveActiveTokensForWallet(
-                                                         walletName,
-                                                         userId,
-                                                         activeSymbols,
-                                                       );
-                                                       print('💾 HomeScreen: Persisted active tokens after re-enable (${activeSymbols.length})');
-                                                     }
-                                                   } catch (persistError) {
-                                                     print('⚠️ HomeScreen: Error persisting active tokens after re-enable: $persistError');
-                                                   }
-                                                  
-                                                  // Refresh balance and price for re-enabled token
-                                                  await _performTokenReactivation(token);
-                                                },
-                                              ),
-                                            ),
-                                          );
-                                          
-                                          print('✅ HomeScreen: Token ${token.symbol} disabled successfully');
-                                        } catch (e) {
-                                          print('❌ HomeScreen: Error disabling token ${token.symbol}: $e');
-                                          
-                                          // نمایش پیام خطا
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text(_safeTranslate('error disabling token', 'Error disabling token: {error}').replaceAll('{error}', e.toString())),
-                                              backgroundColor: Colors.red,
-                                            ),
-                                          );
+                            // Apply filters
+                            enabledTokens = _applyFilters(enabledTokens, priceProvider);
+
+                            // Apply sorting
+                            enabledTokens = _applySorting(enabledTokens, priceProvider);
+                            return RefreshIndicator(
+                              onRefresh: _performManualRefresh,
+                              color: const Color(0xFF0BAB9B),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(20, 0, 20, 90),
+                                itemCount: enabledTokens.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                itemBuilder: (context, index) {
+                                  final token = enabledTokens[index];
+                                  final price = priceProvider.getPrice(token.symbol ?? '') ?? 0.0;
+                                  return _SwipeableTokenRow(
+                                    key: ValueKey(token.symbol ?? token.name ?? index),
+                                    token: token,
+                                    isHidden: isHidden,
+                                    tokenLogoCacheManager: tokenLogoCacheManager,
+                                    price: price,
+                                    displayAmount: _getDisplayAmount(token),
+                                    onSwipeToDisable: () async {
+                                      print('🔄 HomeScreen: Swiping to disable token ${token.symbol}');
+
+                                      try {
+                                        // غیرفعال کردن توکن در TokenProvider - مشابه Android
+                                        await tokenProvider.toggleToken(token, false);
+
+                                        // ذخیره لیست active tokens برای والت فعلی (Persistence برای بعد از kill)
+                                        try {
+                                          final appProvider = Provider.of<AppProvider>(context, listen: false);
+                                          final walletName = appProvider.currentWalletName;
+                                          final userId = appProvider.currentUserId;
+                                          if (walletName != null && userId != null) {
+                                            final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
+                                            await WalletStateManager.instance.saveActiveTokensForWallet(
+                                              walletName,
+                                              userId,
+                                              activeSymbols,
+                                            );
+                                            print('💾 HomeScreen: Persisted active tokens after disable (${activeSymbols.length})');
+                                          }
+                                        } catch (persistError) {
+                                          print('⚠️ HomeScreen: Error persisting active tokens after disable: $persistError');
                                         }
-                                      },
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => CryptoDetailsScreen(
-                                              tokenName: token.name ?? '',
-                                              tokenSymbol: token.symbol ?? '',
-                                              iconUrl: token.iconUrl ?? 'https://coinceeper.com/defaultIcons/coin.png',
-                                              isToken: token.isToken,
-                                              blockchainName: token.blockchainName ?? '',
-                                              gasFee: 0.0, // TODO: دریافت از API
+
+                                        // اطمینان از به‌روزرسانی کش add_token_screen
+                                        await _updateAddTokenScreenCache(token);
+
+                                        // نمایش پیام confirmation مشابه Android
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(_safeTranslate('token disabled', 'Token {symbol} disabled').replaceAll('{symbol}', token.symbol ?? '')),
+                                            backgroundColor: const Color(0xFFFF1961),
+                                            duration: const Duration(seconds: 3),
+                                            action: SnackBarAction(
+                                              label: _safeTranslate('undo', 'Undo'),
+                                              textColor: Colors.white,
+                                              onPressed: () async {
+                                                // Re-enable the token
+                                                await tokenProvider.toggleToken(token, true);
+                                                await _updateAddTokenScreenCache(token);
+                                                // ذخیره active tokens پس از فعال‌سازی مجدد
+                                                try {
+                                                  final appProvider = Provider.of<AppProvider>(context, listen: false);
+                                                  final walletName = appProvider.currentWalletName;
+                                                  final userId = appProvider.currentUserId;
+                                                  if (walletName != null && userId != null) {
+                                                    final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
+                                                    await WalletStateManager.instance.saveActiveTokensForWallet(
+                                                      walletName,
+                                                      userId,
+                                                      activeSymbols,
+                                                    );
+                                                    print('💾 HomeScreen: Persisted active tokens after re-enable (${activeSymbols.length})');
+                                                  }
+                                                } catch (persistError) {
+                                                  print('⚠️ HomeScreen: Error persisting active tokens after re-enable: $persistError');
+                                                }
+
+                                                // Refresh balance and price for re-enabled token
+                                                await _performTokenReactivation(token);
+                                              },
                                             ),
                                           ),
                                         );
-                                      },
-                                    );
-                                  },
-                                ),
-                              );
-                            },
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _performManualRefresh,
-                            color: const Color(0xFF0BAB9B),
-                            child: SingleChildScrollView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              child: Container(
-                                height: MediaQuery.of(context).size.height * 0.5,
-                                child: _NFTEmptyWidget(_safeTranslate('no nft found', 'No NFT Found')),
+
+                                        print('✅ HomeScreen: Token ${token.symbol} disabled successfully');
+                                      } catch (e) {
+                                        print('❌ HomeScreen: Error disabling token ${token.symbol}: $e');
+
+                                        // نمایش پیام خطا
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(_safeTranslate('error disabling token', 'Error disabling token: {error}').replaceAll('{error}', e.toString())),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => CryptoDetailsScreen(
+                                            tokenName: token.name ?? '',
+                                            tokenSymbol: token.symbol ?? '',
+                                            iconUrl: token.iconUrl ?? 'https://coinceeper.com/defaultIcons/coin.png',
+                                            isToken: token.isToken,
+                                            blockchainName: token.blockchainName ?? '',
+                                            gasFee: 0.0, // TODO: دریافت از API
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
                               ),
+                            );
+                          },
+                        )
+                            : RefreshIndicator(
+                          onRefresh: _performManualRefresh,
+                          color: const Color(0xFF0BAB9B),
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: Container(
+                              height: MediaQuery.of(context).size.height * 0.5,
+                              child: _NFTEmptyWidget(_safeTranslate('no nft found', 'No NFT Found')),
                             ),
                           ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-        );
-      },
-    )
-);  }
+            );
+          },
+        )
+    );  }
 
 
   /// محاسبه کل ارزش توکن‌ها با استفاده از PriceProvider
@@ -2105,17 +2105,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       final appProvider = Provider.of<AppProvider>(context, listen: false);
       final currentUserId = appProvider.currentUserId;
-      
+
       // Get the token's own amount first as baseline
       final tokenAmount = token.amount ?? 0.0;
-      
+
       // If we have a user ID, try to get from BalanceManager as well
       if (currentUserId != null && currentUserId.isNotEmpty) {
         final balanceFromManager = BalanceManager.instance.getTokenBalance(
           currentUserId,
           token.symbol ?? '',
         );
-        
+
         // Priority logic: prefer the higher value or the most recently valid one
         if (balanceFromManager > 0.0 && tokenAmount > 0.0) {
           // Both have values - prefer the higher one
@@ -2127,14 +2127,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // Only token has value
           return tokenAmount;
         }
-        
+
         // If both are 0, at least show the token's amount (might be 0 but consistent)
         return tokenAmount;
       }
-      
+
       // Fallback to token amount if no user ID
       return tokenAmount;
-      
+
     } catch (e) {
       print('❌ HomeScreen: Error in _getDisplayAmount for ${token.symbol}: $e');
       // Safe fallback
@@ -2150,9 +2150,9 @@ class _ActionButton extends StatelessWidget {
   final Color bgColor;
   final String? badge;
   const _ActionButton({
-    required this.icon, 
-    required this.label, 
-    required this.onTap, 
+    required this.icon,
+    required this.label,
+    required this.onTap,
     required this.bgColor,
     this.badge,
   });
@@ -2217,9 +2217,9 @@ class _ActionButtonWithImage extends StatelessWidget {
   final Color bgColor;
   final String? badge;
   const _ActionButtonWithImage({
-    required this.imagePath, 
-    required this.label, 
-    required this.onTap, 
+    required this.imagePath,
+    required this.label,
+    required this.onTap,
     required this.bgColor,
     this.badge,
   });
@@ -2364,7 +2364,7 @@ class _SwipeableTokenRowState extends State<_SwipeableTokenRow>
   double _dragOffset = 0.0;
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
-  
+
   static const double _maxSwipe = -80.0;
   static const double _disableThreshold = -48.0; // 60% of maxSwipe - مشابه Android
 
@@ -2415,7 +2415,7 @@ class _SwipeableTokenRowState extends State<_SwipeableTokenRow>
       parent: _animationController,
       curve: Curves.easeOut,
     ));
-    
+
     _animationController.forward().then((_) {
       setState(() {
         _dragOffset = 0.0;
@@ -2459,10 +2459,10 @@ class _SwipeableTokenRowState extends State<_SwipeableTokenRow>
           AnimatedBuilder(
             animation: _slideAnimation,
             builder: (context, child) {
-              final currentOffset = _animationController.isAnimating 
-                  ? _slideAnimation.value 
+              final currentOffset = _animationController.isAnimating
+                  ? _slideAnimation.value
                   : _dragOffset;
-              
+
               return Transform.translate(
                 offset: Offset(currentOffset, 0),
                 child: GestureDetector(
@@ -2491,7 +2491,7 @@ class _TokenRow extends StatelessWidget {
   final CacheManager? tokenLogoCacheManager;
   final double price;
   final double displayAmount;
-  
+
   const _TokenRow({
     required this.token,
     required this.isHidden,
@@ -2504,10 +2504,10 @@ class _TokenRow extends StatelessWidget {
   Widget build(BuildContext context) {
     // استفاده از موجودی نمایشی که از parent دریافت شده
     final tokenValue = displayAmount * price;
-    
+
     // Format amount using the same logic as Android
     final formattedAmount = isHidden ? '****' : SharedPreferencesUtils.formatAmount(displayAmount, price);
-    
+
     // لوگوهای معروف را از asset نمایش بده
     final assetIcons = {
       'BTC': 'assets/images/btc.png',
@@ -2531,7 +2531,7 @@ class _TokenRow extends StatelessWidget {
     };
     final symbol = (token.symbol ?? '').toUpperCase();
     final assetIcon = assetIcons[symbol];
-    
+
     // Debug log for NCC specifically
     if (symbol == 'NCC') {
       print('🔍 HomeScreen NCC Debug:');
@@ -2562,64 +2562,64 @@ class _TokenRow extends StatelessWidget {
               ),
               child: (symbol == 'NCC' && (token.iconUrl ?? '').startsWith('http'))
                   ? CachedNetworkImage(
+                imageUrl: token.iconUrl ?? '',
+                width: 40,
+                height: 40,
+                fit: BoxFit.contain,
+                cacheManager: tokenLogoCacheManager,
+                errorWidget: (context, url, error) {
+                  // Fallback to asset if network fails for NCC
+                  return assetIcon != null
+                      ? Image.asset(
+                    assetIcon,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+                  )
+                      : const Icon(Icons.error);
+                },
+              )
+                  : assetIcon != null
+                  ? Image.asset(
+                assetIcon,
+                width: 40,
+                height: 40,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  print('❌ Asset error for $symbol: $error');
+                  // Fallback to network image if asset fails
+                  if ((token.iconUrl ?? '').startsWith('http')) {
+                    return CachedNetworkImage(
                       imageUrl: token.iconUrl ?? '',
                       width: 40,
                       height: 40,
                       fit: BoxFit.contain,
                       cacheManager: tokenLogoCacheManager,
-                      errorWidget: (context, url, error) {
-                        // Fallback to asset if network fails for NCC
-                        return assetIcon != null
-                            ? Image.asset(
-                                assetIcon,
-                                width: 40,
-                                height: 40,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
-                              )
-                            : const Icon(Icons.error);
-                      },
-                    )
-                  : assetIcon != null
-                      ? Image.asset(
-                          assetIcon,
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            print('❌ Asset error for $symbol: $error');
-                            // Fallback to network image if asset fails
-                            if ((token.iconUrl ?? '').startsWith('http')) {
-                              return CachedNetworkImage(
-                                imageUrl: token.iconUrl ?? '',
-                                width: 40,
-                                height: 40,
-                                fit: BoxFit.contain,
-                                cacheManager: tokenLogoCacheManager,
-                                errorWidget: (context, url, error) => const Icon(Icons.error),
-                              );
-                            }
-                            return const Icon(Icons.error);
-                          },
-                        )
-                      : (token.iconUrl ?? '').startsWith('http')
-                          ? CachedNetworkImage(
-                              imageUrl: token.iconUrl ?? '',
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.contain,
-                              cacheManager: tokenLogoCacheManager,
-                              errorWidget: (context, url, error) => const Icon(Icons.error),
-                            )
-                          : (token.iconUrl ?? '').startsWith('assets/')
-                              ? Image.asset(
-                                  token.iconUrl ?? '',
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
-                                )
-                              : const Icon(Icons.error),
+                      errorWidget: (context, url, error) => const Icon(Icons.error),
+                    );
+                  }
+                  return const Icon(Icons.error);
+                },
+              )
+                  : (token.iconUrl ?? '').startsWith('http')
+                  ? CachedNetworkImage(
+                imageUrl: token.iconUrl ?? '',
+                width: 40,
+                height: 40,
+                fit: BoxFit.contain,
+                cacheManager: tokenLogoCacheManager,
+                errorWidget: (context, url, error) => const Icon(Icons.error),
+              )
+                  : (token.iconUrl ?? '').startsWith('assets/')
+                  ? Image.asset(
+                token.iconUrl ?? '',
+                width: 40,
+                height: 40,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+              )
+                  : const Icon(Icons.error),
             ),
           ),
           const SizedBox(width: 12),
@@ -2652,7 +2652,7 @@ class _TokenRow extends StatelessWidget {
               Consumer<PriceProvider>(
                 builder: (context, priceProvider, child) {
                   final currencySymbol = priceProvider.getCurrencySymbol();
-                  final formattedValue = NumberFormat.currency(symbol: currencySymbol, decimalDigits: 2).format(tokenValue);
+                  final formattedValue = SharedPreferencesUtils.formatTokenValue(tokenValue, currencySymbol);
                   return Text(isHidden ? '****' : formattedValue, style: const TextStyle(fontSize: 12, color: Color(0xFF666666)));
                 },
               ),
@@ -2661,7 +2661,7 @@ class _TokenRow extends StatelessWidget {
         ],
       ),
     );
-    }
+  }
 }
 
 /// Widget آیکون فیلتر و مرتب‌سازی
@@ -2715,7 +2715,7 @@ class _SortOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSelected = value == currentValue;
-    
+
     return InkWell(
       onTap: () => onChanged(value),
       child: Container(
