@@ -130,6 +130,7 @@
   "scan_qr_code": "اسکن کد QR",
   "preferences": "ترجیحات",
   "all_blockchains": "تمام بلاک چین‌ها",
+  "cryptocurrencies": "ارزهای دیجیتال",
   "no_tokens_found": "هیچ توکنی یافت نشد",
   "error_loading_tokens": "خطا در بارگیری توکن‌ها",
   "failed_to_load_tokens": "دریافت توکن‌ها از سرور ناموفق بود",
@@ -996,6 +997,7 @@
   "secret_phrase_google_drive": "عبارت مخفی، Google Drive یا فقط مشاهده",
   "loading": "در حال بارگذاری...",
   "webview_removed": "عملکرد WebView در حال حاضر حذف شده است",
+  "add crypto": "افزودن کریپتو",
   "error_deleting_wallet": "خطا در حذف کیف پول: {error}",
   
   "no_explorer_url": "لینک اکسپلورر در دسترس نیست",

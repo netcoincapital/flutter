@@ -1914,17 +1914,29 @@ class TokenProvider extends ChangeNotifier {
     // ذخیره state به‌روزرسانی شده در cache
     await _saveToCache(await SharedPreferences.getInstance(), _currencies);
 
-    // Persist active token symbols per-wallet for restoration after app kill
+    // Persist active token keys per-wallet for restoration after app kill (FIXED for multi-chain)
     try {
       final currentWallet = await SecureStorage.instance.getSelectedWallet();
       final currentUser = await SecureStorage.instance.getSelectedUserId();
       if (currentWallet != null && currentUser != null) {
+        // Create unique keys for each token including blockchain and contract address
+        final activeTokenKeys = _activeTokens.map((t) {
+          return tokenPreferences.getTokenKeyFromParams(
+            t.symbol ?? '',
+            t.blockchainName ?? '',
+            t.smartContractAddress,
+          );
+        }).toList();
+        
+        await SecureStorage.instance.saveActiveTokenKeys(currentWallet, currentUser, activeTokenKeys);
+        print('💾 TokenProvider: Persisted active token keys in SecureStorage (${activeTokenKeys.length})');
+        
+        // Also save legacy format for backward compatibility
         final activeSymbols = _activeTokens.map((t) => t.symbol ?? '').toList();
         await SecureStorage.instance.saveActiveTokens(currentWallet, currentUser, activeSymbols);
-        print('💾 TokenProvider: Persisted active tokens in SecureStorage (${activeSymbols.length})');
       }
     } catch (e) {
-      print('⚠️ TokenProvider: Error persisting active tokens: $e');
+      print('⚠️ TokenProvider: Error persisting active token keys: $e');
     }
     
     // اگر توکن‌های فعال وجود دارند، قیمت‌ها را دریافت کن

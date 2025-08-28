@@ -296,14 +296,14 @@ class SecureStorage {
     return [];
   }
 
-  /// ذخیره activeTokens برای کیف پول (جدید)
+  /// ذخیره activeTokens برای کیف پول (legacy method - symbols only)
   Future<void> saveActiveTokens(String walletName, String userId, List<String> activeTokens) async {
     final key = 'ActiveTokens_${userId}_$walletName';
     await saveSecureJson(key, {'tokens': activeTokens});
     print('📝 Saved ${activeTokens.length} active tokens for wallet: $walletName');
   }
 
-  /// خواندن activeTokens کیف پول (جدید)
+  /// خواندن activeTokens کیف پول (legacy method - symbols only)
   Future<List<String>> getActiveTokens(String walletName, String userId) async {
     final key = 'ActiveTokens_${userId}_$walletName';
     final data = await getSecureJson(key);
@@ -311,6 +311,24 @@ class SecureStorage {
       return List<String>.from(data['tokens'] as List);
     }
     return []; // بازگرداندن لیست خالی اگر هیچ توکنی فعال نباشد
+  }
+
+  /// ذخیره activeTokenKeys برای کیف پول (NEW - includes blockchain + contract info)
+  /// This method handles multi-chain tokens correctly by saving complete token identifiers
+  Future<void> saveActiveTokenKeys(String walletName, String userId, List<String> activeTokenKeys) async {
+    final key = 'ActiveTokenKeys_${userId}_$walletName';
+    await saveSecureJson(key, {'tokenKeys': activeTokenKeys});
+    print('📝 Saved ${activeTokenKeys.length} active token keys for wallet: $walletName');
+  }
+
+  /// خواندن activeTokenKeys کیف پول (NEW - includes blockchain + contract info)
+  Future<List<String>> getActiveTokenKeys(String walletName, String userId) async {
+    final key = 'ActiveTokenKeys_${userId}_$walletName';
+    final data = await getSecureJson(key);
+    if (data != null && data['tokenKeys'] != null) {
+      return List<String>.from(data['tokenKeys'] as List);
+    }
+    return []; // بازگرداندن لیست خالی اگر هیچ کلید توکنی فعال نباشد
   }
 
   /// ذخیره کش موجودی‌ها برای کیف پول خاص (جدید)

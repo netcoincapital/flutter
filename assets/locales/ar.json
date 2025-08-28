@@ -227,6 +227,7 @@
   "error_re_registering_device": "خطأ في إعادة تسجيل الجهاز: {error}",
   "error_unregistering_device": "خطأ في إلغاء تسجيل الجهاز: {error}",
   "all_blockchains": "جميع البلوك تشين",
+  "cryptocurrencies": "العملات المشفرة",
   "no_tokens_found": "لم يتم العثور على عملات",
   "error_loading_tokens": "خطأ في تحميل العملات",
   "failed_to_load_tokens": "فشل في تحميل العملات من الخادم",
@@ -1059,6 +1060,7 @@
   "secret_phrase_google_drive": "عبارة سرية، Google Drive أو للعرض فقط",
   "loading": "جاري التحميل...",
   "webview_removed": "تم إزالة وظائف WebView في الوقت الحالي",
+  "add crypto": "إضافة عملة مشفرة",
   "error_deleting_wallet": "خطأ في حذف المحفظة: {error}",
   
   "no_explorer_url": "رابط المستكشف غير متوفر",

@@ -156,15 +156,27 @@ class AppProvider extends ChangeNotifier {
     // 🔁 Restore per-wallet active tokens and cached balances if available (app start case)
     try {
       if (_currentWalletName != null && _currentUserId != null) {
-        // Read active tokens directly without requiring mnemonic (iOS can restrict keychain reads)
-        final activeTokens = await SecureStorage.instance.getActiveTokens(
+        // FIXED: Use new method that handles multi-chain tokens correctly
+        final activeTokenKeys = await SecureStorage.instance.getActiveTokenKeys(
           _currentWalletName!, _currentUserId!,
         );
+        
+        // Fallback to legacy method if new method returns empty (for backward compatibility)
+        List<String> activeTokens = [];
+        if (activeTokenKeys.isEmpty) {
+          activeTokens = await SecureStorage.instance.getActiveTokens(
+            _currentWalletName!, _currentUserId!,
+          );
+        }
+        
         final balanceCache = await SecureStorage.instance.getWalletBalanceCache(
           _currentWalletName!, _currentUserId!,
         );
 
-        if (activeTokens.isNotEmpty) {
+        if (activeTokenKeys.isNotEmpty) {
+          await _applyActiveTokenKeysToProvider(tokenProvider, activeTokenKeys);
+        } else if (activeTokens.isNotEmpty) {
+          // Legacy fallback
           await _applyActiveTokensToProvider(tokenProvider, activeTokens);
         }
         if (balanceCache.isNotEmpty) {
@@ -434,9 +446,37 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Apply activeTokens to TokenProvider
+  /// Apply activeTokenKeys to TokenProvider (NEW - handles multi-chain tokens correctly)
+  Future<void> _applyActiveTokenKeysToProvider(TokenProvider tokenProvider, List<String> activeTokenKeys) async {
+    try {
+      print('🔄 AppProvider: Applying ${activeTokenKeys.length} active token keys to TokenProvider');
+      
+      // Enable tokens that match the saved token keys
+      for (final token in tokenProvider.currencies) {
+        final tokenKey = tokenProvider.tokenPreferences.getTokenKeyFromParams(
+          token.symbol ?? '',
+          token.blockchainName ?? '',
+          token.smartContractAddress,
+        );
+        
+        final shouldBeEnabled = activeTokenKeys.contains(tokenKey);
+        if (token.isEnabled != shouldBeEnabled) {
+          await tokenProvider.toggleToken(token, shouldBeEnabled);
+          print('🔄 AppProvider: Set token ${token.symbol} (${token.blockchainName}) to $shouldBeEnabled for current wallet');
+        }
+      }
+      
+      print('✅ AppProvider: Applied ${activeTokenKeys.length} active token keys to TokenProvider');
+    } catch (e) {
+      print('❌ AppProvider: Error applying active token keys: $e');
+    }
+  }
+
+  /// Apply activeTokens to TokenProvider (LEGACY - symbols only, for backward compatibility)
   Future<void> _applyActiveTokensToProvider(TokenProvider tokenProvider, List<String> activeTokens) async {
     try {
+      print('🔄 AppProvider: Applying ${activeTokens.length} active tokens (legacy) to TokenProvider');
+      
       // Enable tokens that should be active for this wallet
       for (final token in tokenProvider.currencies) {
         final shouldBeEnabled = activeTokens.contains(token.symbol);
@@ -446,7 +486,7 @@ class AppProvider extends ChangeNotifier {
         }
       }
       
-      print('✅ AppProvider: Applied ${activeTokens.length} activeTokens to TokenProvider');
+      print('✅ AppProvider: Applied ${activeTokens.length} activeTokens to TokenProvider (legacy)');
     } catch (e) {
       print('❌ AppProvider: Error applying activeTokens: $e');
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' show TextDirection;
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../providers/app_provider.dart';
@@ -11,6 +12,7 @@ import '../services/wallet_state_manager.dart';
 import 'dart:convert';
 import 'dart:async';
 import '../widgets/filter_widgets.dart';
+import '../services/coinmarketcap_service_main.dart';
 
 class CustomSwitch extends StatelessWidget {
   final bool checked;
@@ -78,12 +80,15 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
   bool _needsRefresh = false; // فلگ برای تشخیص نیاز به refresh
   
   // Advanced filter options
-  String _sortOption = 'name'; // 'name', 'marketcap', 'price', 'volume'
+  String _sortOption = 'marketcap'; // default: highest market cap first
   bool _showOnlyEnabled = false;
   bool _showOnlyTokens = false; // فقط tokens (نه coins)
   bool _showOnlyCoins = false; // فقط coins (نه tokens)
   List<String> _selectedCategories = []; // DeFi, Meme, Gaming, etc.
   String _priceRange = 'all'; // 'all', 'low', 'mid', 'high'
+  // Market cap cache for sorting
+  final Map<String, double> _marketCaps = {};
+  bool _marketCapsLoading = false;
   
   /// Safe translation helper with fallback
   String _safeTranslate(String key, String fallback) {
@@ -204,7 +209,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
 
   String get _translatedSelectedNetwork {
     if (selectedNetwork == 'All Blockchains') {
-      return _safeTranslate('all blockchains', 'All Blockchains');
+      return _safeTranslate('all_blockchains', 'All Blockchains');
     }
     return selectedNetwork;
   }
@@ -256,6 +261,8 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
           _filterTokens();
           isLoading = false;
         });
+        // Load market caps in background for sorting (will resort when loaded)
+        _loadMarketCapsForTokens(tokens);
         
         // ذخیره cache key
         await _saveCacheKey();
@@ -502,9 +509,14 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
             .compareTo((b.name ?? b.symbol ?? '').toLowerCase()));
         break;
       case 'marketcap':
-        // Sort by market cap (if available, otherwise by name)
-        tokens.sort((a, b) => (a.name ?? a.symbol ?? '').toLowerCase()
-            .compareTo((b.name ?? b.symbol ?? '').toLowerCase()));
+        // Sort by market cap DESC (fallback to name if unavailable)
+        tokens.sort((a, b) {
+          final capA = _marketCaps[(a.symbol ?? '').toUpperCase()] ?? -1;
+          final capB = _marketCaps[(b.symbol ?? '').toUpperCase()] ?? -1;
+          if (capA != capB) return capB.compareTo(capA);
+          return (a.name ?? a.symbol ?? '').toLowerCase()
+              .compareTo((b.name ?? b.symbol ?? '').toLowerCase());
+        });
         break;
       case 'price':
         // Sort by price (if available, otherwise by name)
@@ -519,6 +531,35 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
     }
     
     filteredTokens = tokens;
+  }
+
+  /// Load market caps for a list of tokens and re-sort when complete
+  Future<void> _loadMarketCapsForTokens(List<CryptoToken> tokens) async {
+    if (_marketCapsLoading) return;
+    _marketCapsLoading = true;
+    try {
+      // Limit concurrent requests and avoid duplicates
+      final symbols = tokens.map((t) => t.symbol ?? '').where((s) => s.isNotEmpty).toSet().toList();
+      for (final symbol in symbols) {
+        final upper = symbol.toUpperCase();
+        if (_marketCaps.containsKey(upper)) continue;
+        final priceData = await CoinMarketCapService.getCurrentPrice(upper);
+        final cap = priceData?.marketCap ?? 0.0;
+        _marketCaps[upper] = cap;
+      }
+      // Re-sort by market cap once loaded
+      if (mounted) {
+        setState(() {
+          if (_sortOption == 'marketcap') {
+            _filterTokens();
+          }
+        });
+      }
+    } catch (e) {
+      print('⚠️ AddTokenScreen: Error loading market caps: $e');
+    } finally {
+      _marketCapsLoading = false;
+    }
   }
 
   void _showNetworkModal() {
@@ -1371,20 +1412,30 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
         await _saveCacheKey();
 
         // 6.5 Persist per-wallet active tokens for fast restoration after app kill
+        // FIXED: Save complete token keys instead of just symbols to handle multi-chain tokens correctly
         try {
           final walletName = appProvider.currentWalletName;
           final userId = appProvider.currentUserId;
           if (walletName != null && userId != null) {
-            final activeSymbols = tokenProvider.enabledTokens.map((t) => t.symbol ?? '').toList();
-            await WalletStateManager.instance.saveActiveTokensForWallet(
+            // Create unique keys for each token including blockchain and contract address
+            final activeTokenKeys = tokenProvider.enabledTokens.map((t) {
+              return tokenProvider.tokenPreferences.getTokenKeyFromParams(
+                t.symbol ?? '',
+                t.blockchainName ?? '',
+                t.smartContractAddress,
+              );
+            }).toList();
+            
+            await WalletStateManager.instance.saveActiveTokenKeysForWallet(
               walletName,
               userId,
-              activeSymbols,
+              activeTokenKeys,
             );
-            print('💾 Persisted active tokens for wallet $walletName: ${activeSymbols.length}');
+            print('💾 Persisted ${activeTokenKeys.length} active token keys for wallet $walletName');
+            print('🔍 Active token keys: ${activeTokenKeys.take(3).join(', ')}...');
           }
         } catch (persistError) {
-          print('⚠️ Could not persist active tokens to WalletStateManager: $persistError');
+          print('⚠️ Could not persist active token keys to WalletStateManager: $persistError');
         }
         
         print('✅ AddTokenScreen: Token ${token.symbol} toggled successfully');
@@ -1589,34 +1640,44 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                       // Filter chips
                       if (_hasActiveFilters()) _buildFilterChips(),
                       const SizedBox(height: 8),
-                      // Network filter
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: GestureDetector(
-                          onTap: _showNetworkModal,
-                          child: Container(
-                            width: 200,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: const Color(0x25757575),
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Row(
-                              children: [
-                                Text(
-                                  _translatedSelectedNetwork,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Color(0xFF2c2c2c),
-                                  ),
+                      // Network filter with RTL support
+                      Builder(
+                        builder: (context) {
+                          final textDirection = Directionality.of(context);
+                          final isRTL = textDirection.name == 'rtl';
+                          return Align(
+                            alignment: isRTL ? Alignment.centerRight : Alignment.centerLeft,
+                            child: GestureDetector(
+                              onTap: _showNetworkModal,
+                              child: Container(
+                                width: 200,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: const Color(0x25757575),
+                                  borderRadius: BorderRadius.circular(15),
                                 ),
-                                const Spacer(),
-                                const Icon(Icons.arrow_drop_down, size: 20),
-                              ],
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _translatedSelectedNetwork,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          color: Color(0xFF2c2c2c),
+                                        ),
+                                        textAlign: isRTL ? TextAlign.right : TextAlign.left,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.arrow_drop_down, size: 20),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 14),
                       Row(
@@ -1631,7 +1692,7 @@ class _AddTokenScreenState extends State<AddTokenScreen> {
                             ),
                           ),
                           Text(
-                            _safeTranslate('cryptos count', '${filteredTokens.length} Cryptos').replaceAll('{count}', filteredTokens.length.toString()),
+                            '${filteredTokens.length} ${_safeTranslate('cryptos', 'Cryptos')}',
                             style: const TextStyle(
                               fontSize: 14,
                               color: Color(0xCB838383),
@@ -1807,33 +1868,49 @@ class _TokenItem extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Name and Symbol row with proper overflow handling
                 Row(
                   children: [
-                    Text(
-                      token.name ?? '',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                    // Token name with flexible expansion
+                    Flexible(
+                      flex: 3,
+                      child: Text(
+                        token.name ?? '',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      token.symbol ?? '',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.grey,
+                    // Token symbol with constrained width
+                    Flexible(
+                      flex: 1,
+                      child: Text(
+                        token.symbol ?? '',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 2),
+                // Blockchain name with overflow handling
                 Text(
                   token.blockchainName ?? '',
                   style: TextStyle(
                     color: Colors.grey[500],
                     fontSize: 13,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ],
             ),

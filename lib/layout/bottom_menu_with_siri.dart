@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:easy_localization/easy_localization.dart';
 
 class BottomMenuWithSiri extends StatelessWidget {
   const BottomMenuWithSiri({Key? key}) : super(key: key);
@@ -79,6 +79,14 @@ class _BottomMenuState extends State<BottomMenu> {
   bool _isNavigating = false;
   Timer? _debounceTimer;
 
+  String _safeTranslate(String key, String fallback) {
+    try {
+      return key.tr();
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   void _navigateTo(String routeName) async {
     // Prevent multiple navigation calls
     if (_isNavigating) return;
@@ -121,35 +129,37 @@ class _BottomMenuState extends State<BottomMenu> {
 
   @override
   Widget build(BuildContext context) {
-    // Remove bottom padding for iOS to move menu even lower
-    final bottomPadding = Platform.isIOS ? 0.0 : 0.0;
-    
     return Container(
       width: double.infinity,
-      height: 80 + bottomPadding, // Increased height for more padding
+      height: 80, // increased height for larger text
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      padding: EdgeInsets.only(
-        top: 14, // Increased top padding
-        bottom: 14 + bottomPadding, // Increased bottom padding
+      padding: const EdgeInsets.symmetric(
+        vertical: 8, // symmetric padding
+        horizontal: 16,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
+      child: ClipRect(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisSize: MainAxisSize.max,
+          children: [
           _MenuIcon(
             icon: Icons.home_rounded,
+            label: _safeTranslate('home', 'Home'),
             onTap: () => _navigateTo('/home'),
             isDisabled: _isNavigating,
           ),
           // _MenuIcon(
           //   icon: Icons.swap_horiz_rounded,
+          //   label: _safeTranslate('dex', 'DEX'),
           //   onTap: () => _navigateTo('/dex'),
           //   isDisabled: _isNavigating,
           // ),
           _MenuIcon(
             icon: Icons.qr_code_scanner_rounded,
+            label: _safeTranslate('scan', 'Scan'),
             onTap: () async {
               if (_isNavigating) return;
               
@@ -180,10 +190,12 @@ class _BottomMenuState extends State<BottomMenu> {
           ),
           _MenuIcon(
             icon: Icons.settings_rounded,
+            label: _safeTranslate('settings', 'Settings'),
             onTap: () => _navigateTo('/settings'),
             isDisabled: _isNavigating,
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -191,11 +203,13 @@ class _BottomMenuState extends State<BottomMenu> {
 
 class _MenuIcon extends StatelessWidget {
   final IconData icon;
+  final String label;
   final VoidCallback onTap;
   final bool isDisabled;
   
   const _MenuIcon({
-    required this.icon, 
+    required this.icon,
+    required this.label,
     required this.onTap, 
     this.isDisabled = false,
     Key? key
@@ -203,12 +217,42 @@ class _MenuIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isDisabled ? null : onTap,
-      child: Icon(
-        icon,
-        size: 28,
-        color: isDisabled ? Colors.grey : Colors.black54,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isDisabled ? null : onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 70,
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 24,
+                color: isDisabled ? Colors.grey : Colors.black54,
+              ),
+              const SizedBox(height: 2),
+              Container(
+                height: 18,
+                alignment: Alignment.center,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDisabled ? Colors.grey : Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

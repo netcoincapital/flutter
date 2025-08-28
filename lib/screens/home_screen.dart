@@ -1953,9 +1953,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               color: const Color(0xFF0BAB9B),
                               child: ListView.separated(
                                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 90),
-                                itemCount: enabledTokens.length,
+                                itemCount: enabledTokens.length + 1, // +1 for Add Crypto button
                                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                                 itemBuilder: (context, index) {
+                                  // Add Crypto button at the end
+                                  if (index == enabledTokens.length) {
+                                    return GestureDetector(
+                                      onTap: () async {
+                                        final result = await Navigator.pushNamed(context, '/add-token');
+                                        print('🔄 HomeScreen: Returned from add-token screen, performing immediate refresh');
+                                        await _performImmediateRefreshAfterTokenChange();
+                                      },
+                                      child: Container(
+                                        height: 68, // Same height as token row
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          _safeTranslate('add crypto', 'Add Crypto'),
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF11c699),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  
+                                  // Regular token item
                                   final token = enabledTokens[index];
                                   final price = priceProvider.getPrice(token.symbol ?? '') ?? 0.0;
                                   return _SwipeableTokenRow(

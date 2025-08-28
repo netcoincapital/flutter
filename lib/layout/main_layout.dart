@@ -8,16 +8,16 @@ class MainLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Remove bottom margin for iOS to move menu even lower
-    final bottomMargin = Platform.isIOS ? 0.0 : 0.0;
-    
     return Stack(
       children: [
         child,
         Align(
           alignment: Alignment.bottomCenter,
-          child: Container(
-            margin: EdgeInsets.only(bottom: bottomMargin),
+          child: SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            minimum: EdgeInsets.zero, // No minimum padding - stick to bottom
             child: BottomMenuWithSiri(),
           ),
         ),

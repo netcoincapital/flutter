@@ -3,8 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../services/passcode_manager.dart';
-import '../services/wallet_state_manager.dart';
 import '../services/security_settings_manager.dart';
+import 'home_screen.dart';
+import 'backup_screen.dart';
 import 'dart:async'; // Added for Timer
 
 class PasscodeScreen extends StatefulWidget {
@@ -74,6 +75,22 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
     await _checkBiometric();
     await _checkLockStatus();
     await _loadSecuritySettings();
+    
+    // 🔧 FIX: Debug current title and language
+    print('🔍 PasscodeScreen initialized with title: "${widget.title}"');
+    print('🔍 Current locale: ${context.locale}');
+    
+    // تست ترجمه‌ها
+    final chooseTest = _safeTranslate('choose_passcode', 'Choose Passcode');
+    final confirmTest = _safeTranslate('confirm_passcode', 'Confirm Passcode');
+    final enterTest = _safeTranslate('enter_passcode', 'Enter Passcode');
+    
+    print('🔍 Translation test:');
+    print('🔍   choose_passcode -> "$chooseTest"');
+    print('🔍   confirm_passcode -> "$confirmTest"');
+    print('🔍   enter_passcode -> "$enterTest"');
+    print('🔍 Normalized title will be: "${_getNormalizedTitle(widget.title)}"');
+    
     _redirectIfPasscodeExists();
   }
 
@@ -95,8 +112,8 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
 
   Future<void> _redirectIfPasscodeExists() async {
     // Prevent showing choose/confirm passcode if passcode already exists
-    if (widget.title == _safeTranslate('choose_passcode', 'Choose Passcode') || 
-        widget.title == _safeTranslate('confirm_passcode', 'Confirm Passcode')) {
+    final normalizedTitle = _getNormalizedTitle(widget.title);
+    if (normalizedTitle == 'choose_passcode' || normalizedTitle == 'confirm_passcode') {
       final isSet = await PasscodeManager.isPasscodeSet();
       if (isSet) {
         if (mounted) {
@@ -232,8 +249,11 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
   }
 
   void _handleSuccessfulAuthentication() {
-    switch (widget.title) {
-      case 'Choose Passcode':
+    final normalizedTitle = _getNormalizedTitle(widget.title);
+    print('🔐 Biometric success - normalized title: $normalizedTitle');
+    
+    switch (normalizedTitle) {
+      case 'choose_passcode':
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -246,14 +266,27 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
           ),
         );
         break;
-      case 'Confirm Passcode':
-        Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
+      case 'confirm_passcode':
+        // ANDROID FIX: Use direct MaterialPageRoute for better compatibility
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BackupScreen(
+              walletName: widget.walletName ?? 'Unknown Wallet',
+            ),
+          ),
+        );
         break;
-      case 'Enter Passcode':
+      case 'enter_passcode':
         if (widget.onSuccess != null) {
           widget.onSuccess!();
         } else {
-          Navigator.pushReplacementNamed(context, '/home');
+          // ANDROID FIX: Use direct MaterialPageRoute for better compatibility
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
+          );
         }
         break;
     }
@@ -288,71 +321,123 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
 
     print('🔐 Passcode complete: ${widget.title}');
     
-    // Timeout fallback - reset state if navigation doesn't complete
+    // Cancel any existing timeout
     _navigationTimeout?.cancel();
-    _navigationTimeout = Timer(const Duration(seconds: 10), () {
-      print('⚠️ Navigation timeout - resetting state');
+    
+    // Add a safety reset mechanism (20 seconds fallback for faster recovery)
+    _navigationTimeout = Timer(const Duration(seconds: 20), () {
+      print('⚠️ Safety reset triggered after 20 seconds');
       if (mounted && isConfirmed) {
         setState(() {
           isConfirmed = false;
-          errorMessage = 'Navigation failed. Please try again.';
           enteredCode = '';
+          errorMessage = _safeTranslate('timeout_error', 'Operation timed out. Please try again.');
         });
       }
     });
     
     try {
-      switch (widget.title) {
-        case 'Choose Passcode':
+      // 🔧 FIX: Use normalized title comparison instead of direct string comparison
+      // This fixes the issue when phone language is not English
+      final normalizedTitle = _getNormalizedTitle(widget.title);
+      print('🔐 Normalized title: $normalizedTitle');
+      
+      switch (normalizedTitle) {
+        case 'choose_passcode':
           print('🔐 Navigating to Confirm Passcode');
           // به صفحه تایید برو و پس‌کد را منتقل کن
           if (mounted) {
-            _navigationTimeout?.cancel(); // Cancel timeout on successful navigation
-            await Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PasscodeScreen(
-                  title: _safeTranslate('confirm_passcode', 'Confirm Passcode'),
-                  walletName: widget.walletName,
-                  firstPasscode: enteredCode,
-                  onSuccess: widget.onSuccess,
+            // Add small delay to ensure UI is ready
+            await Future.delayed(const Duration(milliseconds: 100));
+            
+            if (!mounted) return;
+            
+            try {
+              _navigationTimeout?.cancel(); // Cancel safety timer on success
+              await Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PasscodeScreen(
+                    title: _safeTranslate('confirm_passcode', 'Confirm Passcode'),
+                    walletName: widget.walletName,
+                    firstPasscode: enteredCode,
+                    onSuccess: widget.onSuccess,
+                  ),
                 ),
-              ),
-            );
+              );
+              print('🔐 Navigation to confirm passcode completed');
+            } catch (e) {
+              print('❌ Navigation error: $e');
+              if (mounted) {
+                setState(() {
+                  errorMessage = _safeTranslate('navigation_error', 'Navigation error. Please try again.');
+                  enteredCode = '';
+                  isConfirmed = false;
+                });
+              }
+            }
           }
           break;
           
-        case 'Confirm Passcode':
+        case 'confirm_passcode':
           print('🔐 Confirming passcode: ${widget.firstPasscode} == $enteredCode');
           if (widget.firstPasscode == enteredCode) {
             try {
               print('🔐 Setting passcode...');
               // ذخیره پس‌کد
-              final success = await PasscodeManager.setPasscode(enteredCode);
+              final success = await PasscodeManager.setPasscode(enteredCode)
+                .timeout(const Duration(seconds: 15));
               print('🔐 Passcode set success: $success');
               
               if (success) {
                 print('🔐 Passcode saved successfully');
                 // موفقیت: رفتن به صفحه بعد
-                _navigationTimeout?.cancel(); // Cancel timeout on successful navigation
+                _navigationTimeout?.cancel(); // Cancel safety timer on success
                 if (widget.onSuccess != null) {
                   print('🔐 Calling onSuccess callback');
                   widget.onSuccess!();
                 } else {
-                  print('🔐 No callback, checking wallet state');
-                  // Check if we have wallet data to go to backup, otherwise go to home
-                  final hasWallet = await WalletStateManager.instance.hasWallet();
-                  print('🔐 Has wallet: $hasWallet, walletName: ${widget.walletName}');
-                  
-                  if (mounted) {
-                    if (hasWallet && widget.walletName != null) {
-                      print('🔐 Navigating to backup screen');
-                      Navigator.pushReplacementNamed(context, '/backup', arguments: {'walletName': widget.walletName});
-                    } else {
-                      print('🔐 Navigating to home screen');
-                      Navigator.pushReplacementNamed(context, '/home');
-                    }
-                  }
+                                        print('🔐 No callback, navigating to home');
+                      
+                      if (mounted) {
+                        // Add small delay to ensure UI is ready
+                        await Future.delayed(const Duration(milliseconds: 200));
+                        
+                        if (!mounted) return;
+                        
+                        try {
+                          // ANDROID FIX: Use direct MaterialPageRoute instead of named route
+                          // This prevents navigation issues in Android
+                          print('🔐 Passcode confirmed - navigating to home screen (Android fix)');
+                          _navigationTimeout?.cancel(); // Cancel safety timer before navigation
+                          
+                          await Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (_) => const HomeScreen()),
+                            (route) => false,
+                          );
+                          
+                          print('🔐 Navigation to home completed successfully');
+                        } catch (e) {
+                          print('❌ Navigation error: $e');
+                          if (mounted) {
+                            // Secondary fallback: try named route
+                            try {
+                              print('🔄 Secondary fallback: trying named route');
+                              await Navigator.pushReplacementNamed(context, '/home');
+                              print('🔐 Named route navigation successful');
+                            } catch (e2) {
+                              print('❌ Named route also failed: $e2');
+                              // Final fallback: reset the screen state and show error
+                              setState(() {
+                                errorMessage = _safeTranslate('navigation_error', 'Navigation error. Please restart the app.');
+                                enteredCode = '';
+                                isConfirmed = false;
+                              });
+                            }
+                          }
+                        }
+                      }
                 }
               } else {
                 print('❌ Failed to set passcode');
@@ -386,33 +471,70 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
           }
           break;
           
-        case 'Enter Passcode':
+        case 'enter_passcode':
           print('🔐 Verifying passcode...');
           try {
-            final isValid = await PasscodeManager.verifyPasscode(enteredCode);
+            final isValid = await PasscodeManager.verifyPasscode(enteredCode)
+                .timeout(const Duration(seconds: 10));
             print('🔐 Passcode valid: $isValid');
             
             if (isValid) {
               print('🔐 Passcode verification successful');
               
-              // 🔄 CRITICAL: Reset activity timer on successful passcode entry
+              // 🔄 CRITICAL: Reset activity timer on successful passcode entry (with timeout)
               try {
-                await SecuritySettingsManager.instance.resetActivityTimer();
+                await SecuritySettingsManager.instance.resetActivityTimer()
+                    .timeout(const Duration(seconds: 3));
                 print('🔄 Activity timer reset after successful passcode entry');
               } catch (e) {
-                print('❌ Error resetting activity timer: $e');
+                print('❌ Error resetting activity timer: $e (continuing anyway)');
+                // Don't block navigation if timer reset fails
               }
               
-              _navigationTimeout?.cancel(); // Cancel timeout on successful navigation
-              if (widget.onSuccess != null) {
-                print('🔐 Calling onSuccess callback');
-                widget.onSuccess!();
-              } else {
-                print('🔐 Navigating to home');
-                if (mounted) {
-                  Navigator.pushReplacementNamed(context, '/home');
+              // Add small delay to ensure UI is ready
+              await Future.delayed(const Duration(milliseconds: 100));
+              
+              if (!mounted) return;
+              
+                              try {
+                  _navigationTimeout?.cancel(); // Cancel safety timer on success
+                  if (widget.onSuccess != null) {
+                    print('🔐 Calling onSuccess callback');
+                    widget.onSuccess!();
+                  } else {
+                    print('🔐 Navigating to home');
+                    if (mounted) {
+                      // ANDROID FIX: Use direct MaterialPageRoute with small delay
+                      await Future.delayed(const Duration(milliseconds: 100));
+                      
+                      if (!mounted) return;
+                      
+                      await Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HomeScreen()),
+                        (route) => false,
+                      );
+                      print('🔐 Navigation to home completed');
+                    }
+                  }
+                } catch (e) {
+                  print('❌ Navigation error: $e');
+                  if (mounted) {
+                    // If navigation fails, try named route as fallback
+                    try {
+                      print('🔄 Attempting fallback named route...');
+                      await Navigator.pushReplacementNamed(context, '/home');
+                      print('🔐 Fallback navigation successful');
+                    } catch (e2) {
+                      print('❌ Fallback navigation also failed: $e2');
+                      setState(() {
+                        errorMessage = _safeTranslate('navigation_error', 'Navigation error. Please restart the app.');
+                        enteredCode = '';
+                        isConfirmed = false;
+                      });
+                    }
+                  }
                 }
-              }
             } else {
               print('❌ Invalid passcode');
               await _checkLockStatus();
@@ -443,9 +565,10 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
       }
     } catch (e) {
       print('❌ General error in _handlePasscodeComplete: $e');
+      // Error handled
       if (mounted) {
         setState(() {
-          errorMessage = 'An error occurred. Please try again.';
+          errorMessage = _safeTranslate('general_error', 'An error occurred. Please try again.');
           enteredCode = '';
           isConfirmed = false;
         });
@@ -588,6 +711,129 @@ class _PasscodeScreenState extends State<PasscodeScreen> with WidgetsBindingObse
         return _safeTranslate('enter_passcode', 'Enter Passcode');
       default:
         return widget.title;
+    }
+  }
+
+  /// Normalize title to handle different languages
+  String _getNormalizedTitle(String title) {
+    // 🔧 FIX: بهترین روش - استفاده از translation keys به جای string matching
+    
+    // اول بررسی کنیم که آیا title یکی از translation keys است
+    final choosePasscode = _safeTranslate('choose_passcode', 'Choose Passcode');
+    final confirmPasscode = _safeTranslate('confirm_passcode', 'Confirm Passcode');
+    final enterPasscode = _safeTranslate('enter_passcode', 'Enter Passcode');
+    
+    print('🔍 Title normalization - Input: "$title"');
+    print('🔍 Translated values: choose="$choosePasscode", confirm="$confirmPasscode", enter="$enterPasscode"');
+    
+    // بررسی دقیق با هر دو نسخه انگلیسی و ترجمه شده
+    if (title == 'Choose Passcode' || title == choosePasscode) {
+      print('✅ Detected: choose_passcode');
+      return 'choose_passcode';
+    } else if (title == 'Confirm Passcode' || title == confirmPasscode) {
+      print('✅ Detected: confirm_passcode');
+      return 'confirm_passcode';
+    } else if (title == 'Enter Passcode' || title == enterPasscode) {
+      print('✅ Detected: enter_passcode');
+      return 'enter_passcode';
+    }
+    
+    // 🔧 FIX: بهبود keyword detection با کلمات کلیدی بیشتر
+    final lowerTitle = title.toLowerCase().trim();
+    
+    // Choose/Select passcode keywords - بهبود یافته
+    if (lowerTitle.contains('choose') ||    // English
+        lowerTitle.contains('select') ||    // English alternative
+        lowerTitle.contains('انتخاب') ||    // Persian/Farsi
+        lowerTitle.contains('رمز') && lowerTitle.contains('انتخاب') ||  // Persian combination
+        lowerTitle.contains('seç') ||       // Turkish
+        lowerTitle.contains('选择') ||       // Chinese Simplified
+        lowerTitle.contains('選擇') ||       // Chinese Traditional
+        lowerTitle.contains('elegir') ||    // Spanish
+        lowerTitle.contains('choisir') ||   // French
+        lowerTitle.contains('wählen') ||    // German
+        lowerTitle.contains('選ぶ') ||       // Japanese
+        lowerTitle.contains('선택') ||       // Korean
+        lowerTitle.contains('выбрать') ||   // Russian
+        lowerTitle.contains('scegli') ||    // Italian
+        lowerTitle.contains('escolher') ||  // Portuguese
+        lowerTitle.contains('اختر') ||       // Arabic
+        lowerTitle.contains('בחר')) {       // Hebrew
+      print('✅ Detected by keyword: choose_passcode');
+      return 'choose_passcode';
+    }
+    
+    // Confirm passcode keywords - بهبود یافته
+    else if (lowerTitle.contains('confirm') ||  // English
+        lowerTitle.contains('verify') ||        // English alternative
+        lowerTitle.contains('تایید') ||         // Persian/Farsi
+        lowerTitle.contains('تأیید') ||         // Persian alternative spelling
+        lowerTitle.contains('رمز') && lowerTitle.contains('تایید') ||  // Persian combination
+        lowerTitle.contains('onayla') ||        // Turkish
+        lowerTitle.contains('确认') ||           // Chinese Simplified
+        lowerTitle.contains('確認') ||           // Chinese Traditional
+        lowerTitle.contains('confirmar') ||     // Spanish
+        lowerTitle.contains('confirmer') ||     // French
+        lowerTitle.contains('bestätigen') ||    // German
+        lowerTitle.contains('確認') ||           // Japanese
+        lowerTitle.contains('확인') ||           // Korean
+        lowerTitle.contains('подтвердить') ||   // Russian
+        lowerTitle.contains('conferma') ||      // Italian
+        lowerTitle.contains('تأكيد') ||          // Arabic
+        lowerTitle.contains('אשר')) {           // Hebrew
+      print('✅ Detected by keyword: confirm_passcode');
+      return 'confirm_passcode';
+    }
+    
+    // Enter passcode keywords - بهبود یافته
+    else if (lowerTitle.contains('enter') ||   // English
+        lowerTitle.contains('input') ||        // English alternative
+        lowerTitle.contains('وارد') ||          // Persian/Farsi
+        lowerTitle.contains('ورود') ||          // Persian alternative
+        lowerTitle.contains('رمز') && (lowerTitle.contains('وارد') || lowerTitle.contains('ورود')) ||  // Persian combination
+        lowerTitle.contains('gir') ||           // Turkish
+        lowerTitle.contains('输入') ||           // Chinese Simplified
+        lowerTitle.contains('輸入') ||           // Chinese Traditional
+        lowerTitle.contains('ingresar') ||      // Spanish
+        lowerTitle.contains('entrer') ||        // French
+        lowerTitle.contains('eingeben') ||      // German
+        lowerTitle.contains('入力') ||           // Japanese
+        lowerTitle.contains('입력') ||           // Korean
+        lowerTitle.contains('ввести') ||        // Russian
+        lowerTitle.contains('inserisci') ||     // Italian
+        lowerTitle.contains('inserir') ||       // Portuguese
+        lowerTitle.contains('أدخل') ||           // Arabic
+        lowerTitle.contains('הכנס')) {          // Hebrew
+      print('✅ Detected by keyword: enter_passcode');
+      return 'enter_passcode';
+    }
+    
+    // 🔧 FIX: بهبود fallback logic
+    print('⚠️ Could not detect title type for: "$title"');
+    print('⚠️ Using intelligent fallback...');
+    
+    // اگر هیچ کلمه کلیدی پیدا نشد، بر اساس context تصمیم بگیریم
+    if (widget.firstPasscode != null && widget.firstPasscode!.isNotEmpty) {
+      // اگر firstPasscode وجود دارد، احتمالاً confirm است
+      print('🔄 Fallback: confirm_passcode (firstPasscode exists)');
+      return 'confirm_passcode';
+    } else {
+      // 🔧 FIX: بررسی اضافی برای تشخیص بهتر
+      // اگر title شامل کلمات مرتبط با انتخاب باشد
+      if (lowerTitle.contains('انتخاب') || lowerTitle.contains('choose') || lowerTitle.contains('select')) {
+        print('🔄 Fallback: choose_passcode (contains selection keywords)');
+        return 'choose_passcode';
+      }
+      // اگر title شامل کلمات مرتبط با تایید باشد
+      else if (lowerTitle.contains('تایید') || lowerTitle.contains('تأیید') || lowerTitle.contains('confirm')) {
+        print('🔄 Fallback: confirm_passcode (contains confirmation keywords)');
+        return 'confirm_passcode';
+      }
+      // در غیر این صورت، enter passcode
+      else {
+        print('🔄 Fallback: enter_passcode (default)');
+        return 'enter_passcode';
+      }
     }
   }
 }

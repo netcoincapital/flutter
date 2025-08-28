@@ -1216,6 +1216,7 @@
   "secret_phrase_google_drive": "Secret phrase, Google Drive or view-only",
   "loading": "Loading...",
   "webview_removed": "WebView functionality removed for now",
+  "add crypto": "Add Crypto",
   "error_deleting_wallet": "Error deleting wallet: {error}",
   "account_screen": "Account",
   "account_actions": "Account Actions",

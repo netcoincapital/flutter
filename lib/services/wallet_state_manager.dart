@@ -247,7 +247,7 @@ class WalletStateManager {
     }
   }
 
-  /// Save activeTokens for current wallet
+  /// Save activeTokens for current wallet (legacy method - symbols only)
   Future<void> saveActiveTokensForWallet(String walletName, String userId, List<String> activeTokens) async {
     try {
       await SecureStorage.instance.saveActiveTokens(walletName, userId, activeTokens);
@@ -255,6 +255,28 @@ class WalletStateManager {
     } catch (e) {
       print('❌ Error saving active tokens: $e');
       rethrow;
+    }
+  }
+
+  /// Save active token keys for current wallet (NEW - includes blockchain + contract info)
+  /// This method handles multi-chain tokens correctly by saving complete token identifiers
+  Future<void> saveActiveTokenKeysForWallet(String walletName, String userId, List<String> activeTokenKeys) async {
+    try {
+      await SecureStorage.instance.saveActiveTokenKeys(walletName, userId, activeTokenKeys);
+      print('✅ Active token keys saved for wallet: $walletName (${activeTokenKeys.length} keys)');
+    } catch (e) {
+      print('❌ Error saving active token keys: $e');
+      rethrow;
+    }
+  }
+
+  /// Get active token keys for wallet (NEW - includes blockchain + contract info)
+  Future<List<String>> getActiveTokenKeysForWallet(String walletName, String userId) async {
+    try {
+      return await SecureStorage.instance.getActiveTokenKeys(walletName, userId);
+    } catch (e) {
+      print('❌ Error getting active token keys: $e');
+      return [];
     }
   }
 
